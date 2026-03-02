@@ -111,14 +111,12 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
     }
 
-    // ✅ allow read: if true — para mabasa rfidTag bago mag-login
     match /users/{userId} {
       allow read: if true;
       allow create: if request.auth.uid == userId || isAdmin();
       allow update: if request.auth.uid == userId || isAdmin();
       allow delete: if isAdmin();
     }
-
     match /products/{id} {
       allow read: if isActiveUser();
       allow write: if isAdmin();
@@ -133,10 +131,11 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // ✅ rfidCards — public read para sa RFID login
+    // ✅ any authenticated user pwede mag-write
+    // kailangan dahil nag-switch ng session pagka-create ng staff
     match /rfidCards/{tag} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if request.auth != null;
     }
   }
 }
