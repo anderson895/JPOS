@@ -7,8 +7,7 @@ import { formatCurrency, generateOrderNumber } from '@/lib/utils';
 import type { Product, Category, Order, PaymentMethod, CartItem } from '@/types';
 import {
   Search, ShoppingCart, Plus, Minus, Trash2, X, CreditCard,
-  Banknote, Smartphone, CheckCircle, Printer, Coffee, ChevronRight,
-  ReceiptText, Tag, Percent, Loader2
+  Banknote, Smartphone, CheckCircle, Printer, Coffee, Tag, Percent, Loader2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
