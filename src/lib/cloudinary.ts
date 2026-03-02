@@ -1,7 +1,7 @@
 export const CLOUDINARY_CONFIG = {
-  cloudName: '469594518417695',
+  cloudName: 'dt2hauvef',
   uploadPreset: 'jposUpload',
-  apiUrl: 'https://api.cloudinary.com/v1_1/469594518417695/image/upload',
+  apiUrl: 'https://api.cloudinary.com/v1_1/dt2hauvef/image/upload',
 };
 
 export async function uploadImage(file: File): Promise<string> {
