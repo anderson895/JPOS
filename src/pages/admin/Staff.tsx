@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc } from 'firebase/firestore';
+import { collection, getDocs, updateDoc, deleteDoc, doc, setDoc } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import type { Staff } from '@/types';
-import { uploadImage } from '@/lib/cloudinary';
 import {
-  Plus, Search, Edit2, Trash2, X, User, Shield, Upload,
+  Plus, Search, Edit2, Trash2, X, User, Shield,
   ToggleLeft, ToggleRight, Loader2, CreditCard, Eye, EyeOff
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -20,10 +19,11 @@ export default function AdminStaff() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [editStaff, setEditStaff] = useState<Partial<Staff> & { password?: string }>(defaultStaff);
+  const [editStaff, setEditStaff] = useState<Partial<Staff> & { password?: string; rfidPassword?: string }>(defaultStaff);
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showPass, setShowPass] = useState(false);
+  const [showRfidPass, setShowRfidPass] = useState(false);
 
   useEffect(() => { fetchStaff(); }, []);
 
@@ -55,18 +55,53 @@ export default function AdminStaff() {
       };
 
       if (editId) {
+        // --- UPDATE existing staff ---
         await updateDoc(doc(db, 'users', editId), data);
-        toast.success('Staff updated');
+
+        // If rfidTag is set and rfidPassword provided, update rfidCards
+        if (editStaff.rfidTag && editStaff.rfidPassword) {
+          const trimmedTag = editStaff.rfidTag.trim();
+          await setDoc(doc(db, 'rfidCards', trimmedTag), {
+            email: editStaff.email,
+            password: editStaff.rfidPassword,
+            userId: editId,
+            staffName: editStaff.displayName,
+            updatedAt: new Date().toISOString(),
+          });
+          toast.success('Staff updated & RFID credentials saved');
+        } else {
+          toast.success('Staff updated');
+        }
       } else {
-        if (!editStaff.password) { toast.error('Password is required'); setSaving(false); return; }
+        // --- CREATE new staff ---
+        if (!editStaff.password) {
+          toast.error('Password is required');
+          setSaving(false);
+          return;
+        }
+
         const cred = await createUserWithEmailAndPassword(auth, editStaff.email!, editStaff.password);
-        // Use setDoc with the auth UID as the document ID — no undefined fields
+
         await setDoc(doc(db, 'users', cred.user.uid), {
           ...data,
           createdAt: new Date().toISOString(),
         });
+
+        // Auto-save rfidCards if rfidTag is provided — password is available here
+        if (editStaff.rfidTag) {
+          const trimmedTag = editStaff.rfidTag.trim();
+          await setDoc(doc(db, 'rfidCards', trimmedTag), {
+            email: editStaff.email,
+            password: editStaff.password, // same password used to create the account
+            userId: cred.user.uid,
+            staffName: editStaff.displayName,
+            createdAt: new Date().toISOString(),
+          });
+        }
+
         toast.success('Staff account created');
       }
+
       setModalOpen(false);
       setEditId(null);
       setEditStaff(defaultStaff);
@@ -109,7 +144,10 @@ export default function AdminStaff() {
           <h1 className="font-display text-3xl text-espresso-900">Staff Management</h1>
           <p className="text-bark-500 text-sm mt-0.5">{staff.length} total accounts</p>
         </div>
-        <button onClick={() => { setEditStaff(defaultStaff); setEditId(null); setModalOpen(true); }} className="btn-primary flex items-center gap-2">
+        <button
+          onClick={() => { setEditStaff(defaultStaff); setEditId(null); setModalOpen(true); }}
+          className="btn-primary flex items-center gap-2"
+        >
           <Plus className="w-4 h-4" /> Add Staff
         </button>
       </div>
@@ -119,19 +157,22 @@ export default function AdminStaff() {
         <input className="input pl-9" placeholder="Search staff..." value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
-      {/* Admin Section */}
       {admins.length > 0 && (
         <div>
           <h2 className="font-display text-lg text-espresso-800 mb-3 flex items-center gap-2">
             <Shield className="w-5 h-5 text-espresso-600" /> Administrators
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {admins.map(s => <StaffCard key={s.id} staff={s} onEdit={() => { setEditStaff({ ...s }); setEditId(s.id); setModalOpen(true); }} onDelete={handleDelete} onToggle={handleToggle} />)}
+            {admins.map(s => (
+              <StaffCard key={s.id} staff={s}
+                onEdit={() => { setEditStaff({ ...s }); setEditId(s.id); setModalOpen(true); }}
+                onDelete={handleDelete} onToggle={handleToggle}
+              />
+            ))}
           </div>
         </div>
       )}
 
-      {/* Staff Section */}
       <div>
         <h2 className="font-display text-lg text-espresso-800 mb-3 flex items-center gap-2">
           <User className="w-5 h-5 text-bark-500" /> Staff Members
@@ -142,7 +183,10 @@ export default function AdminStaff() {
               <div key={i} className="card p-5 animate-pulse">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-12 h-12 bg-cream-200 rounded-full" />
-                  <div className="flex-1"><div className="h-4 bg-cream-200 rounded mb-1" /><div className="h-3 bg-cream-100 rounded w-2/3" /></div>
+                  <div className="flex-1">
+                    <div className="h-4 bg-cream-200 rounded mb-1" />
+                    <div className="h-3 bg-cream-100 rounded w-2/3" />
+                  </div>
                 </div>
               </div>
             ))}
@@ -154,7 +198,12 @@ export default function AdminStaff() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {staffMembers.map(s => <StaffCard key={s.id} staff={s} onEdit={() => { setEditStaff({ ...s }); setEditId(s.id); setModalOpen(true); }} onDelete={handleDelete} onToggle={handleToggle} />)}
+            {staffMembers.map(s => (
+              <StaffCard key={s.id} staff={s}
+                onEdit={() => { setEditStaff({ ...s }); setEditId(s.id); setModalOpen(true); }}
+                onDelete={handleDelete} onToggle={handleToggle}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -167,53 +216,113 @@ export default function AdminStaff() {
               <h2 className="font-display text-xl text-espresso-900">{editId ? 'Edit Staff' : 'Add Staff'}</h2>
               <button onClick={() => setModalOpen(false)}><X className="w-5 h-5 text-bark-400" /></button>
             </div>
+
             <div className="p-6 space-y-4">
               <div>
                 <label className="label">Full Name *</label>
-                <input className="input" placeholder="e.g., Juan dela Cruz" value={editStaff.displayName || ''} onChange={e => setEditStaff(p => ({ ...p, displayName: e.target.value }))} />
+                <input className="input" placeholder="e.g., Juan dela Cruz"
+                  value={editStaff.displayName || ''}
+                  onChange={e => setEditStaff(p => ({ ...p, displayName: e.target.value }))} />
               </div>
+
               <div>
                 <label className="label">Email *</label>
-                <input className="input" type="email" placeholder="staff@coffeeshop.com" value={editStaff.email || ''} onChange={e => setEditStaff(p => ({ ...p, email: e.target.value }))} disabled={!!editId} />
+                <input className="input" type="email" placeholder="staff@coffeeshop.com"
+                  value={editStaff.email || ''}
+                  onChange={e => setEditStaff(p => ({ ...p, email: e.target.value }))}
+                  disabled={!!editId} />
               </div>
+
+              {/* Password — only on create */}
               {!editId && (
                 <div>
                   <label className="label">Password *</label>
                   <div className="relative">
-                    <input
-                      className="input pr-10"
-                      type={showPass ? 'text' : 'password'}
+                    <input className="input pr-10" type={showPass ? 'text' : 'password'}
                       placeholder="Min. 6 characters"
-                      value={(editStaff as any).password || ''}
-                      onChange={e => setEditStaff(p => ({ ...p, password: e.target.value }))}
-                    />
-                    <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-bark-400">
+                      value={editStaff.password || ''}
+                      onChange={e => setEditStaff(p => ({ ...p, password: e.target.value }))} />
+                    <button type="button" onClick={() => setShowPass(!showPass)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-bark-400">
                       {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
               )}
+
               <div>
                 <label className="label">Role</label>
                 <div className="flex gap-2">
                   {(['admin', 'staff'] as const).map(r => (
                     <button key={r} onClick={() => setEditStaff(p => ({ ...p, role: r }))}
-                      className={`flex-1 py-2 rounded-xl text-sm font-medium capitalize transition-all flex items-center justify-center gap-2 ${editStaff.role === r ? 'bg-espresso-600 text-white' : 'bg-cream-100 text-bark-600 hover:bg-cream-200'}`}>
+                      className={`flex-1 py-2 rounded-xl text-sm font-medium capitalize transition-all flex items-center justify-center gap-2 ${
+                        editStaff.role === r ? 'bg-espresso-600 text-white' : 'bg-cream-100 text-bark-600 hover:bg-cream-200'
+                      }`}>
                       {r === 'admin' ? <Shield className="w-4 h-4" /> : <User className="w-4 h-4" />}
                       {r}
                     </button>
                   ))}
                 </div>
               </div>
-              <div>
-                <label className="label flex items-center gap-2"><CreditCard className="w-4 h-4" />RFID Tag</label>
-                <input className="input font-mono" placeholder="e.g., A1B2C3D4" value={editStaff.rfidTag || ''} onChange={e => setEditStaff(p => ({ ...p, rfidTag: e.target.value }))} />
+
+              {/* RFID Section */}
+              <div className="space-y-3 p-4 bg-cream-50 rounded-2xl border border-cream-200">
+                <p className="text-sm font-medium text-espresso-700 flex items-center gap-2">
+                  <CreditCard className="w-4 h-4" /> RFID Login Setup
+                </p>
+
+                <div>
+                  <label className="label">RFID Tag</label>
+                  <input className="input font-mono" placeholder="Scan or type RFID tag"
+                    value={editStaff.rfidTag || ''}
+                    onChange={e => setEditStaff(p => ({ ...p, rfidTag: e.target.value }))} />
+                </div>
+
+                {/* On edit mode, show password field to update rfidCards */}
+                {editId && editStaff.rfidTag && (
+                  <div>
+                    <label className="label">
+                      Staff Password
+                      <span className="text-bark-400 font-normal ml-1">(required to enable RFID login)</span>
+                    </label>
+                    <div className="relative">
+                      <input className="input pr-10" type={showRfidPass ? 'text' : 'password'}
+                        placeholder="Enter staff's password"
+                        value={editStaff.rfidPassword || ''}
+                        onChange={e => setEditStaff(p => ({ ...p, rfidPassword: e.target.value }))} />
+                      <button type="button" onClick={() => setShowRfidPass(!showRfidPass)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-bark-400">
+                        {showRfidPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <p className="text-xs text-bark-400 mt-1">
+                      Leave blank to keep existing RFID credentials unchanged.
+                    </p>
+                  </div>
+                )}
+
+                {/* On create mode, password is already set above — just inform user */}
+                {!editId && editStaff.rfidTag && editStaff.password && (
+                  <p className="text-xs text-emerald-600 flex items-center gap-1">
+                    ✓ RFID login will be automatically configured using the password above.
+                  </p>
+                )}
+
+                {!editId && editStaff.rfidTag && !editStaff.password && (
+                  <p className="text-xs text-amber-600">
+                    Set a password above to enable RFID login for this staff.
+                  </p>
+                )}
               </div>
+
               <div className="flex items-center gap-3">
-                <input type="checkbox" id="isActive" checked={editStaff.isActive ?? true} onChange={e => setEditStaff(p => ({ ...p, isActive: e.target.checked }))} className="w-4 h-4 accent-espresso-600" />
+                <input type="checkbox" id="isActive" checked={editStaff.isActive ?? true}
+                  onChange={e => setEditStaff(p => ({ ...p, isActive: e.target.checked }))}
+                  className="w-4 h-4 accent-espresso-600" />
                 <label htmlFor="isActive" className="text-sm text-espresso-700 cursor-pointer">Active account</label>
               </div>
             </div>
+
             <div className="flex gap-3 p-6 border-t border-cream-100">
               <button onClick={() => setModalOpen(false)} className="btn-secondary flex-1">Cancel</button>
               <button onClick={handleSave} disabled={saving} className="btn-primary flex-1 flex items-center justify-center gap-2">
@@ -251,12 +360,14 @@ function StaffCard({ staff, onEdit, onDelete, onToggle }: {
           </div>
         </div>
       </div>
+
       {staff.rfidTag && (
         <div className="flex items-center gap-1.5 text-xs text-bark-400 mb-3 px-2 py-1.5 bg-cream-50 rounded-lg">
           <CreditCard className="w-3 h-3" />
           <span className="font-mono">{staff.rfidTag}</span>
         </div>
       )}
+
       <div className="flex items-center gap-2 pt-3 border-t border-cream-100">
         <button onClick={() => onToggle(staff)} className="text-bark-400 hover:text-espresso-600 transition-colors">
           {staff.isActive ? <ToggleRight className="w-5 h-5 text-emerald-500" /> : <ToggleLeft className="w-5 h-5" />}

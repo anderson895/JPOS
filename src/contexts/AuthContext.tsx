@@ -10,8 +10,6 @@ import {
   getDoc,
   setDoc,
   collection,
-  query,
-  where,
   getDocs,
 } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
@@ -34,11 +32,6 @@ export function useAuth() {
   return ctx;
 }
 
-/**
- * Fetch user profile from Firestore.
- * If no document exists for the UID (first-time login before profile was created),
- * auto-create a basic admin profile so the app is never stuck.
- */
 async function fetchOrCreateUserProfile(fbUser: FirebaseUser): Promise<User> {
   const ref = doc(db, 'users', fbUser.uid);
   const snap = await getDoc(ref);
@@ -47,8 +40,6 @@ async function fetchOrCreateUserProfile(fbUser: FirebaseUser): Promise<User> {
     return { id: fbUser.uid, ...snap.data() } as User;
   }
 
-  // No profile yet — create one automatically.
-  // First-ever user gets admin role; subsequent users get staff role.
   const allUsersSnap = await getDocs(collection(db, 'users'));
   const role = allUsersSnap.empty ? 'admin' : 'staff';
 
@@ -76,7 +67,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
       setFirebaseUser(fbUser);
-
       if (fbUser) {
         try {
           const userData = await fetchOrCreateUserProfile(fbUser);
@@ -89,16 +79,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         } catch (err: any) {
           console.error('Error loading user profile:', err);
-          // Still let loading finish so UI isn't stuck
           setCurrentUser(null);
         }
       } else {
         setCurrentUser(null);
       }
-
       setLoading(false);
     });
-
     return unsub;
   }, []);
 
@@ -113,19 +100,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const loginWithRFID = async (rfidTag: string) => {
-    const q = query(
-      collection(db, 'users'),
-      where('rfidTag', '==', rfidTag.trim()),
-      where('isActive', '==', true)
-    );
-    const snap = await getDocs(q);
-    if (snap.empty) {
-      throw new Error('RFID card not recognized. Assign it under Staff Management first.');
+    const trimmed = rfidTag.trim().replace(/[\r\n]/g, '');
+
+    // rfidCards is publicly readable per Firestore rules — no auth needed
+    const cardDoc = await getDoc(doc(db, 'rfidCards', trimmed));
+
+    if (!cardDoc.exists()) {
+      throw new Error('RFID card not registered. Contact your administrator.');
     }
-    const userDoc = snap.docs[0];
-    const userData = { id: userDoc.id, ...userDoc.data() } as User;
+
+    const { email, password } = cardDoc.data();
+
+    if (!email || !password) {
+      throw new Error('RFID card is incomplete. Contact your administrator.');
+    }
+
+    const cred = await signInWithEmailAndPassword(auth, email, password);
+    const userData = await fetchOrCreateUserProfile(cred.user);
+
+    if (!userData.isActive) {
+      await signOut(auth);
+      throw new Error('This account has been deactivated. Contact your administrator.');
+    }
+
     setCurrentUser(userData);
-    setFirebaseUser({ uid: userDoc.id } as FirebaseUser);
   };
 
   const logout = async () => {

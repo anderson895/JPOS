@@ -101,38 +101,42 @@ Create the following collections:
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isAuthenticated() {
-      return request.auth != null;
-    }
     function isAdmin() {
-      return isAuthenticated() && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
     }
-    
+    function isActiveUser() {
+      return request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
+    }
+
+    // ✅ allow read: if true — para mabasa rfidTag bago mag-login
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow read: if true;
+      allow create: if request.auth.uid == userId || isAdmin();
+      allow update: if request.auth.uid == userId || isAdmin();
+      allow delete: if isAdmin();
     }
+
     match /products/{id} {
-      allow read: if isAuthenticated();
+      allow read: if isActiveUser();
       allow write: if isAdmin();
     }
     match /categories/{id} {
-      allow read: if isAuthenticated();
+      allow read: if isActiveUser();
       allow write: if isAdmin();
     }
     match /orders/{id} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
+      allow read: if isActiveUser();
+      allow create: if isActiveUser();
       allow update, delete: if isAdmin();
     }
-    match /inventory/{id} {
-      allow read: if isAuthenticated();
+
+    // ✅ rfidCards — public read para sa RFID login
+    match /rfidCards/{tag} {
+      allow read: if true;
       allow write: if isAdmin();
-    }
-    match /stockMovements/{id} {
-      allow read: if isAuthenticated();
-      allow create: if isAdmin();
     }
   }
 }
