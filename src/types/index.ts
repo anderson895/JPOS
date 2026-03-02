@@ -42,36 +42,6 @@ export interface ProductVariant {
   priceModifier: number;
 }
 
-export interface InventoryItem {
-  id: string;
-  name: string;
-  unit: string;
-  quantity: number;
-  minStock: number;
-  maxStock: number;
-  cost: number;
-  supplierId?: string;
-  supplierName?: string;
-  categoryId?: string;
-  lastRestocked?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface StockMovement {
-  id: string;
-  itemId: string;
-  itemName: string;
-  type: 'in' | 'out' | 'adjustment';
-  quantity: number;
-  previousQuantity: number;
-  newQuantity: number;
-  reason: string;
-  performedBy: string;
-  performedByName: string;
-  createdAt: string;
-}
-
 export interface OrderItem {
   productId: string;
   productName: string;

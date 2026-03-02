@@ -5,7 +5,6 @@ import AdminLayout from './components/admin/AdminLayout';
 import StaffLayout from './components/staff/StaffLayout';
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminProducts from './pages/admin/Products';
-import AdminStock from './pages/admin/Stock';
 import AdminReports from './pages/admin/Reports';
 import AdminPOS from './pages/admin/POS';
 import AdminStaff from './pages/admin/Staff';
@@ -45,7 +44,6 @@ export default function App() {
       }>
         <Route index element={<AdminDashboard />} />
         <Route path="products" element={<AdminProducts />} />
-        <Route path="stock" element={<AdminStock />} />
         <Route path="reports" element={<AdminReports />} />
         <Route path="pos" element={<AdminPOS />} />
         <Route path="staff" element={<AdminStaff />} />

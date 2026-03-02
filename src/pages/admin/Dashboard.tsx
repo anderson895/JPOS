@@ -1,23 +1,19 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, orderBy, limit, Timestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
-import { TrendingUp, ShoppingBag, Users, Package, AlertTriangle, ArrowUpRight, Coffee } from 'lucide-react';
+import { TrendingUp, ShoppingBag, ArrowUpRight, Coffee } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar
+  ResponsiveContainer, BarChart, Bar
 } from 'recharts';
 import { format, subDays, startOfDay, endOfDay } from 'date-fns';
-import type { Order, InventoryItem } from '@/types';
-
-const COLORS = ['#c46820', '#e58a33', '#f5c07a', '#a73c12', '#6a3714'];
+import type { Order } from '@/types';
 
 export default function AdminDashboard() {
   const [todayStats, setTodayStats] = useState({ sales: 0, orders: 0, avgOrder: 0 });
   const [weeklyData, setWeeklyData] = useState<any[]>([]);
   const [recentOrders, setRecentOrders] = useState<Order[]>([]);
-  const [lowStockItems, setLowStockItems] = useState<InventoryItem[]>([]);
-  const [categoryData, setCategoryData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -30,15 +26,16 @@ export default function AdminDashboard() {
       const todayStart = startOfDay(today);
       const todayEnd = endOfDay(today);
 
-      // Today's orders
+      // Today's orders — filter status in JS to avoid composite index requirement
       const todayQ = query(
         collection(db, 'orders'),
         where('createdAt', '>=', todayStart.toISOString()),
         where('createdAt', '<=', todayEnd.toISOString()),
-        where('status', '==', 'completed')
       );
       const todaySnap = await getDocs(todayQ);
-      const todayOrders = todaySnap.docs.map(d => d.data() as Order);
+      const todayOrders = todaySnap.docs
+        .map(d => d.data() as Order)
+        .filter(o => o.status === 'completed');
       const todaySales = todayOrders.reduce((s, o) => s + o.total, 0);
       setTodayStats({
         sales: todaySales,
@@ -56,10 +53,11 @@ export default function AdminDashboard() {
           collection(db, 'orders'),
           where('createdAt', '>=', dayStart),
           where('createdAt', '<=', dayEnd),
-          where('status', '==', 'completed')
         );
         const snap = await getDocs(q);
-        const dayOrders = snap.docs.map(d => d.data() as Order);
+        const dayOrders = snap.docs
+          .map(d => d.data() as Order)
+          .filter(o => o.status === 'completed');
         weekData.push({
           date: format(day, 'EEE'),
           sales: dayOrders.reduce((s, o) => s + o.total, 0),
@@ -72,11 +70,6 @@ export default function AdminDashboard() {
       const recentQ = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(5));
       const recentSnap = await getDocs(recentQ);
       setRecentOrders(recentSnap.docs.map(d => ({ id: d.id, ...d.data() } as Order)));
-
-      // Low stock
-      const stockSnap = await getDocs(collection(db, 'inventory'));
-      const items = stockSnap.docs.map(d => ({ id: d.id, ...d.data() } as InventoryItem));
-      setLowStockItems(items.filter(i => i.quantity <= i.minStock));
 
     } catch (err) {
       console.error('Dashboard error:', err);
@@ -107,24 +100,22 @@ export default function AdminDashboard() {
       color: 'bg-bark-600',
       change: '+8%',
     },
-    // {
-    //   label: 'Low Stock Alerts',
-    //   value: lowStockItems.length.toString(),
-    //   icon: AlertTriangle,
-    //   color: lowStockItems.length > 0 ? 'bg-red-500' : 'bg-emerald-500',
-    //   change: lowStockItems.length > 0 ? 'Needs attention' : 'All good',
-    // },
   ];
 
   if (loading) {
     return (
       <div className="p-8 animate-pulse space-y-6">
         <div className="h-8 bg-cream-200 rounded-xl w-48" />
-        <div className="grid grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => (
+        <div className="grid grid-cols-3 gap-4">
+          {[...Array(3)].map((_, i) => (
             <div key={i} className="h-28 bg-cream-200 rounded-2xl" />
           ))}
         </div>
+        <div className="grid grid-cols-3 gap-6">
+          <div className="col-span-2 h-72 bg-cream-200 rounded-2xl" />
+          <div className="h-72 bg-cream-200 rounded-2xl" />
+        </div>
+        <div className="h-64 bg-cream-200 rounded-2xl" />
       </div>
     );
   }
@@ -138,7 +129,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {statCards.map((stat) => (
           <div key={stat.label} className="card p-5">
             <div className="flex items-start justify-between mb-4">
@@ -196,73 +187,35 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Bottom Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Orders */}
-        <div className="card p-6">
-          <h2 className="font-display text-lg text-espresso-800 mb-4">Recent Orders</h2>
-          {recentOrders.length === 0 ? (
-            <div className="text-center py-8 text-bark-400">
-              <ShoppingBag className="w-8 h-8 mx-auto mb-2 opacity-40" />
-              <p className="text-sm">No orders yet</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {recentOrders.map(order => (
-                <div key={order.id} className="flex items-center justify-between py-2 border-b border-cream-100 last:border-0">
-                  <div>
-                    <p className="text-sm font-medium text-espresso-800">{order.orderNumber}</p>
-                    <p className="text-xs text-bark-400">{formatDateTime(order.createdAt)} · {order.cashierName}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-semibold text-espresso-700">{formatCurrency(order.total)}</p>
-                    <span className={`badge text-xs ${
-                      order.status === 'completed' ? 'badge-success' :
-                      order.status === 'cancelled' ? 'badge-danger' : 'badge-warning'
-                    }`}>
-                      {order.status}
-                    </span>
-                  </div>
+      {/* Recent Orders */}
+      <div className="card p-6">
+        <h2 className="font-display text-lg text-espresso-800 mb-4">Recent Orders</h2>
+        {recentOrders.length === 0 ? (
+          <div className="text-center py-8 text-bark-400">
+            <ShoppingBag className="w-8 h-8 mx-auto mb-2 opacity-40" />
+            <p className="text-sm">No orders yet</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {recentOrders.map(order => (
+              <div key={order.id} className="flex items-center justify-between py-2 border-b border-cream-100 last:border-0">
+                <div>
+                  <p className="text-sm font-medium text-espresso-800">{order.orderNumber}</p>
+                  <p className="text-xs text-bark-400">{formatDateTime(order.createdAt)} · {order.cashierName}</p>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Low Stock */}
-        <div className="card p-6">
-          <h2 className="font-display text-lg text-espresso-800 mb-4 flex items-center gap-2">
-            Low Stock Alerts
-            {lowStockItems.length > 0 && (
-              <span className="badge badge-danger">{lowStockItems.length}</span>
-            )}
-          </h2>
-          {lowStockItems.length === 0 ? (
-            <div className="text-center py-8 text-bark-400">
-              <Package className="w-8 h-8 mx-auto mb-2 opacity-40" />
-              <p className="text-sm">All stock levels are adequate</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {lowStockItems.map(item => (
-                <div key={item.id} className="flex items-center justify-between py-2 border-b border-cream-100 last:border-0">
-                  <div>
-                    <p className="text-sm font-medium text-espresso-800">{item.name}</p>
-                    <p className="text-xs text-bark-400">Min: {item.minStock} {item.unit}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className={`text-sm font-semibold ${item.quantity === 0 ? 'text-red-600' : 'text-amber-600'}`}>
-                      {item.quantity} {item.unit}
-                    </p>
-                    <span className={`badge text-xs ${item.quantity === 0 ? 'badge-danger' : 'badge-warning'}`}>
-                      {item.quantity === 0 ? 'Out of stock' : 'Low'}
-                    </span>
-                  </div>
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-espresso-700">{formatCurrency(order.total)}</p>
+                  <span className={`badge text-xs ${
+                    order.status === 'completed' ? 'badge-success' :
+                    order.status === 'cancelled' ? 'badge-danger' : 'badge-warning'
+                  }`}>
+                    {order.status}
+                  </span>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
