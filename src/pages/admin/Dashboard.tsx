@@ -107,13 +107,13 @@ export default function AdminDashboard() {
       color: 'bg-bark-600',
       change: '+8%',
     },
-    {
-      label: 'Low Stock Alerts',
-      value: lowStockItems.length.toString(),
-      icon: AlertTriangle,
-      color: lowStockItems.length > 0 ? 'bg-red-500' : 'bg-emerald-500',
-      change: lowStockItems.length > 0 ? 'Needs attention' : 'All good',
-    },
+    // {
+    //   label: 'Low Stock Alerts',
+    //   value: lowStockItems.length.toString(),
+    //   icon: AlertTriangle,
+    //   color: lowStockItems.length > 0 ? 'bg-red-500' : 'bg-emerald-500',
+    //   change: lowStockItems.length > 0 ? 'Needs attention' : 'All good',
+    // },
   ];
 
   if (loading) {
