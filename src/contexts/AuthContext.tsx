@@ -9,6 +9,7 @@ import {
   doc,
   getDoc,
   setDoc,
+  onSnapshot,
   collection,
   getDocs,
 } from 'firebase/firestore';
@@ -22,6 +23,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   loginWithRFID: (rfidTag: string) => Promise<void>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -65,28 +67,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (fbUser) => {
+    let unsubSnapshot: (() => void) | null = null;
+
+    const unsubAuth = onAuthStateChanged(auth, async (fbUser) => {
+      // Clean up any previous Firestore listener when auth state changes
+      if (unsubSnapshot) { unsubSnapshot(); unsubSnapshot = null; }
+
       setFirebaseUser(fbUser);
+
       if (fbUser) {
         try {
-          const userData = await fetchOrCreateUserProfile(fbUser);
-          if (!userData.isActive) {
-            await signOut(auth);
-            setCurrentUser(null);
-            setFirebaseUser(null);
-          } else {
-            setCurrentUser(userData);
-          }
-        } catch (err: any) {
+          // Ensure the Firestore doc exists before subscribing
+          await fetchOrCreateUserProfile(fbUser);
+
+          // ── Real-time listener on the user's Firestore doc ──────────────
+          // Any write to this doc (profile update, admin editing staff, etc.)
+          // will instantly push the new data into context without a page reload.
+          unsubSnapshot = onSnapshot(
+            doc(db, 'users', fbUser.uid),
+            (snap) => {
+              if (snap.exists()) {
+                const userData = { id: fbUser.uid, ...snap.data() } as User;
+                if (!userData.isActive) {
+                  // Deactivated mid-session — force logout
+                  signOut(auth);
+                  setCurrentUser(null);
+                  setFirebaseUser(null);
+                } else {
+                  setCurrentUser(userData);
+                }
+              } else {
+                setCurrentUser(null);
+              }
+              setLoading(false);
+            },
+            (err) => {
+              console.error('User snapshot error:', err);
+              setCurrentUser(null);
+              setLoading(false);
+            }
+          );
+        } catch (err) {
           console.error('Error loading user profile:', err);
           setCurrentUser(null);
+          setLoading(false);
         }
       } else {
         setCurrentUser(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
-    return unsub;
+
+    return () => {
+      unsubAuth();
+      if (unsubSnapshot) unsubSnapshot();
+    };
   }, []);
 
   const login = async (email: string, password: string) => {
@@ -96,34 +131,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await signOut(auth);
       throw new Error('This account has been deactivated. Contact your administrator.');
     }
-    setCurrentUser(userData);
+    // onSnapshot will handle setting currentUser automatically
   };
 
   const loginWithRFID = async (rfidTag: string) => {
     const trimmed = rfidTag.trim().replace(/[\r\n]/g, '');
-
-    // rfidCards is publicly readable per Firestore rules — no auth needed
     const cardDoc = await getDoc(doc(db, 'rfidCards', trimmed));
-
-    if (!cardDoc.exists()) {
-      throw new Error('RFID card not registered. Contact your administrator.');
-    }
-
+    if (!cardDoc.exists()) throw new Error('RFID card not registered. Contact your administrator.');
     const { email, password } = cardDoc.data();
-
-    if (!email || !password) {
-      throw new Error('RFID card is incomplete. Contact your administrator.');
-    }
-
+    if (!email || !password) throw new Error('RFID card is incomplete. Contact your administrator.');
     const cred = await signInWithEmailAndPassword(auth, email, password);
     const userData = await fetchOrCreateUserProfile(cred.user);
-
     if (!userData.isActive) {
       await signOut(auth);
       throw new Error('This account has been deactivated. Contact your administrator.');
     }
-
-    setCurrentUser(userData);
+    // onSnapshot will handle setting currentUser automatically
   };
 
   const logout = async () => {
@@ -132,8 +155,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setFirebaseUser(null);
   };
 
+  // Manual refresh — still useful if you want to force a re-fetch outside of the snapshot
+  const refreshUser = async () => {
+    const fbUser = auth.currentUser;
+    if (!fbUser) return;
+    const snap = await getDoc(doc(db, 'users', fbUser.uid));
+    if (snap.exists()) {
+      setCurrentUser({ id: fbUser.uid, ...snap.data() } as User);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ currentUser, firebaseUser, loading, login, loginWithRFID, logout }}>
+    <AuthContext.Provider value={{
+      currentUser, firebaseUser, loading,
+      login, loginWithRFID, logout, refreshUser,
+    }}>
       {children}
     </AuthContext.Provider>
   );

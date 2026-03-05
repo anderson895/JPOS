@@ -1,29 +1,32 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { collection, getDocs, updateDoc, deleteDoc, doc, setDoc } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
+import { uploadImage } from '@/lib/cloudinary';
 import type { Staff } from '@/types';
 import {
   Plus, Search, Edit2, Trash2, X, User, Shield,
-  ToggleLeft, ToggleRight, Loader2, CreditCard, Eye, EyeOff
+  ToggleLeft, ToggleRight, Loader2, CreditCard, Eye, EyeOff, Camera, Upload
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { formatDate } from '@/lib/utils';
 
 const defaultStaff = {
-  displayName: '', email: '', role: 'staff' as const, isActive: true, rfidTag: '', photoURL: '',
+  displayName: '', email: '', role: 'staff' as const,
+  isActive: true, rfidTag: '', photoURL: '',
 };
 
 export default function AdminStaff() {
-  const [staff, setStaff] = useState<Staff[]>([]);
-  const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [staff, setStaff]       = useState<Staff[]>([]);
+  const [search, setSearch]     = useState('');
+  const [loading, setLoading]   = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editStaff, setEditStaff] = useState<Partial<Staff> & { password?: string; rfidPassword?: string }>(defaultStaff);
-  const [editId, setEditId] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [editId, setEditId]     = useState<string | null>(null);
+  const [saving, setSaving]     = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [showRfidPass, setShowRfidPass] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const photoRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { fetchStaff(); }, []);
 
@@ -37,10 +40,22 @@ export default function AdminStaff() {
     }
   }
 
+  async function handlePhotoUpload(file: File) {
+    setUploadingPhoto(true);
+    try {
+      const url = await uploadImage(file);
+      setEditStaff(p => ({ ...p, photoURL: url }));
+      toast.success('Photo uploaded');
+    } catch {
+      toast.error('Photo upload failed');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
+
   async function handleSave() {
     if (!editStaff.displayName || !editStaff.email) {
-      toast.error('Name and email are required');
-      return;
+      toast.error('Name and email are required'); return;
     }
     setSaving(true);
     try {
@@ -53,15 +68,10 @@ export default function AdminStaff() {
         photoURL: editStaff.photoURL || '',
         updatedAt: new Date().toISOString(),
       };
-
       if (editId) {
-        // --- UPDATE existing staff ---
         await updateDoc(doc(db, 'users', editId), data);
-
-        // If rfidTag is set and rfidPassword provided, update rfidCards
         if (editStaff.rfidTag && editStaff.rfidPassword) {
-          const trimmedTag = editStaff.rfidTag.trim();
-          await setDoc(doc(db, 'rfidCards', trimmedTag), {
+          await setDoc(doc(db, 'rfidCards', editStaff.rfidTag.trim()), {
             email: editStaff.email,
             password: editStaff.rfidPassword,
             userId: editId,
@@ -73,35 +83,20 @@ export default function AdminStaff() {
           toast.success('Staff updated');
         }
       } else {
-        // --- CREATE new staff ---
-        if (!editStaff.password) {
-          toast.error('Password is required');
-          setSaving(false);
-          return;
-        }
-
+        if (!editStaff.password) { toast.error('Password is required'); setSaving(false); return; }
         const cred = await createUserWithEmailAndPassword(auth, editStaff.email!, editStaff.password);
-
-        await setDoc(doc(db, 'users', cred.user.uid), {
-          ...data,
-          createdAt: new Date().toISOString(),
-        });
-
-        // Auto-save rfidCards if rfidTag is provided — password is available here
+        await setDoc(doc(db, 'users', cred.user.uid), { ...data, createdAt: new Date().toISOString() });
         if (editStaff.rfidTag) {
-          const trimmedTag = editStaff.rfidTag.trim();
-          await setDoc(doc(db, 'rfidCards', trimmedTag), {
+          await setDoc(doc(db, 'rfidCards', editStaff.rfidTag.trim()), {
             email: editStaff.email,
-            password: editStaff.password, // same password used to create the account
+            password: editStaff.password,
             userId: cred.user.uid,
             staffName: editStaff.displayName,
             createdAt: new Date().toISOString(),
           });
         }
-
         toast.success('Staff account created');
       }
-
       setModalOpen(false);
       setEditId(null);
       setEditStaff(defaultStaff);
@@ -129,13 +124,19 @@ export default function AdminStaff() {
     } catch { toast.error('Failed to update'); }
   }
 
-  const filtered = staff.filter(s =>
+  function openAdd()     { setEditStaff(defaultStaff); setEditId(null); setModalOpen(true); }
+  function openEdit(s: Staff) { setEditStaff({ ...s }); setEditId(s.id); setModalOpen(true); }
+
+  const filtered     = staff.filter(s =>
     s.displayName?.toLowerCase().includes(search.toLowerCase()) ||
     s.email?.toLowerCase().includes(search.toLowerCase())
   );
-
-  const admins = filtered.filter(s => s.role === 'admin');
+  const admins       = filtered.filter(s => s.role === 'admin');
   const staffMembers = filtered.filter(s => s.role === 'staff');
+
+  const previewInitials = editStaff.displayName
+    ? editStaff.displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+    : '?';
 
   return (
     <div className="p-8 space-y-6 animate-fade-in">
@@ -144,10 +145,7 @@ export default function AdminStaff() {
           <h1 className="font-display text-3xl text-espresso-900">Staff Management</h1>
           <p className="text-bark-500 text-sm mt-0.5">{staff.length} total accounts</p>
         </div>
-        <button
-          onClick={() => { setEditStaff(defaultStaff); setEditId(null); setModalOpen(true); }}
-          className="btn-primary flex items-center gap-2"
-        >
+        <button onClick={openAdd} className="btn-primary flex items-center gap-2">
           <Plus className="w-4 h-4" /> Add Staff
         </button>
       </div>
@@ -164,10 +162,7 @@ export default function AdminStaff() {
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {admins.map(s => (
-              <StaffCard key={s.id} staff={s}
-                onEdit={() => { setEditStaff({ ...s }); setEditId(s.id); setModalOpen(true); }}
-                onDelete={handleDelete} onToggle={handleToggle}
-              />
+              <StaffCard key={s.id} staff={s} onEdit={() => openEdit(s)} onDelete={handleDelete} onToggle={handleToggle} />
             ))}
           </div>
         </div>
@@ -183,10 +178,7 @@ export default function AdminStaff() {
               <div key={i} className="card p-5 animate-pulse">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-12 h-12 bg-cream-200 rounded-full" />
-                  <div className="flex-1">
-                    <div className="h-4 bg-cream-200 rounded mb-1" />
-                    <div className="h-3 bg-cream-100 rounded w-2/3" />
-                  </div>
+                  <div className="flex-1"><div className="h-4 bg-cream-200 rounded mb-1" /><div className="h-3 bg-cream-100 rounded w-2/3" /></div>
                 </div>
               </div>
             ))}
@@ -199,16 +191,13 @@ export default function AdminStaff() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {staffMembers.map(s => (
-              <StaffCard key={s.id} staff={s}
-                onEdit={() => { setEditStaff({ ...s }); setEditId(s.id); setModalOpen(true); }}
-                onDelete={handleDelete} onToggle={handleToggle}
-              />
+              <StaffCard key={s.id} staff={s} onEdit={() => openEdit(s)} onDelete={handleDelete} onToggle={handleToggle} />
             ))}
           </div>
         )}
       </div>
 
-      {/* Modal */}
+      {/* ── Modal ── */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
@@ -218,6 +207,35 @@ export default function AdminStaff() {
             </div>
 
             <div className="p-6 space-y-4">
+
+              {/* ── Photo upload ── */}
+              <div className="flex flex-col items-center gap-2">
+                <div className="relative">
+                  <div className="w-20 h-20 rounded-full overflow-hidden bg-espresso-100 flex items-center justify-center">
+                    {editStaff.photoURL
+                      ? <img src={editStaff.photoURL} alt="" className="w-full h-full object-cover" />
+                      : <span className="text-espresso-600 font-bold text-2xl">{previewInitials}</span>
+                    }
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => photoRef.current?.click()}
+                    disabled={uploadingPhoto}
+                    className="absolute -bottom-1 -right-1 w-7 h-7 bg-espresso-600 hover:bg-espresso-700 text-white rounded-full flex items-center justify-center shadow-md transition-colors"
+                  >
+                    {uploadingPhoto
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <Camera className="w-3.5 h-3.5" />
+                    }
+                  </button>
+                  <input
+                    ref={photoRef} type="file" accept="image/*" className="hidden"
+                    onChange={e => e.target.files?.[0] && handlePhotoUpload(e.target.files[0])}
+                  />
+                </div>
+                <p className="text-xs text-bark-400">Click camera to upload photo</p>
+              </div>
+
               <div>
                 <label className="label">Full Name *</label>
                 <input className="input" placeholder="e.g., Juan dela Cruz"
@@ -233,7 +251,6 @@ export default function AdminStaff() {
                   disabled={!!editId} />
               </div>
 
-              {/* Password — only on create */}
               {!editId && (
                 <div>
                   <label className="label">Password *</label>
@@ -258,8 +275,7 @@ export default function AdminStaff() {
                       className={`flex-1 py-2 rounded-xl text-sm font-medium capitalize transition-all flex items-center justify-center gap-2 ${
                         editStaff.role === r ? 'bg-espresso-600 text-white' : 'bg-cream-100 text-bark-600 hover:bg-cream-200'
                       }`}>
-                      {r === 'admin' ? <Shield className="w-4 h-4" /> : <User className="w-4 h-4" />}
-                      {r}
+                      {r === 'admin' ? <Shield className="w-4 h-4" /> : <User className="w-4 h-4" />} {r}
                     </button>
                   ))}
                 </div>
@@ -270,15 +286,12 @@ export default function AdminStaff() {
                 <p className="text-sm font-medium text-espresso-700 flex items-center gap-2">
                   <CreditCard className="w-4 h-4" /> RFID Login Setup
                 </p>
-
                 <div>
                   <label className="label">RFID Tag</label>
                   <input className="input font-mono" placeholder="Scan or type RFID tag"
                     value={editStaff.rfidTag || ''}
                     onChange={e => setEditStaff(p => ({ ...p, rfidTag: e.target.value }))} />
                 </div>
-
-                {/* On edit mode, show password field to update rfidCards */}
                 {editId && editStaff.rfidTag && (
                   <div>
                     <label className="label">
@@ -295,23 +308,16 @@ export default function AdminStaff() {
                         {showRfidPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
-                    <p className="text-xs text-bark-400 mt-1">
-                      Leave blank to keep existing RFID credentials unchanged.
-                    </p>
+                    <p className="text-xs text-bark-400 mt-1">Leave blank to keep existing RFID credentials unchanged.</p>
                   </div>
                 )}
-
-                {/* On create mode, password is already set above — just inform user */}
                 {!editId && editStaff.rfidTag && editStaff.password && (
                   <p className="text-xs text-emerald-600 flex items-center gap-1">
                     ✓ RFID login will be automatically configured using the password above.
                   </p>
                 )}
-
                 {!editId && editStaff.rfidTag && !editStaff.password && (
-                  <p className="text-xs text-amber-600">
-                    Set a password above to enable RFID login for this staff.
-                  </p>
+                  <p className="text-xs text-amber-600">Set a password above to enable RFID login for this staff.</p>
                 )}
               </div>
 
@@ -325,7 +331,7 @@ export default function AdminStaff() {
 
             <div className="flex gap-3 p-6 border-t border-cream-100">
               <button onClick={() => setModalOpen(false)} className="btn-secondary flex-1">Cancel</button>
-              <button onClick={handleSave} disabled={saving} className="btn-primary flex-1 flex items-center justify-center gap-2">
+              <button onClick={handleSave} disabled={saving || uploadingPhoto} className="btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-60">
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                 {saving ? 'Saving...' : 'Save'}
               </button>
@@ -343,11 +349,18 @@ function StaffCard({ staff, onEdit, onDelete, onToggle }: {
   onDelete: (id: string) => void;
   onToggle: (s: Staff) => void;
 }) {
+  const initials = staff.displayName
+    ?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
+
   return (
     <div className={`card p-5 ${!staff.isActive ? 'opacity-60' : ''}`}>
       <div className="flex items-start gap-3 mb-3">
-        <div className="w-12 h-12 bg-espresso-100 rounded-full flex items-center justify-center text-espresso-700 font-semibold text-lg font-display flex-shrink-0">
-          {staff.displayName?.[0]?.toUpperCase() || '?'}
+        {/* Avatar — photo if available, else initials */}
+        <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 bg-espresso-100 flex items-center justify-center">
+          {staff.photoURL
+            ? <img src={staff.photoURL} alt={staff.displayName} className="w-full h-full object-cover" />
+            : <span className="text-espresso-700 font-semibold text-lg font-display">{initials}</span>
+          }
         </div>
         <div className="flex-1 min-w-0">
           <p className="font-medium text-espresso-800 truncate">{staff.displayName}</p>

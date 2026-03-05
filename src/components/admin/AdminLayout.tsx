@@ -1,25 +1,29 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  Coffee, LayoutDashboard, Package, Layers, BarChart3,
-  ShoppingCart, Users, LogOut, ChevronRight, Menu, X
+  Coffee, LayoutDashboard, BarChart3,
+  ShoppingCart, Users, LogOut, ChevronRight, Menu, X, Settings
 } from 'lucide-react';
 import { useState } from 'react';
+import AccountSettingsModal from '@/components/admin/AccountSettingsModal';
 import toast from 'react-hot-toast';
 
 const navItems = [
-  { to: '/admin', icon: LayoutDashboard, label: 'Dashboard', end: true },
-  { to: '/admin/pos', icon: ShoppingCart, label: 'Point of Sale' },
-  { to: '/admin/products', icon: Coffee, label: 'Products' },
-  // { to: '/admin/stock', icon: Layers, label: 'Stock Management' },
-  { to: '/admin/reports', icon: BarChart3, label: 'Reports' },
-  { to: '/admin/staff', icon: Users, label: 'Manage Staff' },
+  { to: '/admin',          icon: LayoutDashboard, label: 'Dashboard',    end: true },
+  { to: '/admin/pos',      icon: ShoppingCart,    label: 'Point of Sale' },
+  { to: '/admin/products', icon: Coffee,          label: 'Products' },
+  { to: '/admin/reports',  icon: BarChart3,       label: 'Reports' },
+  { to: '/admin/staff',    icon: Users,           label: 'Manage Staff' },
 ];
 
 export default function AdminLayout() {
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen]   = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const initials = currentUser?.displayName
+    ?.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) || 'A';
 
   const handleLogout = async () => {
     try {
@@ -65,9 +69,7 @@ export default function AdminLayout() {
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {navItems.map(({ to, icon: Icon, label, end }) => (
             <NavLink
-              key={to}
-              to={to}
-              end={end}
+              key={to} to={to} end={end}
               className={({ isActive }) =>
                 `sidebar-link ${isActive ? 'active' : ''} ${!sidebarOpen ? 'justify-center px-2' : ''}`
               }
@@ -83,8 +85,11 @@ export default function AdminLayout() {
         {/* User */}
         <div className="p-3 border-t border-cream-100">
           <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl bg-cream-50 ${!sidebarOpen ? 'justify-center' : ''}`}>
-            <div className="w-8 h-8 bg-espresso-200 rounded-full flex items-center justify-center flex-shrink-0 text-espresso-700 font-semibold text-sm">
-              {currentUser?.displayName?.[0]?.toUpperCase() || 'A'}
+            <div className="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden bg-espresso-200 flex items-center justify-center">
+              {currentUser?.photoURL
+                ? <img src={currentUser.photoURL} alt="" className="w-full h-full object-cover" />
+                : <span className="text-espresso-700 font-semibold text-xs">{initials}</span>
+              }
             </div>
             {sidebarOpen && (
               <div className="flex-1 min-w-0">
@@ -93,23 +98,41 @@ export default function AdminLayout() {
               </div>
             )}
             {sidebarOpen && (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setSettingsOpen(true)}
+                  className="text-bark-400 hover:text-espresso-600 transition-colors"
+                  title="Account Settings"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="text-bark-400 hover:text-red-500 transition-colors"
+                  title="Logout"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+          {!sidebarOpen && (
+            <div className="flex flex-col gap-1 mt-2">
+              <button
+                onClick={() => setSettingsOpen(true)}
+                className="w-full flex items-center justify-center py-1.5 text-bark-400 hover:text-espresso-600 transition-colors"
+                title="Account Settings"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
               <button
                 onClick={handleLogout}
-                className="text-bark-400 hover:text-red-500 transition-colors"
+                className="w-full flex items-center justify-center py-1.5 text-bark-400 hover:text-red-500 transition-colors"
                 title="Logout"
               >
                 <LogOut className="w-4 h-4" />
               </button>
-            )}
-          </div>
-          {!sidebarOpen && (
-            <button
-              onClick={handleLogout}
-              className="w-full mt-2 flex items-center justify-center py-2 text-bark-400 hover:text-red-500 transition-colors"
-              title="Logout"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+            </div>
           )}
         </div>
       </aside>
@@ -118,6 +141,11 @@ export default function AdminLayout() {
       <main className="flex-1 overflow-y-auto">
         <Outlet />
       </main>
+
+      {/* Account Settings Modal */}
+      {settingsOpen && (
+        <AccountSettingsModal onClose={() => setSettingsOpen(false)} />
+      )}
     </div>
   );
 }

@@ -17,6 +17,9 @@ export default function StaffLayout() {
     }
   };
 
+  const initials = currentUser?.displayName
+    ?.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) || 'S';
+
   return (
     <div className="flex h-screen bg-espresso-50 overflow-hidden">
       {/* Sidebar */}
@@ -44,8 +47,12 @@ export default function StaffLayout() {
 
         <div className="p-3 border-t border-cream-100">
           <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-cream-50">
-            <div className="w-8 h-8 bg-espresso-200 rounded-full flex items-center justify-center text-espresso-700 font-semibold text-sm">
-              {currentUser?.displayName?.[0]?.toUpperCase() || 'S'}
+            {/* Avatar — shows photo if set, falls back to initials */}
+            <div className="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden bg-espresso-200 flex items-center justify-center">
+              {currentUser?.photoURL
+                ? <img src={currentUser.photoURL} alt="" className="w-full h-full object-cover" />
+                : <span className="text-espresso-700 font-semibold text-xs">{initials}</span>
+              }
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-espresso-800 truncate">{currentUser?.displayName}</p>
