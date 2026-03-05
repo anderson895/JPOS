@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import type { Order } from '@/types';
-import { format, startOfDay, endOfDay } from 'date-fns';
+import { format } from 'date-fns';
 import { ShoppingBag, TrendingUp, Coffee, Clock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -20,28 +20,34 @@ export default function StaffDashboard() {
     if (!currentUser) return;
     setLoading(true);
     try {
-      const today = new Date();
-      const start = startOfDay(today).toISOString();
-      const end = endOfDay(today).toISOString();
-
       const q = query(
         collection(db, 'orders'),
         where('cashierId', '==', currentUser.id),
-        where('createdAt', '>=', start),
-        where('createdAt', '<=', end),
-        orderBy('createdAt', 'desc')
       );
       const snap = await getDocs(q);
-      const orders = snap.docs.map(d => ({ id: d.id, ...d.data() } as Order));
-      setMyOrders(orders);
+      const allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() } as Order));
 
-      const completed = orders.filter(o => o.status === 'completed');
+      const todayStr = format(new Date(), 'yyyy-MM-dd');
+      const todayOrders = allOrders.filter(o => {
+        const raw = o.createdAt as any;
+        const iso = typeof raw === 'string' ? raw : raw?.toDate?.().toISOString() ?? '';
+        return iso.startsWith(todayStr);
+      });
+
+      const sorted = todayOrders.sort((a, b) => {
+        const toIso = (v: any) => typeof v === 'string' ? v : v?.toDate?.().toISOString() ?? '';
+        return toIso(b.createdAt) > toIso(a.createdAt) ? 1 : -1;
+      });
+
+      setMyOrders(sorted);
+
+      const completed = sorted.filter(o => o.status === 'completed');
       setTodayStats({
         sales: completed.reduce((s, o) => s + o.total, 0),
         orders: completed.length,
       });
     } catch (err) {
-      console.error(err);
+      console.error('[Dashboard] fetch error:', err);
     } finally {
       setLoading(false);
     }
@@ -61,7 +67,10 @@ export default function StaffDashboard() {
         <p className="text-espresso-200 text-sm font-body">{format(now, 'EEEE, MMMM d, yyyy')}</p>
         <h1 className="font-display text-3xl mt-1">{greeting}, {currentUser?.displayName?.split(' ')[0]}!</h1>
         <p className="text-espresso-200 mt-2 text-sm">Ready to serve some great coffee today?</p>
-        <Link to="/staff/pos" className="mt-4 inline-flex items-center gap-2 bg-white text-espresso-700 px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-cream-50 transition-colors">
+        <Link
+          to="/staff/pos"
+          className="mt-4 inline-flex items-center gap-2 bg-white text-espresso-700 px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-cream-50 transition-colors"
+        >
           <ShoppingBag className="w-4 h-4" />
           Start Taking Orders
         </Link>
@@ -116,13 +125,7 @@ export default function StaffDashboard() {
                   <p className="text-sm font-medium text-espresso-800">{order.orderNumber}</p>
                   <p className="text-xs text-bark-400">{formatDateTime(order.createdAt)}</p>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-semibold text-espresso-700">{formatCurrency(order.total)}</p>
-                  <span className={`badge text-xs ${
-                    order.status === 'completed' ? 'badge-success' :
-                    order.status === 'cancelled' ? 'badge-danger' : 'badge-warning'
-                  }`}>{order.status}</span>
-                </div>
+                <p className="text-sm font-semibold text-espresso-700">{formatCurrency(order.total)}</p>
               </div>
             ))}
           </div>

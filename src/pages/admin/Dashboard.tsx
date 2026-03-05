@@ -205,12 +205,7 @@ export default function AdminDashboard() {
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-semibold text-espresso-700">{formatCurrency(order.total)}</p>
-                  <span className={`badge text-xs ${
-                    order.status === 'completed' ? 'badge-success' :
-                    order.status === 'cancelled' ? 'badge-danger' : 'badge-warning'
-                  }`}>
-                    {order.status}
-                  </span>
+                  
                 </div>
               </div>
             ))}

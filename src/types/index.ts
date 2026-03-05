@@ -53,7 +53,7 @@ export interface OrderItem {
   subtotal: number;
 }
 
-export type OrderStatus = 'pending' | 'preparing' | 'ready' | 'completed' | 'cancelled';
+export type OrderStatus = 'pending' | 'preparing' | 'ready' | 'completed';
 export type PaymentMethod = 'cash' | 'card' | 'gcash' | 'maya';
 
 export interface Order {

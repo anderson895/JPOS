@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  collection, getDocs, addDoc, updateDoc, deleteDoc, doc, Timestamp
+  collection, getDocs, addDoc, updateDoc, deleteDoc, doc
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { uploadImage } from '@/lib/cloudinary';
 import { formatCurrency } from '@/lib/utils';
 import type { Product, Category } from '@/types';
 import {
-  Plus, Search, Edit2, Trash2, X, Upload, Coffee, Image,
-  ToggleLeft, ToggleRight, ChevronDown, Loader2, Tag
+  Plus, Search, Edit2, Trash2, X, Upload, Coffee,
+  ToggleLeft, ToggleRight, Loader2, Tag, Pencil
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -18,23 +18,25 @@ const defaultProduct: Omit<Product, 'id' | 'createdAt' | 'updatedAt'> = {
 };
 
 export default function AdminProducts() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [search, setSearch] = useState('');
-  const [filterCat, setFilterCat] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [products, setProducts]       = useState<Product[]>([]);
+  const [categories, setCategories]   = useState<Category[]>([]);
+  const [search, setSearch]           = useState('');
+  const [filterCat, setFilterCat]     = useState('');
+  const [loading, setLoading]         = useState(true);
+  const [modalOpen, setModalOpen]     = useState(false);
   const [editProduct, setEditProduct] = useState<Partial<Product>>(defaultProduct);
-  const [editId, setEditId] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [editId, setEditId]           = useState<string | null>(null);
+  const [saving, setSaving]           = useState(false);
   const [imgUploading, setImgUploading] = useState(false);
   const [catModalOpen, setCatModalOpen] = useState(false);
-  const [newCatName, setNewCatName] = useState('');
+  const [newCatName, setNewCatName]   = useState('');
+  // Category edit/delete state
+  const [editCatId, setEditCatId]     = useState<string | null>(null);
+  const [editCatName, setEditCatName] = useState('');
+  const [savingCat, setSavingCat]     = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    fetchAll();
-  }, []);
+  useEffect(() => { fetchAll(); }, []);
 
   async function fetchAll() {
     setLoading(true);
@@ -52,8 +54,7 @@ export default function AdminProducts() {
 
   async function handleSave() {
     if (!editProduct.name || !editProduct.price) {
-      toast.error('Name and price are required');
-      return;
+      toast.error('Name and price are required'); return;
     }
     setSaving(true);
     try {
@@ -125,38 +126,77 @@ export default function AdminProducts() {
     if (!newCatName.trim()) return;
     try {
       const docRef = await addDoc(collection(db, 'categories'), {
-        name: newCatName.trim(),
-        color: '#c46820',
-        icon: 'coffee',
+        name: newCatName.trim(), color: '#c46820', icon: 'coffee',
         createdAt: new Date().toISOString(),
       });
-      const newCat: Category = { id: docRef.id, name: newCatName.trim(), color: '#c46820', icon: 'coffee', createdAt: new Date().toISOString() };
+      const newCat: Category = {
+        id: docRef.id, name: newCatName.trim(), color: '#c46820',
+        icon: 'coffee', createdAt: new Date().toISOString(),
+      };
       setCategories(prev => [...prev, newCat]);
       setNewCatName('');
-      setCatModalOpen(false);
       toast.success('Category added');
     } catch {
       toast.error('Failed to add category');
     }
   }
 
+  function startEditCat(cat: Category) {
+    setEditCatId(cat.id);
+    setEditCatName(cat.name);
+  }
+
+  function cancelEditCat() {
+    setEditCatId(null);
+    setEditCatName('');
+  }
+
+  async function saveEditCat(id: string) {
+    if (!editCatName.trim()) return;
+    setSavingCat(true);
+    try {
+      await updateDoc(doc(db, 'categories', id), { name: editCatName.trim() });
+      setCategories(prev => prev.map(c => c.id === id ? { ...c, name: editCatName.trim() } : c));
+      // Also update categoryName on products that use this category
+      const affected = products.filter(p => p.categoryId === id);
+      await Promise.all(affected.map(p =>
+        updateDoc(doc(db, 'products', p.id), { categoryName: editCatName.trim() })
+      ));
+      setProducts(prev => prev.map(p =>
+        p.categoryId === id ? { ...p, categoryName: editCatName.trim() } : p
+      ));
+      setEditCatId(null);
+      toast.success('Category updated');
+    } catch {
+      toast.error('Failed to update category');
+    } finally {
+      setSavingCat(false);
+    }
+  }
+
+  async function deleteCategory(id: string) {
+    const inUse = products.some(p => p.categoryId === id);
+    if (inUse) {
+      toast.error('Cannot delete — category is used by products'); return;
+    }
+    if (!confirm('Delete this category?')) return;
+    try {
+      await deleteDoc(doc(db, 'categories', id));
+      setCategories(prev => prev.filter(c => c.id !== id));
+      toast.success('Category deleted');
+    } catch {
+      toast.error('Failed to delete category');
+    }
+  }
+
   const filtered = products.filter(p => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
-    const matchCat = !filterCat || p.categoryId === filterCat;
+    const matchCat    = !filterCat || p.categoryId === filterCat;
     return matchSearch && matchCat;
   });
 
-  function openEdit(p: Product) {
-    setEditProduct({ ...p });
-    setEditId(p.id);
-    setModalOpen(true);
-  }
-
-  function openNew() {
-    setEditProduct(defaultProduct);
-    setEditId(null);
-    setModalOpen(true);
-  }
+  function openEdit(p: Product) { setEditProduct({ ...p }); setEditId(p.id); setModalOpen(true); }
+  function openNew()             { setEditProduct(defaultProduct); setEditId(null); setModalOpen(true); }
 
   return (
     <div className="p-8 space-y-6 animate-fade-in">
@@ -179,22 +219,11 @@ export default function AdminProducts() {
       <div className="flex gap-3">
         <div className="relative flex-1 max-w-xs">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-bark-400" />
-          <input
-            className="input pl-9"
-            placeholder="Search products..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+          <input className="input pl-9" placeholder="Search products..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <select
-          className="input max-w-xs"
-          value={filterCat}
-          onChange={e => setFilterCat(e.target.value)}
-        >
+        <select className="input max-w-xs" value={filterCat} onChange={e => setFilterCat(e.target.value)}>
           <option value="">All Categories</option>
-          {categories.map(c => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
+          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </div>
 
@@ -220,24 +249,15 @@ export default function AdminProducts() {
           {filtered.map(p => (
             <div key={p.id} className={`card overflow-hidden group hover:shadow-md transition-all duration-200 ${!p.isAvailable ? 'opacity-60' : ''}`}>
               <div className="relative h-36 bg-cream-100">
-                {p.imageUrl ? (
-                  <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <Coffee className="w-10 h-10 text-cream-400" />
-                  </div>
-                )}
+                {p.imageUrl
+                  ? <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
+                  : <div className="w-full h-full flex items-center justify-center"><Coffee className="w-10 h-10 text-cream-400" /></div>
+                }
                 <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={() => openEdit(p)}
-                    className="w-7 h-7 bg-white/90 rounded-lg flex items-center justify-center shadow-sm hover:bg-white"
-                  >
+                  <button onClick={() => openEdit(p)} className="w-7 h-7 bg-white/90 rounded-lg flex items-center justify-center shadow-sm hover:bg-white">
                     <Edit2 className="w-3.5 h-3.5 text-espresso-700" />
                   </button>
-                  <button
-                    onClick={() => handleDelete(p.id)}
-                    className="w-7 h-7 bg-white/90 rounded-lg flex items-center justify-center shadow-sm hover:bg-red-50"
-                  >
+                  <button onClick={() => handleDelete(p.id)} className="w-7 h-7 bg-white/90 rounded-lg flex items-center justify-center shadow-sm hover:bg-red-50">
                     <Trash2 className="w-3.5 h-3.5 text-red-500" />
                   </button>
                 </div>
@@ -255,8 +275,7 @@ export default function AdminProducts() {
                   <button onClick={() => handleToggleAvail(p)}>
                     {p.isAvailable
                       ? <ToggleRight className="w-5 h-5 text-emerald-500" />
-                      : <ToggleLeft className="w-5 h-5 text-bark-400" />
-                    }
+                      : <ToggleLeft  className="w-5 h-5 text-bark-400" />}
                   </button>
                 </div>
               </div>
@@ -271,9 +290,7 @@ export default function AdminProducts() {
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-cream-100">
               <h2 className="font-display text-xl text-espresso-900">{editId ? 'Edit Product' : 'Add Product'}</h2>
-              <button onClick={() => setModalOpen(false)} className="text-bark-400 hover:text-bark-700">
-                <X className="w-5 h-5" />
-              </button>
+              <button onClick={() => setModalOpen(false)} className="text-bark-400 hover:text-bark-700"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
               {/* Image Upload */}
@@ -283,97 +300,56 @@ export default function AdminProducts() {
                   className="w-full h-36 bg-cream-50 border-2 border-dashed border-cream-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-cream-100 transition-colors relative overflow-hidden"
                   onClick={() => fileRef.current?.click()}
                 >
-                  {editProduct.imageUrl ? (
-                    <img src={editProduct.imageUrl} alt="Preview" className="w-full h-full object-cover" />
-                  ) : imgUploading ? (
-                    <Loader2 className="w-8 h-8 text-bark-400 animate-spin" />
-                  ) : (
-                    <>
-                      <Upload className="w-6 h-6 text-bark-400 mb-1" />
-                      <p className="text-xs text-bark-400">Click to upload image</p>
-                    </>
-                  )}
+                  {editProduct.imageUrl
+                    ? <img src={editProduct.imageUrl} alt="Preview" className="w-full h-full object-cover" />
+                    : imgUploading
+                      ? <Loader2 className="w-8 h-8 text-bark-400 animate-spin" />
+                      : <><Upload className="w-6 h-6 text-bark-400 mb-1" /><p className="text-xs text-bark-400">Click to upload image</p></>
+                  }
                 </div>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={e => e.target.files?.[0] && handleImageUpload(e.target.files[0])}
-                />
+                <input ref={fileRef} type="file" accept="image/*" className="hidden"
+                  onChange={e => e.target.files?.[0] && handleImageUpload(e.target.files[0])} />
               </div>
-
               <div>
                 <label className="label">Product Name *</label>
-                <input
-                  className="input"
-                  placeholder="e.g., Iced Caramel Latte"
+                <input className="input" placeholder="e.g., Iced Caramel Latte"
                   value={editProduct.name || ''}
-                  onChange={e => setEditProduct(p => ({ ...p, name: e.target.value }))}
-                />
+                  onChange={e => setEditProduct(p => ({ ...p, name: e.target.value }))} />
               </div>
-
               <div>
                 <label className="label">Description</label>
-                <textarea
-                  className="input resize-none"
-                  rows={2}
-                  placeholder="Brief description..."
+                <textarea className="input resize-none" rows={2} placeholder="Brief description..."
                   value={editProduct.description || ''}
-                  onChange={e => setEditProduct(p => ({ ...p, description: e.target.value }))}
-                />
+                  onChange={e => setEditProduct(p => ({ ...p, description: e.target.value }))} />
               </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="label">Price (₱) *</label>
-                  <input
-                    className="input"
-                    type="number"
-                    min="0"
-                    step="0.01"
+                  <input className="input" type="number" min="0" step="0.01"
                     value={editProduct.price || ''}
-                    onChange={e => setEditProduct(p => ({ ...p, price: Number(e.target.value) }))}
-                  />
+                    onChange={e => setEditProduct(p => ({ ...p, price: Number(e.target.value) }))} />
                 </div>
                 <div>
                   <label className="label">Cost (₱)</label>
-                  <input
-                    className="input"
-                    type="number"
-                    min="0"
-                    step="0.01"
+                  <input className="input" type="number" min="0" step="0.01"
                     value={editProduct.cost || ''}
-                    onChange={e => setEditProduct(p => ({ ...p, cost: Number(e.target.value) }))}
-                  />
+                    onChange={e => setEditProduct(p => ({ ...p, cost: Number(e.target.value) }))} />
                 </div>
               </div>
-
               <div>
                 <label className="label">Category</label>
-                <select
-                  className="input"
-                  value={editProduct.categoryId || ''}
-                  onChange={e => setEditProduct(p => ({ ...p, categoryId: e.target.value }))}
-                >
+                <select className="input" value={editProduct.categoryId || ''}
+                  onChange={e => setEditProduct(p => ({ ...p, categoryId: e.target.value }))}>
                   <option value="">Select category...</option>
-                  {categories.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
-
               <div className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  id="available"
+                <input type="checkbox" id="available"
                   checked={editProduct.isAvailable ?? true}
                   onChange={e => setEditProduct(p => ({ ...p, isAvailable: e.target.checked }))}
-                  className="w-4 h-4 accent-espresso-600"
-                />
-                <label htmlFor="available" className="text-sm text-espresso-700 cursor-pointer">
-                  Available for sale
-                </label>
+                  className="w-4 h-4 accent-espresso-600" />
+                <label htmlFor="available" className="text-sm text-espresso-700 cursor-pointer">Available for sale</label>
               </div>
             </div>
             <div className="flex gap-3 p-6 border-t border-cream-100">
@@ -393,17 +369,71 @@ export default function AdminProducts() {
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-xl text-espresso-900">Categories</h2>
-              <button onClick={() => setCatModalOpen(false)}><X className="w-5 h-5 text-bark-400" /></button>
+              <button onClick={() => { setCatModalOpen(false); cancelEditCat(); }}>
+                <X className="w-5 h-5 text-bark-400" />
+              </button>
             </div>
-            <div className="space-y-2 mb-4 max-h-48 overflow-y-auto">
+
+            {/* Category list */}
+            <div className="space-y-2 mb-4 max-h-56 overflow-y-auto">
+              {categories.length === 0 && (
+                <p className="text-sm text-bark-400 text-center py-4">No categories yet</p>
+              )}
               {categories.map(c => (
-                <div key={c.id} className="flex items-center gap-3 px-3 py-2 bg-cream-50 rounded-xl">
-                  <div className="w-3 h-3 rounded-full bg-espresso-400" />
-                  <span className="text-sm text-espresso-800">{c.name}</span>
+                <div key={c.id} className="flex items-center gap-2 px-3 py-2 bg-cream-50 rounded-xl group">
+                  {editCatId === c.id ? (
+                    /* ── Inline edit row ── */
+                    <>
+                      <input
+                        autoFocus
+                        className="input flex-1 py-1 text-sm"
+                        value={editCatName}
+                        onChange={e => setEditCatName(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') saveEditCat(c.id);
+                          if (e.key === 'Escape') cancelEditCat();
+                        }}
+                      />
+                      <button
+                        onClick={() => saveEditCat(c.id)}
+                        disabled={savingCat}
+                        className="text-xs px-2 py-1 bg-espresso-600 text-white rounded-lg hover:bg-espresso-700 disabled:opacity-50"
+                      >
+                        {savingCat ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Save'}
+                      </button>
+                      <button onClick={cancelEditCat} className="text-bark-400 hover:text-bark-700">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </>
+                  ) : (
+                    /* ── Normal row ── */
+                    <>
+                      <div className="w-2.5 h-2.5 rounded-full bg-espresso-400 shrink-0" />
+                      <span className="text-sm text-espresso-800 flex-1 truncate">{c.name}</span>
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => startEditCat(c)}
+                          className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-cream-200"
+                          title="Edit category"
+                        >
+                          <Pencil className="w-3.5 h-3.5 text-espresso-600" />
+                        </button>
+                        <button
+                          onClick={() => deleteCategory(c.id)}
+                          className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-red-50"
+                          title="Delete category"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               ))}
             </div>
-            <div className="flex gap-2">
+
+            {/* Add new category */}
+            <div className="flex gap-2 pt-3 border-t border-cream-100">
               <input
                 className="input flex-1"
                 placeholder="New category name..."
