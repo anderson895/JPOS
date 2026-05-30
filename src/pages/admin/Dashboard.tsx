@@ -104,15 +104,15 @@ export default function AdminDashboard() {
 
   if (loading) {
     return (
-      <div className="p-8 animate-pulse space-y-6">
+      <div className="p-4 sm:p-6 lg:p-8 animate-pulse space-y-6">
         <div className="h-8 bg-cream-200 rounded-xl w-48" />
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {[...Array(3)].map((_, i) => (
             <div key={i} className="h-28 bg-cream-200 rounded-2xl" />
           ))}
         </div>
-        <div className="grid grid-cols-3 gap-6">
-          <div className="col-span-2 h-72 bg-cream-200 rounded-2xl" />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 h-72 bg-cream-200 rounded-2xl" />
           <div className="h-72 bg-cream-200 rounded-2xl" />
         </div>
         <div className="h-64 bg-cream-200 rounded-2xl" />
@@ -121,10 +121,10 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="p-8 space-y-8 animate-fade-in">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 animate-fade-in">
       {/* Header */}
       <div>
-        <h1 className="font-display text-3xl text-espresso-900">Dashboard</h1>
+        <h1 className="font-display text-2xl sm:text-3xl text-espresso-900">Dashboard</h1>
         <p className="text-bark-500 text-sm mt-1">{format(new Date(), 'EEEE, MMMM d, yyyy')}</p>
       </div>
 

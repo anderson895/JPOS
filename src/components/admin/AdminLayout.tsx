@@ -19,7 +19,10 @@ const navItems = [
 export default function AdminLayout() {
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
-  const [sidebarOpen, setSidebarOpen]   = useState(true);
+  // Desktop-only collapse (icon rail). On mobile the sidebar is always full width.
+  const [collapsed, setCollapsed]       = useState(false);
+  // Mobile drawer open/closed.
+  const [mobileOpen, setMobileOpen]     = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const initials = currentUser?.displayName
@@ -35,33 +38,58 @@ export default function AdminLayout() {
     }
   };
 
+  // Labels/extras are hidden only when the desktop rail is collapsed.
+  // On mobile the drawer always shows the expanded layout.
+  const showLabels = !collapsed;
+
   return (
     <div className="flex h-screen bg-espresso-50 overflow-hidden">
-      {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} transition-all duration-300 flex-shrink-0 bg-white border-r border-cream-200 flex flex-col shadow-sm`}>
+      {/* Mobile backdrop */}
+      {mobileOpen && (
+        <div
+          onClick={() => setMobileOpen(false)}
+          className="drawer-backdrop"
+        />
+      )}
+
+      {/* Sidebar — static on desktop, slide-in drawer on mobile */}
+      <aside
+        className={`
+          fixed inset-y-0 left-0 z-40 w-64 lg:static lg:z-auto
+          ${collapsed ? 'lg:w-20' : 'lg:w-64'}
+          ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0
+          transition-all duration-300 flex-shrink-0 bg-white border-r border-cream-200 flex flex-col shadow-sm
+        `}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-5 border-b border-cream-100">
-          {sidebarOpen && (
+          {showLabels ? (
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-espresso-600 rounded-xl flex items-center justify-center flex-shrink-0">
-                <Coffee className="w-5 h-5 text-cream-50" />
-              </div>
+              <img src="/coffeelogo.png" alt="JPOS" className="w-9 h-9 rounded-xl object-cover flex-shrink-0" />
               <div>
                 <h1 className="font-display text-lg text-espresso-900 leading-tight">JPOS</h1>
                 <span className="text-xs text-bark-400 font-body">Admin Panel</span>
               </div>
             </div>
+          ) : (
+            <img src="/coffeelogo.png" alt="JPOS" className="w-9 h-9 rounded-xl object-cover mx-auto" />
           )}
-          {!sidebarOpen && (
-            <div className="w-9 h-9 bg-espresso-600 rounded-xl flex items-center justify-center mx-auto">
-              <Coffee className="w-5 h-5 text-cream-50" />
-            </div>
-          )}
+
+          {/* Desktop collapse toggle */}
           <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="text-bark-400 hover:text-espresso-600 transition-colors ml-auto"
+            onClick={() => setCollapsed(!collapsed)}
+            className="hidden lg:block text-bark-400 hover:text-espresso-600 transition-colors ml-auto"
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            {sidebarOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+            {collapsed ? <Menu className="w-4 h-4" /> : <X className="w-4 h-4" />}
+          </button>
+          {/* Mobile close */}
+          <button
+            onClick={() => setMobileOpen(false)}
+            className="lg:hidden text-bark-400 hover:text-espresso-600 transition-colors"
+            title="Close menu"
+          >
+            <X className="w-5 h-5" />
           </button>
         </div>
 
@@ -70,34 +98,35 @@ export default function AdminLayout() {
           {navItems.map(({ to, icon: Icon, label, end }) => (
             <NavLink
               key={to} to={to} end={end}
+              onClick={() => setMobileOpen(false)}
               className={({ isActive }) =>
-                `sidebar-link ${isActive ? 'active' : ''} ${!sidebarOpen ? 'justify-center px-2' : ''}`
+                `sidebar-link ${isActive ? 'active' : ''} ${!showLabels ? 'lg:justify-center lg:px-2' : ''}`
               }
-              title={!sidebarOpen ? label : undefined}
+              title={!showLabels ? label : undefined}
             >
               <Icon className="w-5 h-5 flex-shrink-0" />
-              {sidebarOpen && <span>{label}</span>}
-              {sidebarOpen && <ChevronRight className="w-3 h-3 ml-auto opacity-40" />}
+              {showLabels && <span>{label}</span>}
+              {showLabels && <ChevronRight className="w-3 h-3 ml-auto opacity-40" />}
             </NavLink>
           ))}
         </nav>
 
         {/* User */}
         <div className="p-3 border-t border-cream-100">
-          <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl bg-cream-50 ${!sidebarOpen ? 'justify-center' : ''}`}>
+          <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl bg-cream-50 ${!showLabels ? 'lg:justify-center' : ''}`}>
             <div className="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden bg-espresso-200 flex items-center justify-center">
               {currentUser?.photoURL
                 ? <img src={currentUser.photoURL} alt="" className="w-full h-full object-cover" />
                 : <span className="text-espresso-700 font-semibold text-xs">{initials}</span>
               }
             </div>
-            {sidebarOpen && (
+            {showLabels && (
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-espresso-800 truncate">{currentUser?.displayName}</p>
                 <p className="text-xs text-bark-400 capitalize">{currentUser?.role}</p>
               </div>
             )}
-            {sidebarOpen && (
+            {showLabels && (
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => setSettingsOpen(true)}
@@ -116,8 +145,8 @@ export default function AdminLayout() {
               </div>
             )}
           </div>
-          {!sidebarOpen && (
-            <div className="flex flex-col gap-1 mt-2">
+          {!showLabels && (
+            <div className="hidden lg:flex flex-col gap-1 mt-2">
               <button
                 onClick={() => setSettingsOpen(true)}
                 className="w-full flex items-center justify-center py-1.5 text-bark-400 hover:text-espresso-600 transition-colors"
@@ -137,10 +166,27 @@ export default function AdminLayout() {
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto">
-        <Outlet />
-      </main>
+      {/* Main column */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Mobile top bar */}
+        <header className="lg:hidden flex items-center gap-3 px-4 h-14 bg-white border-b border-cream-200 flex-shrink-0">
+          <button
+            onClick={() => setMobileOpen(true)}
+            className="text-bark-500 hover:text-espresso-600 transition-colors"
+            title="Open menu"
+          >
+            <Menu className="w-6 h-6" />
+          </button>
+          <div className="flex items-center gap-2">
+            <img src="/coffeelogo.png" alt="JPOS" className="w-8 h-8 rounded-lg object-cover" />
+            <span className="font-display text-lg text-espresso-900">JPOS</span>
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-y-auto">
+          <Outlet />
+        </main>
+      </div>
 
       {/* Account Settings Modal */}
       {settingsOpen && (

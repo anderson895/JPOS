@@ -58,14 +58,14 @@ export default function StaffDashboard() {
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
   return (
-    <div className="p-8 space-y-8 animate-fade-in">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 animate-fade-in">
       {/* Greeting */}
-      <div className="bg-gradient-to-r from-espresso-700 to-espresso-600 rounded-3xl p-8 text-white relative overflow-hidden">
+      <div className="bg-gradient-to-r from-espresso-700 to-espresso-600 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden">
         <div className="absolute right-6 top-6 opacity-20">
-          <Coffee className="w-24 h-24" />
+          <Coffee className="w-20 h-20 sm:w-24 sm:h-24" />
         </div>
         <p className="text-espresso-200 text-sm font-body">{format(now, 'EEEE, MMMM d, yyyy')}</p>
-        <h1 className="font-display text-3xl mt-1">{greeting}, {currentUser?.displayName?.split(' ')[0]}!</h1>
+        <h1 className="font-display text-2xl sm:text-3xl mt-1">{greeting}, {currentUser?.displayName?.split(' ')[0]}!</h1>
         <p className="text-espresso-200 mt-2 text-sm">Ready to serve some great coffee today?</p>
         <Link
           to="/staff/pos"

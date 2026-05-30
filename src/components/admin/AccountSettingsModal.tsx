@@ -7,6 +7,7 @@ import {
 import { db, auth } from '@/lib/firebase';
 import { uploadImage } from '@/lib/cloudinary';
 import { useAuth } from '@/contexts/AuthContext';
+import Portal from '@/components/shared/Portal';
 import { X, User, Lock, Camera, Loader2, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -111,7 +112,8 @@ export default function AccountSettingsModal({ onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+    <Portal>
+    <div className="modal-backdrop">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
 
         {/* Header */}
@@ -260,5 +262,6 @@ export default function AccountSettingsModal({ onClose }: Props) {
         </div>
       </div>
     </div>
+    </Portal>
   );
 }

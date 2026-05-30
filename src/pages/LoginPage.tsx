@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { Coffee, CreditCard, KeyRound, Eye, EyeOff, Loader2, Wifi } from 'lucide-react';
+import { getAuthErrorMessage } from '@/lib/authErrors';
+import { CreditCard, KeyRound, Eye, EyeOff, Loader2, Wifi } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function LoginPage() {
@@ -12,48 +13,55 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [rfidInput, setRfidInput] = useState('');
   const rfidRef = useRef<HTMLInputElement>(null);
-  const rfidBuffer = useRef('');
-  const rfidTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadingRef = useRef(false);
 
-  // RFID scan listener - captures rapid keyboard input
+  // Keep loadingRef in sync so the focus loop / handlers can read it without re-binding
+  useEffect(() => { loadingRef.current = loading; }, [loading]);
+
+  // Keep the RFID capture input focused the whole time we're in RFID mode.
+  // An RFID reader behaves like a keyboard: it types the tag into whatever is
+  // focused, then presses Enter. By owning focus we reliably capture the scan.
   useEffect(() => {
     if (mode !== 'rfid') return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Enter') {
-        if (rfidBuffer.current.length > 4) {
-          handleRFIDScan(rfidBuffer.current);
-        }
-        rfidBuffer.current = '';
-        return;
-      }
-      if (e.key.length === 1) {
-        rfidBuffer.current += e.key;
-        if (rfidTimer.current) clearTimeout(rfidTimer.current);
-        rfidTimer.current = setTimeout(() => {
-          if (rfidBuffer.current.length > 4) {
-            handleRFIDScan(rfidBuffer.current);
-          }
-          rfidBuffer.current = '';
-        }, 300);
+    const focusInput = () => {
+      if (!loadingRef.current && document.activeElement !== rfidRef.current) {
+        rfidRef.current?.focus();
       }
     };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    focusInput();
+    const interval = setInterval(focusInput, 300);
+    return () => {
+      clearInterval(interval);
+      if (idleTimer.current) clearTimeout(idleTimer.current);
+    };
   }, [mode]);
 
-  const handleRFIDScan = async (tag: string) => {
+  const handleRFIDScan = async (raw: string) => {
+    const tag = raw.trim();
+    if (!tag || loadingRef.current) return;
+    if (idleTimer.current) { clearTimeout(idleTimer.current); idleTimer.current = null; }
     setRfidInput(tag);
     setLoading(true);
     try {
       await loginWithRFID(tag);
       toast.success('Welcome back!');
-    } catch (err: any) {
-      toast.error(err.message || 'RFID not recognized');
+    } catch (err) {
+      toast.error(getAuthErrorMessage(err, 'RFID card not recognized'));
       setRfidInput('');
+      if (rfidRef.current) rfidRef.current.value = '';
+      rfidRef.current?.focus();
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Fires while the reader is typing. Most readers append Enter (handled in
+  // onKeyDown); this idle-timer is a fallback for readers that don't.
+  const handleRFIDInput = (value: string) => {
+    if (idleTimer.current) clearTimeout(idleTimer.current);
+    if (value.trim().length >= 4) {
+      idleTimer.current = setTimeout(() => handleRFIDScan(value), 350);
     }
   };
 
@@ -64,8 +72,8 @@ export default function LoginPage() {
     try {
       await login(email, password);
       toast.success('Welcome back!');
-    } catch (err: any) {
-      toast.error(err.message || 'Invalid credentials');
+    } catch (err) {
+      toast.error(getAuthErrorMessage(err, 'Invalid email or password'));
     } finally {
       setLoading(false);
     }
@@ -98,9 +106,7 @@ export default function LoginPage() {
       <div className="relative z-10 w-full max-w-md px-6">
         {/* Logo */}
         <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-espresso-600 rounded-3xl mb-4 shadow-2xl shadow-espresso-900/50">
-            <Coffee className="w-10 h-10 text-cream-100" />
-          </div>
+          <img src="/coffeelogo.png" alt="JPOS" className="inline-block w-20 h-20 rounded-3xl object-cover mb-4 shadow-2xl shadow-espresso-900/50" />
           <h1 className="font-display text-4xl text-cream-100 tracking-tight">JPOS</h1>
           <p className="text-bark-400 font-body mt-1 text-sm">Coffee Shop Point of Sale</p>
         </div>
@@ -177,9 +183,14 @@ export default function LoginPage() {
             </form>
           ) : (
             <div className="text-center py-8">
-              <div className={`w-32 h-32 mx-auto mb-6 rounded-3xl bg-espresso-950/60 border-2 border-dashed flex flex-col items-center justify-center transition-all ${
-                loading ? 'border-espresso-400 rfid-pulse' : 'border-espresso-700'
-              }`}>
+              {/* Clicking the card area re-focuses the capture input */}
+              <button
+                type="button"
+                onClick={() => rfidRef.current?.focus()}
+                className={`w-32 h-32 mx-auto mb-6 rounded-3xl bg-espresso-950/60 border-2 border-dashed flex flex-col items-center justify-center transition-all ${
+                  loading ? 'border-espresso-400 rfid-pulse' : 'border-espresso-700 hover:border-espresso-500'
+                }`}
+              >
                 {loading ? (
                   <Loader2 className="w-12 h-12 text-espresso-400 animate-spin" />
                 ) : (
@@ -188,7 +199,7 @@ export default function LoginPage() {
                     <Wifi className="w-5 h-5 text-espresso-600" />
                   </>
                 )}
-              </div>
+              </button>
               <h3 className="text-cream-100 font-medium text-lg mb-1">
                 {loading ? 'Authenticating...' : 'Tap Your RFID Card'}
               </h3>
@@ -196,30 +207,39 @@ export default function LoginPage() {
                 {loading ? `Reading: ${rfidInput}` : 'Hold your card near the reader'}
               </p>
 
-              {/* Manual RFID input for testing */}
+              {/* Capture input — always focused while in RFID mode so the reader
+                  types straight into it. Also usable for manual entry/testing. */}
               <div className="mt-6 pt-6 border-t border-espresso-800">
-                <p className="text-bark-600 text-xs mb-3">Or enter RFID tag manually (testing)</p>
+                <p className="text-bark-600 text-xs mb-3">Tap a card, or type the tag and press Enter</p>
                 <div className="flex gap-2">
                   <input
                     ref={rfidRef}
                     type="text"
-                    placeholder="RFID tag..."
+                    autoFocus
+                    disabled={loading}
+                    placeholder="Waiting for card..."
+                    onChange={e => handleRFIDInput(e.target.value)}
                     onKeyDown={e => {
                       if (e.key === 'Enter' && rfidRef.current?.value) {
-                        handleRFIDScan(rfidRef.current.value);
+                        e.preventDefault();
+                        const val = rfidRef.current.value;
                         rfidRef.current.value = '';
+                        handleRFIDScan(val);
                       }
                     }}
-                    className="flex-1 px-3 py-2 bg-espresso-950/60 border border-espresso-700 rounded-lg text-cream-100 placeholder-bark-600 text-sm focus:outline-none focus:ring-1 focus:ring-espresso-500"
+                    className="flex-1 px-3 py-2 bg-espresso-950/60 border border-espresso-700 rounded-lg text-cream-100 placeholder-bark-600 text-sm focus:outline-none focus:ring-1 focus:ring-espresso-500 disabled:opacity-60"
                   />
                   <button
+                    type="button"
+                    disabled={loading}
                     onClick={() => {
                       if (rfidRef.current?.value) {
-                        handleRFIDScan(rfidRef.current.value);
+                        const val = rfidRef.current.value;
                         rfidRef.current.value = '';
+                        handleRFIDScan(val);
                       }
                     }}
-                    className="px-4 py-2 bg-espresso-700 text-cream-200 rounded-lg text-sm hover:bg-espresso-600 transition-colors"
+                    className="px-4 py-2 bg-espresso-700 text-cream-200 rounded-lg text-sm hover:bg-espresso-600 transition-colors disabled:opacity-60"
                   >
                     Scan
                   </button>

@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { collection, getDocs, updateDoc, deleteDoc, doc, setDoc } from 'firebase/firestore';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { auth, db } from '@/lib/firebase';
+import { FirebaseError } from 'firebase/app';
+import { db, createUserWithoutSignIn, verifyCredentials } from '@/lib/firebase';
+import { getAuthErrorMessage } from '@/lib/authErrors';
 import { uploadImage } from '@/lib/cloudinary';
+import Portal from '@/components/shared/Portal';
 import type { Staff } from '@/types';
 import {
   Plus, Search, Edit2, Trash2, X, User, Shield,
@@ -54,14 +56,17 @@ export default function AdminStaff() {
   }
 
   async function handleSave() {
-    if (!editStaff.displayName || !editStaff.email) {
+    if (!editStaff.displayName?.trim() || !editStaff.email?.trim()) {
       toast.error('Name and email are required'); return;
+    }
+    if (!editId && (!editStaff.password || editStaff.password.length < 6)) {
+      toast.error('Password must be at least 6 characters'); return;
     }
     setSaving(true);
     try {
       const data: Partial<Staff> = {
-        displayName: editStaff.displayName,
-        email: editStaff.email,
+        displayName: editStaff.displayName.trim(),
+        email: editStaff.email.trim(),
         role: editStaff.role,
         isActive: editStaff.isActive ?? true,
         rfidTag: editStaff.rfidTag || '',
@@ -69,10 +74,25 @@ export default function AdminStaff() {
         updatedAt: new Date().toISOString(),
       };
       if (editId) {
+        if (editStaff.rfidTag && editStaff.rfidPassword) {
+          // Confirm the password really matches this staff's login BEFORE
+          // saving the card, so the RFID card can never hold a wrong password.
+          try {
+            await verifyCredentials(editStaff.email!.trim(), editStaff.rfidPassword);
+          } catch (err) {
+            if (err instanceof FirebaseError && err.code === 'auth/too-many-requests') {
+              toast.error('Too many attempts. Please wait a few minutes, then try again.');
+            } else {
+              toast.error("That password doesn't match this staff's login. Enter their exact account password.");
+            }
+            setSaving(false);
+            return;
+          }
+        }
         await updateDoc(doc(db, 'users', editId), data);
         if (editStaff.rfidTag && editStaff.rfidPassword) {
           await setDoc(doc(db, 'rfidCards', editStaff.rfidTag.trim()), {
-            email: editStaff.email,
+            email: editStaff.email!.trim(),
             password: editStaff.rfidPassword,
             userId: editId,
             staffName: editStaff.displayName,
@@ -83,14 +103,14 @@ export default function AdminStaff() {
           toast.success('Staff updated');
         }
       } else {
-        if (!editStaff.password) { toast.error('Password is required'); setSaving(false); return; }
-        const cred = await createUserWithEmailAndPassword(auth, editStaff.email!, editStaff.password);
-        await setDoc(doc(db, 'users', cred.user.uid), { ...data, createdAt: new Date().toISOString() });
+        // Create the account on a secondary app so the admin stays logged in.
+        const newUid = await createUserWithoutSignIn(editStaff.email!.trim(), editStaff.password!);
+        await setDoc(doc(db, 'users', newUid), { ...data, createdAt: new Date().toISOString() });
         if (editStaff.rfidTag) {
           await setDoc(doc(db, 'rfidCards', editStaff.rfidTag.trim()), {
-            email: editStaff.email,
+            email: editStaff.email!.trim(),
             password: editStaff.password,
-            userId: cred.user.uid,
+            userId: newUid,
             staffName: editStaff.displayName,
             createdAt: new Date().toISOString(),
           });
@@ -101,17 +121,22 @@ export default function AdminStaff() {
       setEditId(null);
       setEditStaff(defaultStaff);
       fetchStaff();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to save');
+    } catch (err) {
+      toast.error(getAuthErrorMessage(err, 'Failed to save staff'));
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Delete this staff member?')) return;
+    const member = staff.find(s => s.id === id);
+    if (!confirm('Delete this staff member? They will lose access immediately and their RFID card will stop working.')) return;
     try {
       await deleteDoc(doc(db, 'users', id));
+      // Also remove their RFID card so a deleted staff can't tap in.
+      if (member?.rfidTag) {
+        try { await deleteDoc(doc(db, 'rfidCards', member.rfidTag.trim())); } catch { /* card already gone */ }
+      }
       setStaff(prev => prev.filter(s => s.id !== id));
       toast.success('Staff deleted');
     } catch { toast.error('Failed to delete'); }
@@ -139,18 +164,18 @@ export default function AdminStaff() {
     : '?';
 
   return (
-    <div className="p-8 space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 animate-fade-in">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-3xl text-espresso-900">Staff Management</h1>
+          <h1 className="font-display text-2xl sm:text-3xl text-espresso-900">Staff Management</h1>
           <p className="text-bark-500 text-sm mt-0.5">{staff.length} total accounts</p>
         </div>
-        <button onClick={openAdd} className="btn-primary flex items-center gap-2">
+        <button onClick={openAdd} className="btn-primary flex items-center justify-center gap-2">
           <Plus className="w-4 h-4" /> Add Staff
         </button>
       </div>
 
-      <div className="relative max-w-xs">
+      <div className="relative sm:max-w-xs">
         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-bark-400" />
         <input className="input pl-9" placeholder="Search staff..." value={search} onChange={e => setSearch(e.target.value)} />
       </div>
@@ -199,7 +224,8 @@ export default function AdminStaff() {
 
       {/* ── Modal ── */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <Portal>
+        <div className="modal-backdrop">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-cream-100">
               <h2 className="font-display text-xl text-espresso-900">{editId ? 'Edit Staff' : 'Add Staff'}</h2>
@@ -295,8 +321,8 @@ export default function AdminStaff() {
                 {editId && editStaff.rfidTag && (
                   <div>
                     <label className="label">
-                      Staff Password
-                      <span className="text-bark-400 font-normal ml-1">(required to enable RFID login)</span>
+                      Staff Login Password
+                      <span className="text-bark-400 font-normal ml-1">(their exact account password)</span>
                     </label>
                     <div className="relative">
                       <input className="input pr-10" type={showRfidPass ? 'text' : 'password'}
@@ -308,7 +334,7 @@ export default function AdminStaff() {
                         {showRfidPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
-                    <p className="text-xs text-bark-400 mt-1">Leave blank to keep existing RFID credentials unchanged.</p>
+                    <p className="text-xs text-bark-400 mt-1">Must match the staff's login password. Leave blank to keep existing RFID credentials unchanged.</p>
                   </div>
                 )}
                 {!editId && editStaff.rfidTag && editStaff.password && (
@@ -338,6 +364,7 @@ export default function AdminStaff() {
             </div>
           </div>
         </div>
+        </Portal>
       )}
     </div>
   );

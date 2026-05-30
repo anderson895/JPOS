@@ -335,16 +335,16 @@ export default function AdminReports() {
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="p-8 space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 animate-fade-in">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-3xl text-espresso-900">Reports</h1>
+          <h1 className="font-display text-2xl sm:text-3xl text-espresso-900">Reports</h1>
           <p className="text-bark-500 text-sm mt-0.5">Sales analytics & insights</p>
         </div>
         <button
           onClick={downloadPDF}
           disabled={pdfLoading || loading}
-          className="btn-primary flex items-center gap-2 disabled:opacity-60"
+          className="btn-primary flex items-center justify-center gap-2 disabled:opacity-60"
         >
           {pdfLoading
             ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</>
@@ -373,7 +373,7 @@ export default function AdminReports() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
           { label: 'Total Revenue',  value: formatCurrency(totalSales), icon: TrendingUp, color: 'bg-espresso-600' },
           { label: 'Total Orders',   value: totalOrders.toString(),     icon: ShoppingBag, color: 'bg-amber-500' },
@@ -437,7 +437,8 @@ export default function AdminReports() {
         {topProducts.length === 0 ? (
           <p className="text-center py-8 text-bark-400 text-sm">No product data available</p>
         ) : (
-          <table className="w-full">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[480px]">
             <thead><tr>
               <th className="table-header">#</th>
               <th className="table-header">Product</th>
@@ -464,6 +465,7 @@ export default function AdminReports() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -471,7 +473,7 @@ export default function AdminReports() {
       <div className="card p-6">
         <h2 className="font-display text-lg text-espresso-800 mb-4">Order Details</h2>
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full min-w-[640px]">
             <thead><tr>
               <th className="table-header">Order #</th>
               <th className="table-header">Date</th>

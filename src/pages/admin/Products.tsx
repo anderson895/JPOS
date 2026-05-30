@@ -5,6 +5,7 @@ import {
 import { db } from '@/lib/firebase';
 import { uploadImage } from '@/lib/cloudinary';
 import { formatCurrency } from '@/lib/utils';
+import Portal from '@/components/shared/Portal';
 import type { Product, Category } from '@/types';
 import {
   Plus, Search, Edit2, Trash2, X, Upload, Coffee,
@@ -199,29 +200,29 @@ export default function AdminProducts() {
   function openNew()             { setEditProduct(defaultProduct); setEditId(null); setModalOpen(true); }
 
   return (
-    <div className="p-8 space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 animate-fade-in">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-3xl text-espresso-900">Products</h1>
+          <h1 className="font-display text-2xl sm:text-3xl text-espresso-900">Products</h1>
           <p className="text-bark-500 text-sm mt-0.5">{products.length} items in menu</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={() => setCatModalOpen(true)} className="btn-secondary flex items-center gap-2">
+          <button onClick={() => setCatModalOpen(true)} className="btn-secondary flex items-center gap-2 flex-1 sm:flex-none justify-center">
             <Tag className="w-4 h-4" /> Categories
           </button>
-          <button onClick={openNew} className="btn-primary flex items-center gap-2">
+          <button onClick={openNew} className="btn-primary flex items-center gap-2 flex-1 sm:flex-none justify-center">
             <Plus className="w-4 h-4" /> Add Product
           </button>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3">
-        <div className="relative flex-1 max-w-xs">
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1 sm:max-w-xs">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-bark-400" />
           <input className="input pl-9" placeholder="Search products..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <select className="input max-w-xs" value={filterCat} onChange={e => setFilterCat(e.target.value)}>
+        <select className="input sm:max-w-xs" value={filterCat} onChange={e => setFilterCat(e.target.value)}>
           <option value="">All Categories</option>
           {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
@@ -286,7 +287,8 @@ export default function AdminProducts() {
 
       {/* Product Modal */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <Portal>
+        <div className="modal-backdrop">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-cream-100">
               <h2 className="font-display text-xl text-espresso-900">{editId ? 'Edit Product' : 'Add Product'}</h2>
@@ -361,11 +363,13 @@ export default function AdminProducts() {
             </div>
           </div>
         </div>
+        </Portal>
       )}
 
       {/* Category Modal */}
       {catModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <Portal>
+        <div className="modal-backdrop">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-xl text-espresso-900">Categories</h2>
@@ -447,6 +451,7 @@ export default function AdminProducts() {
             </div>
           </div>
         </div>
+        </Portal>
       )}
     </div>
   );

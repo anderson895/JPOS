@@ -4,6 +4,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCart } from '@/contexts/CartContext';
 import { formatCurrency, generateOrderNumber } from '@/lib/utils';
+import Portal from '@/components/shared/Portal';
 import type { Product, Category, Order, PaymentMethod, CartItem } from '@/types';
 import {
   Search, ShoppingCart, Plus, Minus, Trash2, X, CreditCard,
@@ -34,6 +35,7 @@ export default function POSComponent() {
   const [notes, setNotes] = useState('');
   const [placing, setPlacing] = useState(false);
   const [receipt, setReceipt] = useState<Order | null>(null);
+  const [cartOpen, setCartOpen] = useState(false); // mobile cart slide-over
   const receiptRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { fetchMenuData(); }, []);
@@ -106,6 +108,7 @@ export default function POSComponent() {
       setReceipt(savedOrder);
       clearCart();
       setCheckoutOpen(false);
+      setCartOpen(false);
       setAmountTendered('');
       setCustomerName('');
       setTableNumber('');
@@ -124,14 +127,14 @@ export default function POSComponent() {
   }
 
   return (
-    <div className="flex h-full min-h-screen bg-espresso-50">
+    <div className="relative flex h-full bg-espresso-50">
       {/* Left: Product Menu */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Search & Header */}
-        <div className="p-6 pb-4 border-b border-cream-200 bg-white">
+        <div className="p-4 sm:p-6 sm:pb-4 border-b border-cream-200 bg-white">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="font-display text-2xl text-espresso-900">Point of Sale</h1>
-            <div className="text-sm text-bark-500">{currentUser?.displayName}</div>
+            <h1 className="font-display text-xl sm:text-2xl text-espresso-900">Point of Sale</h1>
+            <div className="text-sm text-bark-500 truncate ml-3">{currentUser?.displayName}</div>
           </div>
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-bark-400" />
@@ -145,7 +148,7 @@ export default function POSComponent() {
         </div>
 
         {/* Category Pills */}
-        <div className="flex gap-2 px-6 py-3 overflow-x-auto border-b border-cream-100 bg-white flex-shrink-0">
+        <div className="flex gap-2 px-4 sm:px-6 py-3 overflow-x-auto border-b border-cream-100 bg-white flex-shrink-0">
           <button
             onClick={() => setActiveCat('')}
             className={`flex-shrink-0 px-4 py-1.5 rounded-xl text-sm font-medium transition-all ${!activeCat ? 'bg-espresso-600 text-white' : 'bg-cream-100 text-bark-600 hover:bg-cream-200'}`}
@@ -164,9 +167,9 @@ export default function POSComponent() {
         </div>
 
         {/* Product Grid */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-24 lg:pb-6">
           {loading ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
               {[...Array(8)].map((_, i) => (
                 <div key={i} className="card p-4 animate-pulse">
                   <div className="w-full h-28 bg-cream-200 rounded-xl mb-3" />
@@ -181,7 +184,7 @@ export default function POSComponent() {
               <p className="font-medium">No products available</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
               {filteredProducts.map(p => (
                 <button
                   key={p.id}
@@ -214,15 +217,29 @@ export default function POSComponent() {
         </div>
       </div>
 
-      {/* Right: Cart */}
-      <div className="w-80 xl:w-96 flex flex-col bg-white border-l border-cream-200 shadow-sm">
+      {/* Right: Cart — static panel on desktop, slide-over on mobile */}
+      <div
+        className={`
+          fixed inset-y-0 right-0 z-40 w-full lg:static lg:z-auto lg:w-80 xl:w-96
+          ${cartOpen ? 'translate-x-0' : 'translate-x-full'} lg:translate-x-0
+          transition-transform duration-300 flex flex-col bg-white border-l border-cream-200 shadow-sm
+        `}
+      >
         <div className="p-5 border-b border-cream-100">
           <h2 className="font-display text-lg text-espresso-900 flex items-center gap-2">
             <ShoppingCart className="w-5 h-5" />
             Order
             {itemCount > 0 && (
-              <span className="ml-auto bg-espresso-600 text-white text-xs font-medium px-2 py-0.5 rounded-full">{itemCount}</span>
+              <span className="bg-espresso-600 text-white text-xs font-medium px-2 py-0.5 rounded-full">{itemCount}</span>
             )}
+            {/* Mobile: close the cart and go back to the menu */}
+            <button
+              onClick={() => setCartOpen(false)}
+              className="lg:hidden ml-auto text-bark-400 hover:text-espresso-600 transition-colors"
+              title="Back to menu"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </h2>
           {/* Table/Customer info */}
           <div className="flex gap-2 mt-3">
@@ -340,9 +357,25 @@ export default function POSComponent() {
         </div>
       </div>
 
+      {/* Mobile bottom bar — opens the cart slide-over */}
+      {itemCount > 0 && !cartOpen && (
+        <button
+          onClick={() => setCartOpen(true)}
+          className="lg:hidden fixed bottom-0 left-0 right-0 z-30 flex items-center gap-3 px-4 py-3 bg-espresso-600 text-white shadow-lg active:bg-espresso-700"
+        >
+          <span className="relative">
+            <ShoppingCart className="w-6 h-6" />
+            <span className="absolute -top-2 -right-2 bg-white text-espresso-700 text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">{itemCount}</span>
+          </span>
+          <span className="font-medium">View Order</span>
+          <span className="ml-auto font-display text-lg">{formatCurrency(total)}</span>
+        </button>
+      )}
+
       {/* Checkout Modal */}
       {checkoutOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <Portal>
+        <div className="modal-backdrop">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between p-6 border-b border-cream-100">
               <h2 className="font-display text-xl text-espresso-900">Checkout</h2>
@@ -425,11 +458,13 @@ export default function POSComponent() {
             </div>
           </div>
         </div>
+        </Portal>
       )}
 
       {/* Receipt Modal */}
       {receipt && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <Portal>
+        <div className="modal-backdrop">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm">
             <div className="p-6 text-center border-b border-cream-100">
               <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -470,6 +505,7 @@ export default function POSComponent() {
             </div>
           </div>
         </div>
+        </Portal>
       )}
     </div>
   );

@@ -42,6 +42,23 @@
     @apply bg-white rounded-2xl border border-cream-200 shadow-sm;
   }
 
+  /* Dimmed overlay behind centered modals.
+     Uses raw rgba so it never depends on slash-opacity utility generation. */
+  .modal-backdrop {
+    @apply fixed inset-0 z-50 flex items-center justify-center p-4;
+    background-color: rgb(60 18 9 / 0.8); /* espresso-950 @ 80% */
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  /* Overlay behind the mobile slide-in sidebar drawer. */
+  .drawer-backdrop {
+    @apply fixed inset-0 z-30 lg:hidden;
+    background-color: rgb(60 18 9 / 0.6); /* espresso-950 @ 60% */
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+
   .btn-primary {
     @apply bg-espresso-600 text-white px-4 py-2 rounded-xl font-body font-medium 
            hover:bg-espresso-700 active:bg-espresso-800 transition-colors duration-150

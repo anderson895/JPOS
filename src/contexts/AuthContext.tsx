@@ -13,6 +13,7 @@ import {
   collection,
   getDocs,
 } from 'firebase/firestore';
+import { FirebaseError } from 'firebase/app';
 import { auth, db } from '@/lib/firebase';
 import type { User } from '@/types';
 
@@ -34,7 +35,19 @@ export function useAuth() {
   return ctx;
 }
 
-async function fetchOrCreateUserProfile(fbUser: FirebaseUser): Promise<User> {
+/**
+ * Resolves the Firestore profile for an authenticated Firebase user.
+ *
+ * Returns `null` when the user has NO profile and is not the first-ever account.
+ * This is the key security guard: deleting a staff removes their Firestore doc,
+ * but their Firebase Auth credentials still exist. Without this check, logging
+ * back in would silently re-create their profile (and even grant admin if the
+ * collection were empty). Returning null lets callers deny access instead.
+ *
+ * The only time a missing profile is auto-created is to bootstrap the very first
+ * admin on a brand-new project (empty `users` collection).
+ */
+async function fetchUserProfile(fbUser: FirebaseUser): Promise<User | null> {
   const ref = doc(db, 'users', fbUser.uid);
   const snap = await getDoc(ref);
 
@@ -42,13 +55,17 @@ async function fetchOrCreateUserProfile(fbUser: FirebaseUser): Promise<User> {
     return { id: fbUser.uid, ...snap.data() } as User;
   }
 
+  // No profile. Only bootstrap when there are zero users at all (first admin).
   const allUsersSnap = await getDocs(collection(db, 'users'));
-  const role = allUsersSnap.empty ? 'admin' : 'staff';
+  if (!allUsersSnap.empty) {
+    // This account was removed (or never provisioned) → no access.
+    return null;
+  }
 
   const newUser: Omit<User, 'id'> = {
     email: fbUser.email ?? '',
     displayName: fbUser.displayName ?? fbUser.email?.split('@')[0] ?? 'User',
-    role,
+    role: 'admin',
     isActive: true,
     rfidTag: '',
     photoURL: fbUser.photoURL ?? '',
@@ -57,7 +74,7 @@ async function fetchOrCreateUserProfile(fbUser: FirebaseUser): Promise<User> {
   };
 
   await setDoc(ref, newUser);
-  console.info(`Auto-created Firestore profile for ${fbUser.email} as ${role}`);
+  console.info(`Bootstrapped first admin profile for ${fbUser.email}`);
   return { id: fbUser.uid, ...newUser };
 }
 
@@ -77,8 +94,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (fbUser) {
         try {
-          // Ensure the Firestore doc exists before subscribing
-          await fetchOrCreateUserProfile(fbUser);
+          // Deny access if this account has no profile (e.g. it was deleted but
+          // still has Firebase Auth credentials).
+          const profile = await fetchUserProfile(fbUser);
+          if (!profile) {
+            await signOut(auth);
+            setCurrentUser(null);
+            setFirebaseUser(null);
+            setLoading(false);
+            return;
+          }
 
           // ── Real-time listener on the user's Firestore doc ──────────────
           // Any write to this doc (profile update, admin editing staff, etc.)
@@ -97,7 +122,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   setCurrentUser(userData);
                 }
               } else {
+                // Profile deleted mid-session — force logout
+                signOut(auth);
                 setCurrentUser(null);
+                setFirebaseUser(null);
               }
               setLoading(false);
             },
@@ -126,7 +154,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string) => {
     const cred = await signInWithEmailAndPassword(auth, email, password);
-    const userData = await fetchOrCreateUserProfile(cred.user);
+    const userData = await fetchUserProfile(cred.user);
+    if (!userData) {
+      await signOut(auth);
+      throw new Error('This account no longer has access. Contact your administrator.');
+    }
     if (!userData.isActive) {
       await signOut(auth);
       throw new Error('This account has been deactivated. Contact your administrator.');
@@ -136,12 +168,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginWithRFID = async (rfidTag: string) => {
     const trimmed = rfidTag.trim().replace(/[\r\n]/g, '');
+    if (!trimmed) throw new Error('No RFID tag detected. Please scan again.');
+
     const cardDoc = await getDoc(doc(db, 'rfidCards', trimmed));
     if (!cardDoc.exists()) throw new Error('RFID card not registered. Contact your administrator.');
-    const { email, password } = cardDoc.data();
+
+    const { email, password } = cardDoc.data() as { email?: string; password?: string };
     if (!email || !password) throw new Error('RFID card is incomplete. Contact your administrator.');
-    const cred = await signInWithEmailAndPassword(auth, email, password);
-    const userData = await fetchOrCreateUserProfile(cred.user);
+
+    let cred;
+    try {
+      cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+    } catch (err) {
+      console.error('RFID sign-in failed for', email, err);
+      if (err instanceof FirebaseError) {
+        // Firebase temporarily locks out an account after too many failures.
+        if (err.code === 'auth/too-many-requests') {
+          throw new Error('Too many login attempts. Please wait a few minutes, then try again.');
+        }
+        if (err.code === 'auth/user-not-found') {
+          throw new Error('This RFID card is linked to a deleted account. Contact your administrator.');
+        }
+        if (
+          err.code === 'auth/wrong-password' ||
+          err.code === 'auth/invalid-credential' ||
+          err.code === 'auth/invalid-login-credentials'
+        ) {
+          throw new Error(
+            "This RFID card's saved password is incorrect. Ask your administrator to re-enter the RFID password for this staff."
+          );
+        }
+      }
+      throw new Error('RFID login failed. Please try again or contact your administrator.');
+    }
+
+    const userData = await fetchUserProfile(cred.user);
+    if (!userData) {
+      await signOut(auth);
+      throw new Error('This account no longer has access. Contact your administrator.');
+    }
     if (!userData.isActive) {
       await signOut(auth);
       throw new Error('This account has been deactivated. Contact your administrator.');
