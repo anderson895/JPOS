@@ -53,27 +53,25 @@ export default function LandingNav() {
           </button>
 
           {/* Desktop links */}
-          <nav className="hidden md:flex items-center" aria-label="Main">
-            {NAV_LINKS.map(({ id, label }, i) => {
+          <nav className="hidden md:flex items-center gap-1 lg:gap-2" aria-label="Main">
+            {NAV_LINKS.map(({ id, label }) => {
               const Icon = ICONS[id];
               const isActive = active === id;
               return (
-                <div key={id} className="flex items-center">
-                  {i > 0 && <span className="mx-1 h-4 w-px bg-cream-100/20" aria-hidden="true" />}
-                  <button
-                    onClick={() => go(id)}
-                    aria-current={isActive ? 'true' : undefined}
-                    className={cn(
-                      'inline-flex items-center gap-2 px-4 lg:px-5 py-2 rounded-full text-sm font-medium transition-all',
-                      isActive
-                        ? 'text-cream-50 border border-caramel-400/70 bg-gradient-to-b from-caramel-700/50 to-espresso-900/60 shadow-glow'
-                        : 'text-cream-100/85 border border-transparent hover:text-caramel-200',
-                    )}
-                  >
-                    <Icon className="w-4 h-4" />
-                    {label}
-                  </button>
-                </div>
+                <button
+                  key={id}
+                  onClick={() => go(id)}
+                  aria-current={isActive ? 'true' : undefined}
+                  className={cn(
+                    'inline-flex items-center gap-2 px-4 lg:px-5 py-2 rounded-full text-sm font-medium transition-all',
+                    isActive
+                      ? 'text-cream-50 border border-caramel-400/70 bg-gradient-to-b from-caramel-700/50 to-espresso-900/60 shadow-glow'
+                      : 'text-cream-100/85 border border-transparent hover:text-caramel-200',
+                  )}
+                >
+                  <Icon className="w-4 h-4" />
+                  {label}
+                </button>
               );
             })}
           </nav>

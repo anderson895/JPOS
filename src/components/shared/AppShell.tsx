@@ -61,8 +61,9 @@ export default function AppShell({
     </div>
   );
 
+  // h-dvh: on phones 100vh is taller than the visible area (the toolbar would cover the bottom)
   return (
-    <div className="flex h-screen app-bg overflow-hidden">
+    <div className="flex h-dvh app-bg overflow-hidden">
       {/* Mobile backdrop */}
       {mobileOpen && (
         <div
@@ -78,7 +79,11 @@ export default function AppShell({
           showLabels ? 'lg:w-64' : 'lg:w-[84px]',
           mobileOpen ? 'translate-x-0' : '-translate-x-full', 'lg:translate-x-0',
           'transition-all duration-300 flex-shrink-0 espresso-surface text-cream-100 flex flex-col',
-          'border-r border-caramel-300/10 shadow-[8px_0_30px_-12px_rgba(28,16,9,0.6)] overflow-hidden',
+          'border-r border-caramel-300/10 overflow-hidden lg:shadow-[8px_0_30px_-12px_rgba(28,16,9,0.6)]',
+          mobileOpen && 'shadow-[8px_0_30px_-12px_rgba(28,16,9,0.6)]',
+          // Closed drawer is only off-screen; hide it so Tab skips its links.
+          // transition-all keeps it visible while it slides out.
+          !mobileOpen && 'max-lg:invisible',
         )}
       >
         <CoffeeBranch className="absolute -bottom-6 -left-16 w-72 opacity-[0.12] rotate-[-20deg]" />

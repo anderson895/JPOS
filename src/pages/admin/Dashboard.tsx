@@ -175,7 +175,7 @@ export default function AdminDashboard() {
             <h2 className="font-display text-xl text-espresso-900">Sales Overview</h2>
             <span className="badge-info">Last 7 days</span>
           </div>
-          <ResponsiveContainer width="100%" height={240}>
+          <ResponsiveContainer width="100%" height={290}>
             <AreaChart data={weeklyData}>
               <defs>
                 <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
@@ -214,7 +214,7 @@ export default function AdminDashboard() {
                       {i + 1}
                     </span>
                     <span className="flex-1 min-w-0 text-sm font-medium text-espresso-800 truncate">{item.name}</span>
-                    <span className="text-xs text-bark-500 font-mono">{item.qty} sold</span>
+                    <span className="text-xs font-medium text-bark-500">{item.qty} sold</span>
                   </div>
                   <div className="meter mt-2 ml-11 w-auto"><span style={{ width: `${(item.qty / topQty) * 100}%` }} /></div>
                 </li>

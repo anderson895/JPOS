@@ -218,7 +218,7 @@ export default function POSComponent() {
                         <Coffee className="w-9 h-9 text-caramel-500/60" />
                       </div>
                     )}
-                    <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-espresso-950/40 to-transparent" />
+                    {p.imageUrl && <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-espresso-950/40 to-transparent" />}
                   </div>
                   <div className="px-1.5 pt-2.5 pb-1 flex items-end gap-2">
                     <div className="flex-1 min-w-0">
@@ -241,8 +241,8 @@ export default function POSComponent() {
       <div
         className={`
           fixed inset-y-0 right-0 z-40 w-full lg:static lg:z-auto lg:w-80 xl:w-96
-          ${cartOpen ? 'translate-x-0' : 'translate-x-full'} lg:translate-x-0
-          transition-transform duration-300 flex flex-col bg-cream-50 border-l border-cream-300 shadow-[-12px_0_30px_-18px_rgba(63,38,22,0.35)]
+          ${cartOpen ? 'translate-x-0' : 'translate-x-full max-lg:invisible'} lg:translate-x-0
+          transition-[transform,visibility] duration-300 flex flex-col bg-cream-50 border-l border-cream-300 lg:shadow-[-12px_0_30px_-18px_rgba(63,38,22,0.35)]
         `}
       >
         <div className="p-5 border-b border-cream-300/70">

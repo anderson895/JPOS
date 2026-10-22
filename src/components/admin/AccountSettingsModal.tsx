@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc } from 'firebase/firestore';
 import {
   updatePassword, updateProfile,
   EmailAuthProvider, reauthenticateWithCredential, reload
@@ -108,22 +108,6 @@ export default function AccountSettingsModal({ onClose }: Props) {
       await reauthenticateWithCredential(fbUser, credential);
       await updatePassword(fbUser, newPw);
       toast.success('Password changed successfully');
-
-      // The RFID card logs in with a saved copy of the password — keep it in
-      // sync, or tapping the card would fail from now on.
-      const tag = currentUser?.rfidTag?.trim();
-      if (tag) {
-        try {
-          const cardRef = doc(db, 'rfidCards', tag);
-          const card = await getDoc(cardRef);
-          if (card.exists() && card.data().userId === currentUser?.id) {
-            await updateDoc(cardRef, { password: newPw, updatedAt: new Date().toISOString() });
-          }
-        } catch (err) {
-          console.error('RFID card password sync failed:', err);
-          toast.error('Your RFID card still has the old password. Re-enter it in Manage Staff.');
-        }
-      }
 
       setCurrentPw(''); setNewPw(''); setConfirmPw('');
       onClose();

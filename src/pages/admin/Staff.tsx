@@ -72,7 +72,10 @@ export default function AdminStaff() {
       toast.error("You can't remove your own admin access"); return;
     }
     const email  = editStaff.email.trim();
-    const newTag = (editStaff.rfidTag || '').trim();
+    // Admins never get an RFID card: a card holds its owner's password and anyone
+    // who knows the tag can read it. Saving an admin also removes any card they had.
+    const isAdminRole = editStaff.role === 'admin';
+    const newTag = isAdminRole ? '' : (editStaff.rfidTag || '').trim();
     const oldTag = (staff.find(s => s.id === editId)?.rfidTag || '').trim();
     const tagChanged = newTag !== oldTag;
     if (newTag.includes('/')) {
@@ -142,7 +145,11 @@ export default function AdminStaff() {
         }
         if (oldCard) batch.delete(doc(db, 'rfidCards', oldTag));
         await batch.commit();
-        toast.success(newTag && cardPassword ? 'Staff updated & RFID credentials saved' : 'Staff updated');
+        toast.success(
+          newTag && cardPassword ? 'Staff updated & RFID credentials saved'
+          : isAdminRole && oldCard ? "Staff updated — RFID card removed (admins can't use RFID)"
+          : 'Staff updated'
+        );
       } else {
         // Create the account on a secondary app so the admin stays logged in.
         // If saving the profile fails, the new login is rolled back.
@@ -377,6 +384,18 @@ export default function AdminStaff() {
                   <span className="w-7 h-7 rounded-full bg-espresso-800 text-caramel-200 flex items-center justify-center"><CreditCard className="w-3.5 h-3.5" /></span>
                   RFID Login Setup
                 </p>
+                {editStaff.role === 'admin' ? (
+                  /* Admins can't use RFID — fields hidden, typed tag kept in state for if the role flips back */
+                  <div className="flex items-start gap-2.5 px-4 py-3 rounded-2xl bg-cream-50 border border-cream-300 text-xs text-bark-600 leading-relaxed">
+                    <Shield className="w-4 h-4 text-caramel-600 flex-shrink-0 mt-0.5" />
+                    <p>
+                      Admin accounts can't use RFID — they sign in with email and password (or Google).
+                      {editId && staff.find(s => s.id === editId)?.rfidTag && (
+                        <span className="block mt-1 font-semibold text-amber-700">Saving will remove this account's RFID card.</span>
+                      )}
+                    </p>
+                  </div>
+                ) : (<>
                 <div>
                   <label className="label">RFID Tag</label>
                   <input className="input font-mono" placeholder="Scan or type RFID tag"
@@ -410,6 +429,7 @@ export default function AdminStaff() {
                 {!editId && editStaff.rfidTag && !editStaff.password && (
                   <p className="text-xs text-amber-600">Set a password above to enable RFID login for this staff.</p>
                 )}
+                </>)}
               </div>
 
               <label htmlFor="isActive" className="flex items-center gap-3 px-4 py-3 rounded-full bg-cream-200/60 border border-cream-300 cursor-pointer">

@@ -418,7 +418,7 @@ export default function AdminReports() {
           {dailyData.length === 0 ? (
             <div className="h-48 flex items-center justify-center text-bark-400 text-sm">No data available</div>
           ) : (
-            <ResponsiveContainer width="100%" height={260}>
+            <ResponsiveContainer width="100%" height={320}>
               <AreaChart data={dailyData}>
                 <defs>
                   <linearGradient id="reportGrad" x1="0" y1="0" x2="0" y2="1">

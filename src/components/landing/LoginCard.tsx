@@ -48,8 +48,13 @@ export default function LoginCard() {
   useEffect(() => {
     if (mode !== 'rfid') return;
     const focusInput = () => {
-      if (!loadingRef.current && document.activeElement !== rfidRef.current) {
-        rfidRef.current?.focus();
+      const el = rfidRef.current;
+      const active = document.activeElement as HTMLElement | null;
+      // Leave other text fields alone (e.g. the newsletter box)
+      const typingElsewhere = !!active && active !== el &&
+        (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT' || active.isContentEditable);
+      if (!loadingRef.current && el && active !== el && !typingElsewhere) {
+        el.focus({ preventScroll: true }); // never yank the page back to the card
       }
     };
     focusInput();
