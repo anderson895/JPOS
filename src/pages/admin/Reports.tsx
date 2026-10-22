@@ -17,18 +17,22 @@ import { TrendingUp, ShoppingBag, CreditCard, Download, Calendar, Loader2 } from
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/shared/PageHeader';
 import StatCard from '@/components/shared/StatCard';
-import { CHART, CHART_SERIES, TOOLTIP_STYLE } from '@/components/shared/chartTheme';
+import { useChartTheme } from '@/components/shared/chartTheme';
+import { themeRgb } from '@/components/shared/theme';
 import { paymentBreakdown, paymentRefLabel } from '@/lib/reports';
 
 type Range = 'today' | 'week' | 'month' | 'custom';
-const COLORS = CHART_SERIES;
 
-// Brand colours
-const ESPRESSO  = [74,  41,  18]  as [number, number, number];
-const AMBER     = [196, 104, 32]  as [number, number, number];
-const CREAM     = [253, 246, 238] as [number, number, number];
-const LIGHT_ROW = [245, 238, 228] as [number, number, number];
-const WHITE     = [255, 255, 255] as [number, number, number];
+// PDF colours, read from the active color theme when the report is generated
+function pdfPalette() {
+  return {
+    ESPRESSO:  themeRgb('espresso-800'),
+    AMBER:     themeRgb('caramel-600'),
+    CREAM:     themeRgb('cream-100'),
+    LIGHT_ROW: themeRgb('cream-200'),
+    WHITE:     [255, 255, 255] as [number, number, number],
+  };
+}
 
 // jsPDF's built-in fonts have no \u20b1 glyph (it prints as "\u00b1"), so spell the currency out.
 function peso(v: number) { return `PHP ${v.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
@@ -38,6 +42,7 @@ function toIso(v: any): string {
 }
 
 export default function AdminReports() {
+  const { CHART, CHART_SERIES: COLORS, TOOLTIP_STYLE, surface } = useChartTheme();
   const [range, setRange]           = useState<Range>('week');
   const [orders, setOrders]         = useState<Order[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -136,6 +141,7 @@ export default function AdminReports() {
     try {
       // The PDF libraries load only when a report is downloaded (keeps ~400 kB off the Reports page)
       const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
+      const { ESPRESSO, AMBER, CREAM, LIGHT_ROW, WHITE } = pdfPalette();
       const doc  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       const W    = doc.internal.pageSize.getWidth();
       const H    = doc.internal.pageSize.getHeight();
@@ -449,7 +455,7 @@ export default function AdminReports() {
               <ResponsiveContainer width="100%" height={200}>
                 <PieChart>
                   <Pie data={paymentData} dataKey="value" nameKey="name" cx="50%" cy="50%"
-                    innerRadius={52} outerRadius={84} paddingAngle={2} stroke="#fffcf7" strokeWidth={2}>
+                    innerRadius={52} outerRadius={84} paddingAngle={2} stroke={surface} strokeWidth={2}>
                     {paymentData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                   </Pie>
                   <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={TOOLTIP_STYLE} />

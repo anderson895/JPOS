@@ -30,7 +30,6 @@ export default function Hero() {
       />
       <div className="absolute inset-0 -z-10 bg-espresso-950/70 lg:bg-transparent lg:bg-gradient-to-r lg:from-espresso-950/95 lg:via-espresso-950/65 lg:to-espresso-950/5" />
       <div className="absolute inset-0 -z-10 bg-gradient-to-b from-espresso-950/70 via-transparent to-espresso-950/60" />
-      <div className="absolute -top-48 -left-48 -z-10 w-[640px] h-[640px] rounded-full bg-caramel-400/20 blur-3xl" />
 
       {/* Floating beans (desktop) */}
       <div className="hidden lg:block" aria-hidden="true">

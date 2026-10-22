@@ -8,7 +8,6 @@ import { format, startOfDay, endOfDay } from 'date-fns';
 import { ShoppingBag, TrendingUp, Clock, ArrowRight, Receipt } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import StatCard from '@/components/shared/StatCard';
-import { CoffeeBean, CoffeeBranch } from '@/components/shared/Decor';
 
 export default function StaffDashboard() {
   const { currentUser } = useAuth();
@@ -57,19 +56,17 @@ export default function StaffDashboard() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 animate-fade-in max-w-[1400px] mx-auto">
-      {/* Greeting banner — hero photo on espresso, like the landing hero */}
+      {/* Greeting banner — theme colours only (no coffee photo/decor in the shop app;
+          a shop's own background photo comes with branding, Phase B) */}
       <div className="relative overflow-hidden rounded-4xl espresso-surface text-cream-50 p-6 sm:p-8 lg:p-10 shadow-lift isolate">
-        <img
-          src="/images/about.jpg" alt="" aria-hidden="true"
-          className="absolute inset-y-0 right-0 -z-10 h-full w-2/3 object-cover opacity-60 [mask-image:linear-gradient(to_left,black_30%,transparent)]"
-        />
-        <CoffeeBranch className="absolute -bottom-10 left-1/3 w-64 opacity-20 -z-10" />
-        <CoffeeBean className="hidden sm:block absolute right-10 top-8 w-6 animate-float" />
+        <div className="absolute -right-16 -top-24 -z-10 w-80 h-80 rounded-full bg-caramel-400/15 blur-2xl" aria-hidden="true" />
+        <div className="absolute right-24 -bottom-28 -z-10 w-72 h-72 rounded-full border border-caramel-300/20" aria-hidden="true" />
+        <div className="absolute right-8 -bottom-16 -z-10 w-48 h-48 rounded-full border border-caramel-300/15" aria-hidden="true" />
 
         <p className="text-caramel-200/90 text-sm">{format(now, 'EEEE, MMMM d, yyyy')}</p>
         <p className="font-script text-4xl sm:text-5xl text-caramel-300 mt-2 leading-none">{greeting},</p>
         <h1 className="font-display text-3xl sm:text-4xl font-semibold mt-1">{currentUser?.displayName?.split(' ')[0]}!</h1>
-        <p className="text-cream-100/80 mt-3 text-sm sm:text-base max-w-md">Ready to serve some great coffee today?</p>
+        <p className="text-cream-100/80 mt-3 text-sm sm:text-base max-w-md">Ready for a great day of sales?</p>
         <Link to="/staff/pos" className="btn-caramel mt-6 px-6 py-3">
           <ShoppingBag className="w-4 h-4" />
           Start Taking Orders

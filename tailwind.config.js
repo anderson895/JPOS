@@ -1,3 +1,7 @@
+const SHADES = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
+const palette = name =>
+  Object.fromEntries(SHADES.map(shade => [shade, `rgb(var(--${name}-${shade}) / <alpha-value>)`]));
+
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: ["class"],
@@ -10,67 +14,20 @@ export default {
         body: ['DM Sans', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
+      // Palette ROLES (names never change in components):
+      //   espresso = primary · caramel = accent · cream = surface · bark = muted text
+      // The values are CSS variables (src/index.css → themes), so a color theme can
+      // swap them at runtime via <html data-theme="…">. See docs/frontend/DESIGN-SYSTEM.md.
       colors: {
-        // Roasted browns — primary surfaces, dark sections, primary buttons
-        espresso: {
-          50:  '#faf4ec',
-          100: '#f3e6d4',
-          200: '#e6cdb0',
-          300: '#d3ac85',
-          400: '#b9875c',
-          500: '#946140',
-          600: '#6f4428',
-          700: '#55331d',
-          800: '#3f2616',
-          900: '#2c1a0f',
-          950: '#1c1009',
-        },
-        // Warm caramel — accents, highlights, call-to-action gradients
-        caramel: {
-          50:  '#fdf7ee',
-          100: '#f9e9d2',
-          200: '#f2d3a8',
-          300: '#e9bb7e',
-          400: '#dda15e',
-          500: '#cc8745',
-          600: '#b06e34',
-          700: '#8c552a',
-          800: '#6e4324',
-          900: '#58371f',
-        },
-        // Steamed milk — page backgrounds, cards, borders
-        cream: {
-          50:  '#fffcf7',
-          100: '#fdf7ee',
-          200: '#f8eddd',
-          300: '#f1e0c8',
-          400: '#e7cfae',
-          500: '#d9b98f',
-          600: '#c49d6e',
-          700: '#a37d52',
-          800: '#7f603f',
-          900: '#634a32',
-          950: '#3d2d1e',
-        },
-        // Muted browns — secondary text, icons
-        bark: {
-          50:  '#f8f4f0',
-          100: '#eee5dc',
-          200: '#dccbbb',
-          300: '#c4a991',
-          400: '#a88a70',
-          500: '#8c6f57',
-          600: '#725843',
-          700: '#5b4535',
-          800: '#47372b',
-          900: '#3a2d24',
-          950: '#211913',
-        },
+        espresso: palette('espresso'),
+        caramel: palette('caramel'),
+        cream: palette('cream'),
+        bark: palette('bark'),
       },
       boxShadow: {
-        card: '0 1px 2px rgb(63 38 22 / 0.04), 0 12px 32px -14px rgb(63 38 22 / 0.22)',
-        lift: '0 2px 4px rgb(63 38 22 / 0.06), 0 22px 44px -18px rgb(63 38 22 / 0.35)',
-        glow: '0 0 0 1px rgb(233 187 126 / 0.35), 0 8px 28px -6px rgb(221 161 94 / 0.55)',
+        card: '0 1px 2px rgb(var(--espresso-800) / 0.04), 0 12px 32px -14px rgb(var(--espresso-800) / 0.22)',
+        lift: '0 2px 4px rgb(var(--espresso-800) / 0.06), 0 22px 44px -18px rgb(var(--espresso-800) / 0.35)',
+        glow: '0 0 0 1px rgb(var(--caramel-300) / 0.35), 0 8px 28px -6px rgb(var(--caramel-400) / 0.55)',
         inset: 'inset 0 1px 0 rgb(255 255 255 / 0.08)',
       },
       borderRadius: {

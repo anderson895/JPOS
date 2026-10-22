@@ -160,7 +160,7 @@ export default function POSComponent() {
         <div className="px-4 sm:px-6 pt-5 sm:pt-6 pb-3 space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="eyebrow text-2xl sm:text-3xl -mb-1">Fresh Brews</p>
+              <p className="eyebrow text-2xl sm:text-3xl -mb-1">New sale</p>
               <h1 className="font-display text-2xl sm:text-3xl text-espresso-900">Point of Sale</h1>
             </div>
             <div className="flex items-center gap-2 rounded-full border border-cream-400/70 bg-cream-50 pl-1.5 pr-4 py-1.5 shadow-sm min-w-0">
@@ -257,7 +257,7 @@ export default function POSComponent() {
         className={`
           fixed inset-y-0 right-0 z-40 w-full lg:static lg:z-auto lg:w-80 xl:w-96
           ${cartOpen ? 'translate-x-0' : 'translate-x-full max-lg:invisible'} lg:translate-x-0
-          transition-[transform,visibility] duration-300 flex flex-col bg-cream-50 border-l border-cream-300 lg:shadow-[-12px_0_30px_-18px_rgba(63,38,22,0.35)]
+          transition-[transform,visibility] duration-300 flex flex-col bg-cream-50 border-l border-cream-300 lg:shadow-[-12px_0_30px_-18px_rgb(var(--espresso-800)/0.35)]
         `}
       >
         <div className="p-5 border-b border-cream-300/70">
@@ -471,7 +471,7 @@ export default function POSComponent() {
                         onClick={() => { setPaymentMethod(value); setERef(''); setEReceived(false); }}
                         className={`flex flex-col items-center gap-1 py-3 rounded-2xl border-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
                           paymentMethod === value
-                            ? 'border-espresso-800 bg-espresso-800 text-cream-50 shadow-[0_8px_18px_-8px_rgb(44_26_15/0.8)]'
+                            ? 'border-espresso-800 bg-espresso-800 text-cream-50 shadow-[0_8px_18px_-8px_rgb(var(--espresso-900)/0.8)]'
                             : 'border-cream-400/70 bg-cream-50 text-bark-500 hover:border-caramel-400 hover:text-espresso-800'
                         }`}
                       >

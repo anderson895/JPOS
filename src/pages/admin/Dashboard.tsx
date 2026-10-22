@@ -10,7 +10,7 @@ import {
 import { format, subDays, startOfDay, endOfDay } from 'date-fns';
 import PageHeader from '@/components/shared/PageHeader';
 import StatCard from '@/components/shared/StatCard';
-import { CHART, TOOLTIP_STYLE } from '@/components/shared/chartTheme';
+import { useChartTheme } from '@/components/shared/chartTheme';
 import type { Order } from '@/types';
 import toast from 'react-hot-toast';
 
@@ -23,6 +23,7 @@ function pctChange(current: number, previous: number): number | null {
 }
 
 export default function AdminDashboard() {
+  const { CHART, TOOLTIP_STYLE } = useChartTheme();
   const [weeklyData, setWeeklyData] = useState<DayStats[]>([]);
   const [recentOrders, setRecentOrders] = useState<Order[]>([]);
   const [topItems, setTopItems] = useState<TopItem[]>([]);
@@ -142,9 +143,9 @@ export default function AdminDashboard() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 animate-fade-in max-w-[1400px] mx-auto">
       <PageHeader
-        eyebrow="Good Coffee"
+        eyebrow="Overview"
         title="Dashboard"
-        subtitle="Here's how your coffee shop is doing."
+        subtitle="Here's how your business is doing."
         actions={
           <span className="inline-flex items-center gap-2 rounded-full border border-cream-400/70 bg-cream-50 px-4 py-2 text-sm text-espresso-800 shadow-sm">
             <CalendarDays className="w-4 h-4 text-caramel-600" />

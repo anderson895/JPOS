@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import LandingNav from '@/components/landing/LandingNav';
+import { applyTheme } from '@/components/shared/theme';
 import Hero from '@/components/landing/Hero';
 import AboutSection from '@/components/landing/AboutSection';
 import FeaturesSection from '@/components/landing/FeaturesSection';
@@ -13,8 +15,11 @@ import LandingFooter from '@/components/landing/LandingFooter';
  * which holds all of the auth logic (password, RFID, Google).
  */
 export default function LoginPage() {
+  // The public landing always uses the default JPOS colors, never a shop's theme
+  useEffect(() => { applyTheme(null); }, []);
+
   return (
-    <div className="min-h-screen bg-cream-100 text-espresso-900 overflow-x-hidden">
+    <div data-theme="espresso" className="min-h-screen bg-cream-100 text-espresso-900 overflow-x-hidden">
       <LandingNav />
       <main>
         <Hero />

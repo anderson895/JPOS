@@ -15,12 +15,37 @@ How to build screens that match `reference_UI/`. Read this first when adding a p
 | `espresso` | Primary: dark surfaces, primary buttons, headings | `800` `#3f2616` · `900` `#2c1a0f` (headings) · `950` `#1c1009` (darkest) |
 | `caramel` | Accent: highlights, CTA gradients, icons on dark | `300` `#e9bb7e` · `500` `#cc8745` · `700` `#8c552a` |
 | `cream` | Surfaces: page background, cards, borders | `50` `#fffcf7` (cards) · `100` `#fdf7ee` (page) · `300` `#f1e0c8` (borders) |
-| `bark` | Muted text and icons | `400` `#a88a70` (hints) · `500` `#8c6f57` (secondary text) · `600` `#725843` |
+| `bark` | Muted text and icons | `400` `#a88a70` (hints) · `500` `#876b54` (secondary text) · `600` `#725843` |
+
+The hex values above are the **default (espresso) theme**. The palette names are **roles**, not colors: `espresso` = primary, `caramel` = accent, `cream` = surface, `bark` = muted.
 
 Rules:
 - Text on cream: `text-espresso-900` for headings, `text-espresso-800` for body, `text-bark-500` for secondary text.
 - Text on espresso: `text-cream-50` for primary, `text-cream-200/70` for secondary, `text-caramel-300` for accents.
-- Status colors stay standard Tailwind: `emerald-*` = up/success, `red-*` = down/danger, `amber-*` = warning.
+- Status colors stay standard Tailwind: `emerald-*` = up/success, `red-*` = down/danger, `amber-*` = warning. They don't change with the theme.
+
+### 1.1 Color themes (WO-6)
+
+Six themes: **espresso** (default), **matcha**, **berry**, **ocean**, **charcoal**, **sunset**.
+
+How it works:
+- `tailwind.config.js` maps every palette shade to a CSS variable: `rgb(var(--espresso-900) / <alpha-value>)`. Opacity modifiers like `bg-espresso-950/70` keep working.
+- `src/index.css` (`@layer base`) defines the variables as space-separated RGB channels. `:root` / `[data-theme="espresso"]` holds the default, and each other theme has a `[data-theme="…"]` block.
+- The theme is chosen with `<html data-theme="…">` through `applyTheme()` in `src/components/shared/theme.ts`.
+  - The tenant app (`AppShell`) applies it, and resets to the default on unmount.
+  - The **landing page always forces the default** (`applyTheme(null)` plus `data-theme="espresso"` on its root). `/platform` must do the same when it's built.
+- Phase B: the shop's chosen theme will come from `settings/branding.theme`. Until then, only the **dev switcher** (`DevThemeSwitcher`, `import.meta.env.DEV` only) or `?theme=…` changes it.
+
+Rules for theme-safe code:
+- **Never write a hex/rgb literal for a UI color.**
+  - Classes: use the palette classes.
+  - CSS: `rgb(var(--caramel-500) / 0.4)`.
+  - Inline styles: `'rgb(var(--espresso-900))'`.
+  - SVG attributes and jsPDF can't read variables: use `themeColor('caramel-500')` / `themeRgb('espresso-800')` from `theme.ts`.
+  - Recharts: use `useChartTheme()`, which re-reads the colors when the theme changes.
+- Fixed-color exceptions: status colors (emerald/red/amber), the receipt and QR (always black on white), the select chevron's data-URI, and stored data such as category colors.
+- The coffee decorations (`CoffeeBean`, `CoffeeBranch`, the café photos) are for the **landing page only**. The shop app stays business-neutral.
+- **Adding or changing a theme:** edit `docs/frontend/tools/generate-themes.py`, then run it. It keeps the default palette's lightness steps, sets hue and saturation per role, nudges lightness until every key pair passes WCAG AA, and writes `themes.css` and `contrast.md`. Paste `themes.css` into `src/index.css`, and update the table in CHANGELOG §21.
 
 ## 2. Typography
 

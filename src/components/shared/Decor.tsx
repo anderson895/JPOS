@@ -39,7 +39,7 @@ export function Wave({ fill, className, flip }: { fill: string; className?: stri
       className={cn('block w-full h-[60px] sm:h-[90px]', flip && 'rotate-180', className)}
     >
       <path d="M0 64 C 240 120, 480 10, 760 46 C 1020 80, 1240 116, 1440 58 L1440 120 L0 120 Z" fill={fill} />
-      <path d="M0 64 C 240 120, 480 10, 760 46 C 1020 80, 1240 116, 1440 58" fill="none" stroke="#e2a866" strokeOpacity="0.45" strokeWidth="1.5" />
+      <path d="M0 64 C 240 120, 480 10, 760 46 C 1020 80, 1240 116, 1440 58" fill="none" style={{ stroke: 'rgb(var(--caramel-400))' }} strokeOpacity="0.45" strokeWidth="1.5" />
     </svg>
   );
 }

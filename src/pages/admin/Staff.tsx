@@ -340,7 +340,7 @@ export default function AdminStaff() {
 
               <div>
                 <label className="label">Email *</label>
-                <input className="input" type="email" placeholder="staff@coffeeshop.com"
+                <input className="input" type="email" placeholder="staff@yourshop.com"
                   value={editStaff.email || ''}
                   onChange={e => setEditStaff(p => ({ ...p, email: e.target.value }))}
                   disabled={!!editId} />

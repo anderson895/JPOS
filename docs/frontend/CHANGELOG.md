@@ -29,6 +29,7 @@
 18. [WO-2b: landing copy for every small business](#18-wo-2b-landing-copy-for-every-small-business)
 19. [WO-4a: admin Payment Settings page](#19-wo-4a-admin-payment-settings-page)
 20. [WO-4b: POS store-QR e-wallet checkout + Reports reconciliation](#20-wo-4b-pos-store-qr-e-wallet-checkout--reports-reconciliation)
+21. [WO-6: color themes (CSS variables) + business-neutral shop app](#21-wo-6-color-themes-css-variables--business-neutral-shop-app)
 
 ---
 
@@ -403,4 +404,65 @@ The backend wrote the logic (its WO-3: `storeSettings`, `eWallet`, `saveOrder`, 
 - `tsc --strict --noUnusedLocals --noUnusedParameters` and `npm run build` pass.
 
 Screenshots: [`img/wo4b-pos-gcash.jpg`](img/wo4b-pos-gcash.jpg) · [`img/wo4b-qr-fullscreen.jpg`](img/wo4b-qr-fullscreen.jpg) · [`img/wo4b-reports-reconciliation.jpg`](img/wo4b-reports-reconciliation.jpg)
+
+## 21. WO-6: color themes (CSS variables) + business-neutral shop app
+
+Spec: `SUBSCRIPTION-PLAN.md` §9.3 (Tech Lead WO-6). Phase 0 was committed first (checkpoint `7c57485`). How-to: DESIGN-SYSTEM.md §1.1.
+
+**Tokens → CSS variables:**
+- `tailwind.config.js`: `espresso`/`caramel`/`cream`/`bark` (shades 50–950) are now `rgb(var(--name-shade) / <alpha-value>)`. The `card`/`lift`/`glow` shadows use variables too. **No component class names changed.**
+- `src/index.css`:
+  - `:root` / `[data-theme="espresso"]` hold the default values.
+  - Five new blocks: `matcha`, `berry`, `ocean`, `charcoal`, `sunset`.
+  - Every hard-coded color in the component classes now reads variables. Covered: buttons, segmented/pill gradients, sidebar active state, app/espresso surfaces, backdrops, meter, scrollbar, the RFID pulse, selection.
+- `chartTheme.ts` → **`useChartTheme()`**, which re-reads on `data-theme` changes. Used by the Dashboard and Reports charts, the tooltip, and the pie slice stroke.
+- Reports **PDF colors** come from the active theme (`themeRgb`) at download time.
+- `main.tsx`: toast colors use `rgb(var(--…))`.
+- `Decor.tsx`: the Wave stroke uses a variable. (The bean SVG keeps its natural brown; it's landing-only.)
+- `AppShell` / `POSComponent`: their arbitrary-value shadows use variables.
+- `src/components/shared/theme.ts`: `THEMES`, `applyTheme()`, `themeColor()`, `themeRgb()`.
+
+**Applying a theme:**
+- `AppShell` applies the shop theme and resets to the default when it unmounts (sign-out → landing).
+- **The landing page forces the default** (`applyTheme(null)` + `data-theme="espresso"` on its root). Verified: from a themed app, signing out leaves `<html>` with no theme, and the landing button keeps the default caramel gradient.
+- **Dev-only switcher** (`DevThemeSwitcher.tsx`): a "Theme (dev)" pill at the bottom right. It's remembered per browser, and hidden when the URL has `?theme=…` (used for screenshots). It renders only under `import.meta.env.DEV`: grepping the production `dist/` finds nothing.
+- Phase B: the theme will come from `settings/branding.theme`.
+
+**Default palette tweak (accessibility):** `bark-500` `#8c6f57` → `#876b54`. At 4.4:1, secondary text on the page background just missed AA; it's now 4.6:1. Visually the same.
+
+**Business-neutral shop app** (the landing page keeps its coffee look):
+- **Removed coffee decor from the tenant app:**
+  - the line-art branch in the sidebar (`AppShell`)
+  - the staff dashboard banner's café photo, branch and bean, replaced with theme-colored circles
+- Copy:
+  - Dashboard: "Good Coffee" → "Overview", and "…your coffee shop…" → "…your business…"
+  - POS: "Fresh Brews" → "New sale"
+  - Staff greeting: "…great day of sales?"
+  - Staff email placeholder: `staff@yourshop.com`
+- Left for Phase B branding, documented: the receipt header "JPOS COFFEE SHOP", the PDF title, and the loader text.
+- The `Coffee` icons (Products nav, placeholders) will follow the business-type labels in Phase B.
+
+**Contrast (WCAG 2.x, AA needs ≥ 4.5:1 for normal text)**, from `docs/frontend/tools/generate-themes.py`:
+
+| Pair | espresso | matcha | berry | ocean | charcoal | sunset |
+|---|---|---|---|---|---|---|
+| Body text (espresso-900 on cream-100) | 15.6 ✅ | 15.0 ✅ | 17.4 ✅ | 15.8 ✅ | 15.6 ✅ | 16.1 ✅ |
+| Card text (espresso-800 on cream-50) | 13.7 ✅ | 12.7 ✅ | 14.6 ✅ | 14.4 ✅ | 13.9 ✅ | 14.7 ✅ |
+| Secondary text (bark-500 on cream-50) | 4.8 ✅ | 4.8 ✅ | 5.2 ✅ | 5.0 ✅ | 5.1 ✅ | 5.2 ✅ |
+| Secondary text (bark-500 on cream-100) | 4.6 ✅ | 4.6 ✅ | 4.9 ✅ | 4.8 ✅ | 4.9 ✅ | 4.9 ✅ |
+| Link/accent text (caramel-700 on cream-50) | 6.0 ✅ | 4.8 ✅ | 7.9 ✅ | 4.9 ✅ | 4.8 ✅ | 6.3 ✅ |
+| Primary button (cream-50 on espresso-700) | 10.9 ✅ | 9.7 ✅ | 12.3 ✅ | 11.8 ✅ | 11.4 ✅ | 12.2 ✅ |
+| Active pill (cream-50 on espresso-800) | 13.7 ✅ | 12.7 ✅ | 14.6 ✅ | 14.4 ✅ | 13.9 ✅ | 14.7 ✅ |
+| Accent button (espresso-900 on caramel-500) | 5.6 ✅ | 7.1 ✅ | 4.5 ✅ | 6.8 ✅ | 6.8 ✅ | 5.2 ✅ |
+| Badge info (espresso-700 on cream-300) | 8.6 ✅ | 7.8 ✅ | 8.9 ✅ | 9.0 ✅ | 8.8 ✅ | 9.3 ✅ |
+| Dark badge (caramel-200 on espresso-800) | 9.8 ✅ | 9.8 ✅ | 8.3 ✅ | 10.6 ✅ | 10.4 ✅ | 9.5 ✅ |
+| Sidebar link (cream-200 @70% on espresso-900) | 7.7 ✅ | 7.5 ✅ | 7.9 ✅ | 7.6 ✅ | 7.5 ✅ | 7.6 ✅ |
+
+Gradient buttons are measured at their weakest stop: the lightest stop for the primary button, the darkest for the accent button. The sidebar text is measured after blending its 70% opacity.
+
+Screenshots (dashboard + POS in all six themes): [`img/wo6-themes-dashboard.jpg`](img/wo6-themes-dashboard.jpg) · [`img/wo6-themes-pos.jpg`](img/wo6-themes-pos.jpg) · [`img/wo6-dev-switcher.jpg`](img/wo6-dev-switcher.jpg)
+
+**Also (not frontend work):** at the owner's request, the backend removed the faded caramel glow on the left of the landing hero (`Hero.tsx`). It stays removed in every theme.
+
+Checks: `tsc --strict --noUnusedLocals --noUnusedParameters` and `npm run build` pass.
 

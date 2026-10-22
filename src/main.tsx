@@ -20,18 +20,19 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               style: {
                 fontFamily: 'DM Sans, sans-serif',
                 fontSize: '14px',
-                background: '#2c1a0f',
-                color: '#fdf7ee',
-                border: '1px solid rgba(233, 187, 126, 0.25)',
+                // Theme colours (CSS variables), so toasts follow the active color theme
+                background: 'rgb(var(--espresso-900))',
+                color: 'rgb(var(--cream-100))',
+                border: '1px solid rgb(var(--caramel-300) / 0.25)',
                 borderRadius: '999px',
                 padding: '10px 18px',
-                boxShadow: '0 14px 30px -12px rgba(28, 16, 9, 0.6)',
+                boxShadow: '0 14px 30px -12px rgb(var(--espresso-950) / 0.6)',
               },
               success: {
-                iconTheme: { primary: '#e2a866', secondary: '#2c1a0f' },
+                iconTheme: { primary: 'rgb(var(--caramel-400))', secondary: 'rgb(var(--espresso-900))' },
               },
               error: {
-                iconTheme: { primary: '#ef4444', secondary: '#fdf7ee' },
+                iconTheme: { primary: '#ef4444', secondary: 'rgb(var(--cream-100))' },
               },
             }}
           />

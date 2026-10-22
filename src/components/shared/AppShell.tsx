@@ -3,7 +3,8 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import { LogOut, Menu, X, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import BrandMark from '@/components/shared/BrandMark';
-import { CoffeeBranch } from '@/components/shared/Decor';
+import DevThemeSwitcher from '@/components/shared/DevThemeSwitcher';
+import { applyTheme, DEFAULT_THEME, isThemeName, type ThemeName } from '@/components/shared/theme';
 import type { User } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -45,6 +46,25 @@ export default function AppShell({
   // Mobile drawer open/closed.
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  // Color theme for the tenant app. Until per-shop branding exists (Phase B) only the
+  // dev preview can change it: ?theme=… or the dev switcher (remembered per browser).
+  const [devTheme, setDevTheme] = useState<ThemeName>(() => {
+    if (!import.meta.env.DEV) return DEFAULT_THEME;
+    const fromUrl = new URLSearchParams(location.search).get('theme');
+    if (isThemeName(fromUrl)) return fromUrl;
+    try { const saved = localStorage.getItem('jpos-dev-theme'); if (isThemeName(saved)) return saved; } catch { /* storage blocked */ }
+    return DEFAULT_THEME;
+  });
+  const showDevSwitcher = import.meta.env.DEV && !new URLSearchParams(location.search).has('theme');
+  useEffect(() => {
+    applyTheme(devTheme);
+    return () => applyTheme(null); // leaving the app (e.g. sign out → landing) restores the default
+  }, [devTheme]);
+  const pickDevTheme = (t: ThemeName) => {
+    setDevTheme(t);
+    try { localStorage.setItem('jpos-dev-theme', t); } catch { /* storage blocked */ }
+  };
+
   // <main> is shared by every page, so its scroll position would carry over
   // (e.g. Reports opening half-way down after scrolling the Dashboard).
   const { pathname } = useLocation();
@@ -85,14 +105,13 @@ export default function AppShell({
           showLabels ? 'lg:w-64' : 'lg:w-[84px]',
           mobileOpen ? 'translate-x-0' : '-translate-x-full', 'lg:translate-x-0',
           'transition-all duration-300 flex-shrink-0 espresso-surface text-cream-100 flex flex-col',
-          'border-r border-caramel-300/10 overflow-hidden lg:shadow-[8px_0_30px_-12px_rgba(28,16,9,0.6)]',
-          mobileOpen && 'shadow-[8px_0_30px_-12px_rgba(28,16,9,0.6)]',
+          'border-r border-caramel-300/10 overflow-hidden lg:shadow-[8px_0_30px_-12px_rgb(var(--espresso-950)/0.6)]',
+          mobileOpen && 'shadow-[8px_0_30px_-12px_rgb(var(--espresso-950)/0.6)]',
           // Closed drawer is only off-screen; hide it so Tab skips its links.
           // transition-all keeps it visible while it slides out.
           !mobileOpen && 'max-lg:invisible',
         )}
       >
-        <CoffeeBranch className="absolute -bottom-6 -left-16 w-72 opacity-[0.12] rotate-[-20deg]" />
 
         {/* Header */}
         <div className={cn('relative flex items-center gap-2 px-4 pt-5 pb-4', !showLabels && 'lg:flex-col lg:px-2')}>
@@ -199,6 +218,7 @@ export default function AppShell({
       </div>
 
       {children}
+      {showDevSwitcher && <DevThemeSwitcher value={devTheme} onChange={pickDevTheme} />}
     </div>
   );
 }
