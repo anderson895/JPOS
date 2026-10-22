@@ -16,7 +16,7 @@ import { saveOrderAtomically, ReferenceUsedError } from '@/lib/saveOrder';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   Search, ShoppingCart, Plus, Minus, Trash2, X, CreditCard,
-  Banknote, Smartphone, CheckCircle, Printer, Coffee, Tag, Loader2, Maximize2
+  Banknote, Smartphone, CheckCircle, Printer, Coffee, Tag, Loader2, Maximize2, AlertTriangle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -647,7 +647,7 @@ export default function POSComponent() {
                 <div className="flex justify-between font-bold text-sm"><span>TOTAL</span><span>{formatCurrency(receipt.total)}</span></div>
                 <div className="flex justify-between"><span>{receipt.paymentMethod.toUpperCase()}</span><span>{formatCurrency(receipt.amountTendered || receipt.total)}</span></div>
                 {receipt.paymentReference && <div className="flex justify-between gap-2"><span>{receipt.paymentMethod === 'card' ? 'Approval' : 'Ref'}</span><span className="break-all text-right">{receipt.paymentReference}</span></div>}
-                {receipt.paymentNote && <p className="text-amber-700">⚠ {receipt.paymentNote}</p>}
+                {receipt.paymentNote && <p className="flex items-start gap-1 text-amber-700"><AlertTriangle className="w-3.5 h-3.5 mt-px flex-shrink-0" aria-hidden="true" />{receipt.paymentNote}</p>}
                 {(receipt.change || 0) > 0 && <div className="flex justify-between"><span>Change</span><span>{formatCurrency(receipt.change || 0)}</span></div>}
               </div>
               {/* Order QR on every receipt (cash too): plain order details staff can scan */}

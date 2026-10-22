@@ -10,7 +10,7 @@ import PageHeader from '@/components/shared/PageHeader';
 import type { Staff } from '@/types';
 import {
   Plus, Search, Edit2, Trash2, X, User, Shield,
-  ToggleLeft, ToggleRight, Loader2, CreditCard, Eye, EyeOff, Camera
+  ToggleLeft, ToggleRight, Loader2, CreditCard, Eye, EyeOff, Camera, Check
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -423,7 +423,7 @@ export default function AdminStaff() {
                 )}
                 {!editId && editStaff.rfidTag && editStaff.password && (
                   <p className="text-xs text-emerald-600 flex items-center gap-1">
-                    ✓ RFID login will be automatically configured using the password above.
+                    <Check className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" /> RFID login will be automatically configured using the password above.
                   </p>
                 )}
                 {!editId && editStaff.rfidTag && !editStaff.password && (

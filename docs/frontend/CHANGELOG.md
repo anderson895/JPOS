@@ -479,3 +479,8 @@ Checks: `tsc --strict --noUnusedLocals --noUnusedParameters` and `npm run build`
 - `PLANS[].action` was replaced by an `outline` flag (Enterprise keeps the outline style).
 - Phase 2 replaces this with `/subscribe` (trial sign-up).
 
+## 24. Library icons instead of emoji (2026-10-23)
+- Owner rule: **no emoji as icons** anywhere in the UI; use lucide-react.
+- Toasts: "coming soon" → `Clock`, Messenger → `MessageCircle`, newsletter → `Mail`. `scroll.ts` builds them with `createElement`, since it's plain TS.
+- Receipt payment note: "⚠" → `AlertTriangle`. Staff form RFID hint: "✓" → `Check`.
+

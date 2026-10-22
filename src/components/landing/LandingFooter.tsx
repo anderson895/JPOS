@@ -24,7 +24,7 @@ export default function LandingFooter() {
   const subscribe = (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim()) return;
-    toast('Thanks! Newsletter sign-ups open soon.', { icon: '☕' });
+    toast('Thanks! Newsletter sign-ups open soon.', { icon: <Mail className="w-4 h-4 text-caramel-600" aria-hidden="true" /> });
     setEmail('');
   };
 

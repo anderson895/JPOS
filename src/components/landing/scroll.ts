@@ -1,4 +1,9 @@
+import { createElement } from 'react';
+import { Clock, MessageCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+/** Library icons for toasts (no emoji). */
+const toastIcon = (Icon: typeof Clock) => createElement(Icon, { className: 'w-4 h-4 text-caramel-600', 'aria-hidden': true });
 
 /** Smooth-scroll to a landing section by id (sections carry scroll-mt for the fixed navbar). */
 export function scrollToSection(id: string) {
@@ -17,7 +22,7 @@ export function focusLogin() {
 /** Open an external link, or say it's coming soon when the URL isn't configured yet. */
 export function openExternal(url: string, label: string) {
   if (url) window.open(url, url.startsWith('mailto:') ? '_self' : '_blank', 'noopener,noreferrer');
-  else toast(`${label} is coming soon.`, { icon: '☕' });
+  else toast(`${label} is coming soon.`, { icon: toastIcon(Clock) });
 }
 
 /**
@@ -27,5 +32,5 @@ export function openExternal(url: string, label: string) {
 export function openMessenger(url: string, message: string) {
   navigator.clipboard?.writeText(message).catch(() => { /* clipboard blocked */ });
   window.open(`${url}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
-  toast('Opening Messenger. Your message is copied, so paste it if the chat is empty.', { icon: '💬', duration: 6000 });
+  toast('Opening Messenger. Your message is copied, so paste it if the chat is empty.', { icon: toastIcon(MessageCircle), duration: 6000 });
 }
