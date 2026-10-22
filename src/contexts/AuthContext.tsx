@@ -34,6 +34,8 @@ interface AuthContextType {
   noShop: boolean;
   /** The platform owner (platformAdmins/{uid}): reviews payments, sets prices and QR codes. */
   isSuperAdmin: boolean;
+  /** False while the Super Admin check is still running (so pages can wait for it). */
+  superAdminChecked: boolean;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   /** RFID works only on a shop's own staff sign-in page (/s/:slug), so the card lookup knows the shop. */
@@ -102,6 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [noShop, setNoShop] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [superAdminChecked, setSuperAdminChecked] = useState(false);
   const [loading, setLoading] = useState(true);
   // True while loginWithRFID is checking a card's account, so the auth listener
   // refuses an admin session from a card instead of briefly opening it.
@@ -129,6 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearState();
       setFirebaseUser(null);
       setIsSuperAdmin(false);
+      setSuperAdminChecked(true);
       setLoading(false);
       signOut(auth).catch(() => { /* already signed out */ });
     };
@@ -141,11 +145,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!fbUser) {
         setIsSuperAdmin(false);
+        setSuperAdminChecked(true);
         setLoading(false);
         return;
       }
       setLoading(true);
-      checkSuperAdmin(fbUser.uid).then(v => { if (version === authVersion) setIsSuperAdmin(v); });
+      setSuperAdminChecked(false);
+      checkSuperAdmin(fbUser.uid)
+        .then(v => { if (version === authVersion) setIsSuperAdmin(v); })
+        .catch(() => { if (version === authVersion) setIsSuperAdmin(false); })
+        .finally(() => { if (version === authVersion) setSuperAdminChecked(true); });
 
       let shopId: string | null = null;
       // The user's own profile, live: it appears when a new owner creates their
@@ -371,7 +380,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-      currentUser, tenant, firebaseUser, noShop, isSuperAdmin, loading,
+      currentUser, tenant, firebaseUser, noShop, isSuperAdmin, superAdminChecked, loading,
       login, loginWithRFID, loginWithGoogle, signUp, resendVerification, checkEmailVerified,
       logout, refreshUser,
     }}>

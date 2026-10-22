@@ -10,6 +10,7 @@ import { enabledChannels } from '@/lib/platform';
 import { daysLeft, periodEnd, PLAN_IDS, PLAN_LABEL, shopState } from '@/lib/entitlements';
 import { cancelPaymentRequest, paymentMessage, startTrial, submitPaymentRequest, watchShopRequests } from '@/lib/subscriptions';
 import { normalizeReference } from '@/lib/eWallet';
+import { AUTO_TRIAL_KEY } from '@/pages/SubscribePage';
 import { cn } from '@/lib/utils';
 import type { PlanId, SubscriptionRequest } from '@/types';
 
@@ -46,6 +47,13 @@ export default function Billing() {
     if (autoTrial.current || params.get('start') !== 'trial' || !tenant || isSuperAdmin) return;
     if (tenant.status !== 'setup' || tenant.trialUsed) return;
     autoTrial.current = true;
+    let fresh = false;
+    try { fresh = sessionStorage.getItem(AUTO_TRIAL_KEY) === '1'; sessionStorage.removeItem(AUTO_TRIAL_KEY); } catch { /* ignore */ }
+    // Anything else (an old or shared link) asks first: the trial is one-time only
+    if (!fresh && !confirm(`Start your ${tenant.trialDays}-day free trial now? You can use it only once.`)) {
+      navigate('/admin/billing', { replace: true });
+      return;
+    }
     startTrial(tenant)
       .then(() => {
         toast.success(`Your free trial has started. Enjoy JPOS for ${tenant.trialDays} days!`);

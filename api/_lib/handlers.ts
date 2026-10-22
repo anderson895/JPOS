@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { ApiError, handle, json, readJsonBody, requireMethod } from './http.js';
 import { defaultDeps, isLocalTest, notSetUp, type Deps, type Mailer } from './deps.js';
 import { paymentNoticeMessage, verifyEmailMessage, type Message } from './mail.js';
@@ -44,6 +45,15 @@ export function recipients(deps: Deps): string[] {
   return list.split(',').map(s => s.trim()).filter(s => EMAIL.test(s));
 }
 
+/**
+ * The caller's network (Vercel sets these headers itself), hashed so no IP
+ * address is stored. Null on this computer, where there's no such header.
+ */
+function networkId(request: Request): string | null {
+  const ip = request.headers.get('x-real-ip')?.trim() || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+  return ip ? `vip_${createHash('sha256').update(ip).digest('hex').slice(0, 32)}` : null;
+}
+
 function limitError(r: Exclude<Reserve, { ok: true }>): ApiError {
   if (r.reason === 'cooldown') return new ApiError(429, 'too_soon', 'Please wait a minute before sending another email.');
   if (r.reason === 'limit') return new ApiError(429, 'too_many', "That's a lot of emails for today. Try again tomorrow, or contact us.");
@@ -79,16 +89,23 @@ export function verifyEmailHandler(getDeps: GetDeps = defaultDeps) {
 
     const base = appUrl(deps, request);
     const mailer = deps.mailer(); // fails before anything is counted if Gmail isn't set up
-    const quota = await deps.store.reserveVerifyEmail(uid, deps.now());
+    const ipId = networkId(request);
+    const reservedAt = deps.now();
+    const quota = await deps.store.reserveVerifyEmail(uid, ipId, reservedAt);
     if (!quota.ok) throw limitError(quota);
 
-    // Firebase makes the one-time code; the link opens JPOS's own confirm page
-    const firebaseLink = await deps.auth.generateEmailVerificationLink(user.email);
-    const oobCode = new URL(firebaseLink).searchParams.get('oobCode');
-    if (!oobCode) throw new Error('The verification link has no code');
-    const link = `${base}/verify-email?oobCode=${encodeURIComponent(oobCode)}`;
-
-    await send(mailer, [user.email], verifyEmailMessage({ name: user.displayName, link }));
+    try {
+      // Firebase makes the one-time code; the link opens JPOS's own confirm page
+      const firebaseLink = await deps.auth.generateEmailVerificationLink(user.email);
+      const oobCode = new URL(firebaseLink).searchParams.get('oobCode');
+      if (!oobCode) throw new Error('The verification link has no code');
+      const link = `${base}/verify-email?oobCode=${encodeURIComponent(oobCode)}`;
+      await send(mailer, [user.email], verifyEmailMessage({ link }));
+    } catch (err) {
+      // Nothing went out: don't count it against the owner
+      await deps.store.releaseVerifyEmail(uid, ipId, reservedAt).catch(() => { /* best effort */ });
+      throw err;
+    }
     return json({ sent: true });
   });
 }
@@ -118,17 +135,19 @@ export function paymentNoticeHandler(getDeps: GetDeps = defaultDeps) {
     if (!to.length) throw notSetUp();
     const base = appUrl(deps, request);
     const mailer = deps.mailer();
-    const quota = await deps.store.reservePaymentNotice(requestId, uid, deps.now());
+    const reservedAt = deps.now();
+    const quota = await deps.store.reservePaymentNotice(requestId, uid, reservedAt);
     if (!quota.ok) {
       if (quota.reason === 'duplicate') return json({ sent: false, duplicate: true });
       throw limitError(quota);
     }
 
     try {
-      await send(mailer, to, paymentNoticeMessage(payment, `${base}/admin/platform`));
+      const cloudName = deps.env.CLOUDINARY_CLOUD_NAME || deps.env.VITE_CLOUDINARY_CLOUD_NAME;
+      await send(mailer, to, paymentNoticeMessage(payment, `${base}/admin/platform`, cloudName));
     } catch (err) {
       // Not sent: let a later try send it
-      await deps.store.releasePaymentNotice(requestId).catch(() => { /* best effort */ });
+      await deps.store.releasePaymentNotice(requestId, uid, reservedAt).catch(() => { /* best effort */ });
       throw err;
     }
     return json({ sent: true });

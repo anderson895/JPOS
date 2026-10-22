@@ -14,6 +14,7 @@ export async function callApi<T = Record<string, unknown>>(path: string, body: R
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(45_000),
     });
   } catch {
     throw new Error("Couldn't reach JPOS. Check your internet, then try again.");

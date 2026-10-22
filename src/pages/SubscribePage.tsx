@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { FirebaseError } from 'firebase/app';
 import { BadgeCheck, Check, Sparkles, Eye, EyeOff, Loader2, Mail, Store, User as UserIcon, Lock, ArrowLeft, RefreshCw } from 'lucide-react';
@@ -16,13 +16,25 @@ import { cn } from '@/lib/utils';
 import type { PlanId } from '@/types';
 
 const DRAFT_KEY = 'jpos-signup-draft';
-interface Draft { shopName: string; slug: string; ownerName: string; plan: PlanChoice | null }
+const RESEND_KEY = 'jpos-resend-at';
+/** Set by this tab right before it creates the shop with "Start free trial" picked (read by Billing). */
+export const AUTO_TRIAL_KEY = 'jpos-auto-trial';
+/** Local test only: real addresses also get a real email (VITE_LOCAL_REAL_EMAIL=true in .env) */
+const LOCAL_REAL_EMAIL = import.meta.env.VITE_LOCAL_REAL_EMAIL === 'true';
+interface Draft { shopName: string; slug: string; ownerName: string; plan: PlanChoice | null; email?: string }
 
+/**
+ * Kept in this browser (not just this tab): Gmail opens the confirm link in a
+ * new tab, and the shop name and package must still be there.
+ */
 function loadDraft(): Partial<Draft> {
-  try { return JSON.parse(sessionStorage.getItem(DRAFT_KEY) ?? '{}'); } catch { return {}; }
+  try { return JSON.parse(localStorage.getItem(DRAFT_KEY) ?? '{}'); } catch { return {}; }
 }
 function saveDraft(d: Draft) {
-  try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch { /* storage blocked */ }
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch { /* storage blocked */ }
+}
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY); } catch { /* storage blocked */ }
 }
 
 /**
@@ -35,7 +47,11 @@ export default function SubscribePage() {
   const { settings } = usePlatformSettings();
   const [params] = useSearchParams();
   const fromLink = params.get('plan');
-  const draft = useMemo(loadDraft, []);
+  // Only this account's draft (a different sign-up on this computer starts fresh)
+  const draft = useMemo(() => {
+    const d = loadDraft();
+    return !d.email || !firebaseUser?.email || d.email === firebaseUser.email ? d : {};
+  }, [firebaseUser?.email]);
 
   // The free trial or a package; null = show the cards first
   const [choice, setChoice] = useState<PlanChoice | null>(isPlanChoice(fromLink) ? fromLink : isPlanChoice(draft.plan) ? draft.plan : null);
@@ -49,20 +65,36 @@ export default function SubscribePage() {
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [busy, setBusy] = useState(false);
+  // This tab created the shop (not another tab that finished the sign-up)
+  const createdHere = useRef(false);
   // "Send the email again" waits a minute between emails (the server's limit too)
-  const [resendAt, setResendAt] = useState(0);
+  // Kept in this tab's storage and read on every render: the page reloads right
+  // after signing up, so the time must outlive this component.
   const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (resendAt <= Date.now()) return;
-    const timer = setInterval(() => {
-      const t = Date.now();
-      setNow(t);
-      if (t >= resendAt) clearInterval(timer);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [resendAt]);
+  let resendAt = 0;
+  try { resendAt = Number(sessionStorage.getItem(RESEND_KEY)) || 0; } catch { /* storage blocked */ }
   const waitSec = Math.max(0, Math.ceil((resendAt - now) / 1000));
-  const startResendWait = () => { setNow(Date.now()); setResendAt(Date.now() + 60_000); };
+  const startResendWait = () => {
+    try { sessionStorage.setItem(RESEND_KEY, String(Date.now() + 60_000)); } catch { /* storage blocked */ }
+    setNow(Date.now());
+  };
+
+  // Waiting for the email to be confirmed: check every few seconds (and when the
+  // tab comes back into view), so the page moves on by itself, even when the
+  // link was opened on another device.
+  const [confirmed, setConfirmed] = useState(false);
+  const waitingForEmail = !!firebaseUser && noShop && !firebaseUser.emailVerified && !confirmed;
+  const checkRef = useRef(checkEmailVerified);
+  checkRef.current = checkEmailVerified;
+  useEffect(() => {
+    if (!waitingForEmail) return;
+    const check = () => { checkRef.current().then(ok => { if (ok) setConfirmed(true); }).catch(() => { /* try again next time */ }); };
+    const timer = setInterval(check, 4000);
+    // The countdown on "Send the email again"
+    const clock = setInterval(() => setNow(Date.now()), 1000);
+    window.addEventListener('focus', check);
+    return () => { clearInterval(timer); clearInterval(clock); window.removeEventListener('focus', check); };
+  }, [waitingForEmail]);
 
   useEffect(() => { applyTheme(null); }, []);
   // The shop link follows the shop name until the owner edits it
@@ -78,12 +110,14 @@ export default function SubscribePage() {
   if (loading) return <Shell><Loader2 className="w-8 h-8 animate-spin mx-auto text-caramel-500" /></Shell>;
   // Already has a shop: start the free trial they picked, or go pay
   if (currentUser) {
-    const billing = choice === 'trial' ? '/admin/billing?start=trial' : choice ? `/admin/billing?plan=${choice}` : '/admin/billing';
+    // Only the tab that just created the shop starts the free trial by itself
+    const billing = choice === 'trial' && createdHere.current ? '/admin/billing?start=trial'
+      : choice && choice !== 'trial' ? `/admin/billing?plan=${choice}` : '/admin/billing';
     return <Navigate to={currentUser.role === 'admin' ? billing : '/staff'} replace />;
   }
 
   const signedIn = !!firebaseUser && noShop;
-  const verified = !!firebaseUser?.emailVerified;
+  const verified = !!firebaseUser?.emailVerified || confirmed;
   const shopProblem = !shopName.trim() || shopName.trim().length < 2 ? 'Enter your shop name.'
     : slugProblem(slug) ?? (slugFree === false ? 'That shop link is taken. Try another one.' : null)
     ?? (!ownerName.trim() ? 'Enter your name.' : null);
@@ -92,11 +126,16 @@ export default function SubscribePage() {
     if (shopProblem) { toast.error(shopProblem); return; }
     setBusy(true);
     try {
+      // Set first: the new shop can show up before createShop returns
+      createdHere.current = true;
+      if (choice === 'trial') { try { sessionStorage.setItem(AUTO_TRIAL_KEY, '1'); } catch { /* ignore */ } }
       await createShop({ shopName, slug, ownerName, desiredPlan: plan });
-      try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
+      clearDraft();
       toast.success('Your shop is ready! Choose how to start.');
       // AuthContext picks up the new profile and the redirect above takes over
     } catch (err) {
+      createdHere.current = false;
+      try { sessionStorage.removeItem(AUTO_TRIAL_KEY); } catch { /* ignore */ }
       toast.error(err instanceof SlugTakenError ? err.message : getAuthErrorMessage(err, 'Could not create your shop. Please try again.'));
       if (err instanceof SlugTakenError) setSlugFree(false);
     } finally {
@@ -108,7 +147,7 @@ export default function SubscribePage() {
     e.preventDefault();
     if (shopProblem) { toast.error(shopProblem); return; }
     if (password.length < 6) { toast.error('Use a password with at least 6 characters.'); return; }
-    saveDraft({ shopName, slug, ownerName, plan: choice });
+    saveDraft({ shopName, slug, ownerName, plan: choice, email: email.trim() });
     setBusy(true);
     try {
       const { emailSent, problem } = await signUp(email, password, ownerName);
@@ -142,25 +181,16 @@ export default function SubscribePage() {
           <Mail className="w-12 h-12 mx-auto text-caramel-600" aria-hidden="true" />
           <h1 className="mt-3 font-display text-2xl text-espresso-900">Check your email</h1>
           <p className="mt-2 text-sm text-bark-600">
-            {USE_EMULATORS
+            {USE_EMULATORS && !LOCAL_REAL_EMAIL
               ? <>Local test: no real email is sent to <strong>{firebaseUser?.email}</strong>. Open it with the button below.</>
-              : <>We sent a link to <strong>{firebaseUser?.email}</strong>. Open it to confirm your email, then come back here.</>}
+              : <>We sent a link to <strong>{firebaseUser?.email}</strong>. Tap <strong>Confirm my email</strong> in it.</>}
+          </p>
+          <p className="mt-4 inline-flex items-center gap-2 text-xs text-bark-500">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> This page moves on by itself once you confirm.
           </p>
         </div>
         <div className="mt-6 space-y-3">
           {USE_EMULATORS && <LocalVerifyHelper email={firebaseUser?.email ?? ''} />}
-          <button
-            className="btn-primary w-full py-3"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              const ok = await checkEmailVerified().catch(() => false);
-              setBusy(false);
-              if (!ok) toast.error("We can't see the confirmation yet. Open the link in your email first.");
-            }}
-          >
-            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} I've confirmed my email
-          </button>
           <button
             className="btn-secondary w-full"
             disabled={waitSec > 0}
@@ -170,7 +200,7 @@ export default function SubscribePage() {
           >
             <RefreshCw className="w-4 h-4" aria-hidden="true" /> {waitSec > 0 ? `Send again in ${waitSec}s` : 'Send the email again'}
           </button>
-          <button className="btn-ghost w-full text-sm" onClick={() => logout()}>Use a different account</button>
+          <button className="btn-ghost w-full text-sm" onClick={() => { clearDraft(); logout(); }}>Use a different account</button>
         </div>
       </Shell>
     );
@@ -273,7 +303,7 @@ export default function SubscribePage() {
               Continue with Google
             </button>
           )}
-          {signedIn && <button type="button" className="btn-ghost text-sm" onClick={() => logout()}>Use a different account</button>}
+          {signedIn && <button type="button" className="btn-ghost text-sm" onClick={() => { clearDraft(); logout(); }}>Use a different account</button>}
           {!signedIn && (
             <p className="text-center text-sm text-bark-500">
               Already have an account? <Link to="/login" className="font-semibold text-espresso-800 underline">Sign in</Link>
@@ -322,7 +352,7 @@ function Field({ icon: Icon, label, children }: { icon: typeof Mail; label: stri
 function LocalVerifyHelper({ email }: { email: string }) {
   return (
     <button className="btn-caramel w-full" onClick={() => window.location.assign(`/__dev/mail?to=${encodeURIComponent(email)}`)}>
-      <Mail className="w-4 h-4" aria-hidden="true" /> Local test: open the email
+      <Mail className="w-4 h-4" aria-hidden="true" /> Local test: open the email here
     </button>
   );
 }

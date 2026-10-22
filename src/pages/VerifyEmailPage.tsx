@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { applyActionCode } from 'firebase/auth';
 import { AlertCircle, ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
 import { auth } from '@/lib/firebase';
@@ -15,6 +16,7 @@ export default function VerifyEmailPage() {
   const [params] = useSearchParams();
   const code = params.get('oobCode') ?? '';
   const { firebaseUser, checkEmailVerified } = useAuth();
+  const navigate = useNavigate();
   const [state, setState] = useState<'working' | 'done' | 'failed'>('working');
   // The code works once: don't send it twice (React runs effects twice in development)
   const started = useRef(false);
@@ -35,6 +37,13 @@ export default function VerifyEmailPage() {
         setState(ok ? 'done' : 'failed');
       });
   }, [code, checkEmailVerified]);
+
+  // Signed in on this device: straight back to setting up the shop
+  useEffect(() => {
+    if (state !== 'done' || !firebaseUser) return;
+    toast.success('Email confirmed!');
+    navigate('/subscribe', { replace: true });
+  }, [state, firebaseUser, navigate]);
 
   return (
     <Shell>

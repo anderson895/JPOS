@@ -52,7 +52,7 @@ function ProtectedRoute({ children, role }: { children: React.ReactNode; role?: 
 }
 
 export default function App() {
-  const { currentUser, loading, noShop, isSuperAdmin } = useAuth();
+  const { currentUser, loading, noShop, isSuperAdmin, superAdminChecked } = useAuth();
 
   if (loading) return <LoadingScreen />;
 
@@ -95,7 +95,7 @@ export default function App() {
           <Route path="staff" element={<Page><AdminStaff /></Page>} />
           <Route path="payments" element={<Page><AdminPayments /></Page>} />
           <Route path="billing" element={<Page><AdminBilling /></Page>} />
-          <Route path="platform" element={isSuperAdmin ? <Page><SuperAdmin /></Page> : <Navigate to="/admin" replace />} />
+          <Route path="platform" element={!superAdminChecked ? <LoadingScreen /> : isSuperAdmin ? <Page><SuperAdmin /></Page> : <Navigate to="/admin" replace />} />
         </Route>
 
         {/* Staff Routes */}

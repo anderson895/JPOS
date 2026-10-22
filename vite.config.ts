@@ -12,7 +12,9 @@ const SERVER_ENV = [
   'FIREBASE_SERVICE_ACCOUNT', 'GOOGLE_APPLICATION_CREDENTIALS', 'FIREBASE_PROJECT_ID',
 ]
 // Local test mode (npm run dev): the emulators only. No Gmail, no keys.
-const LOCAL_TEST_ENV = ['NOTIFY_EMAIL', 'FIREBASE_PROJECT_ID', 'FIREBASE_AUTH_EMULATOR_HOST', 'FIRESTORE_EMULATOR_HOST']
+const LOCAL_TEST_ENV = ['NOTIFY_EMAIL', 'FIREBASE_PROJECT_ID', 'FIREBASE_AUTH_EMULATOR_HOST', 'FIRESTORE_EMULATOR_HOST', 'VITE_LOCAL_REAL_EMAIL']
+// ...plus Gmail, only when VITE_LOCAL_REAL_EMAIL=true: real addresses then get real emails
+const LOCAL_REAL_EMAIL_ENV = ['GMAIL_USER', 'GMAIL_APP_PASSWORD', 'MAIL_FROM_NAME']
 
 function readBody(req: IncomingMessage): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -42,7 +44,9 @@ function devApi(mode: string, env: Record<string, string>): Plugin {
     name: 'jpos-dev-api',
     apply: 'serve',
     configureServer(server) {
-      for (const key of localTest ? LOCAL_TEST_ENV : SERVER_ENV) {
+      const keys = !localTest ? SERVER_ENV
+        : env.VITE_LOCAL_REAL_EMAIL === 'true' ? [...LOCAL_TEST_ENV, ...LOCAL_REAL_EMAIL_ENV] : LOCAL_TEST_ENV
+      for (const key of keys) {
         if (env[key] && (localTest || !process.env[key])) process.env[key] = env[key]
       }
       process.env.JPOS_DEV_API = '1'

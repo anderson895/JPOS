@@ -15,3 +15,6 @@ ui-debug.log
 
 # Migration backups (staff data!) — never commit
 backups/
+
+# TypeScript build cache
+*.tsbuildinfo

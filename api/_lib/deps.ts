@@ -50,6 +50,11 @@ function adminApp(env: Env): App {
   const existing = getApps()[0];
   if (existing) return existing;
   if (isLocalTest(env)) return initializeApp({ projectId: env.FIREBASE_PROJECT_ID });
+  // The Admin SDK would trust the emulator's unsigned sign-ins: never on a real server
+  if (env.FIREBASE_AUTH_EMULATOR_HOST || env.FIRESTORE_EMULATOR_HOST) {
+    console.error('[api] emulator settings found outside local test mode; refusing to start');
+    throw notSetUp();
+  }
 
   // Vercel: the service account JSON (as is, or base64) in FIREBASE_SERVICE_ACCOUNT
   const raw = env.FIREBASE_SERVICE_ACCOUNT?.trim();
@@ -75,7 +80,11 @@ function gmailMailer(env: Env): Mailer {
   const user = env.GMAIL_USER?.trim();
   const pass = env.GMAIL_APP_PASSWORD?.replace(/\s+/g, '');
   if (!user || !pass) throw notSetUp();
-  gmail ??= nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user, pass } });
+  // Time limits well inside the function's own, so a stalled Gmail fails fast and cleanly
+  gmail ??= nodemailer.createTransport({
+    host: 'smtp.gmail.com', port: 465, secure: true, auth: { user, pass },
+    dnsTimeout: 5_000, connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 20_000,
+  });
   const from = { name: env.MAIL_FROM_NAME?.trim() || 'JPOS', address: user };
   return {
     async send(to, message) {
@@ -109,6 +118,27 @@ function outboxMailer(): Mailer {
   };
 }
 
+/** Made-up test addresses (juan@shop.test…) that Gmail could never deliver to. */
+const isFakeAddress = (address: string) => /\.(test|example|invalid|localhost)$/i.test(address.split('@')[1] ?? '');
+
+/**
+ * Local test mode: every email lands in the local inbox. With
+ * VITE_LOCAL_REAL_EMAIL=true (and Gmail set up), real addresses ALSO get a real
+ * email from Gmail, so the owner can try the whole sign-up from their own inbox.
+ */
+function localTestMailer(env: Env): Mailer {
+  const local = outboxMailer();
+  if (env.VITE_LOCAL_REAL_EMAIL !== 'true' || !env.GMAIL_USER || !env.GMAIL_APP_PASSWORD) return local;
+  const real = gmailMailer(env);
+  return {
+    async send(to, message) {
+      await local.send(to, message);
+      const reachable = to.filter(a => !isFakeAddress(a));
+      if (reachable.length) await real.send(reachable, message);
+    },
+  };
+}
+
 export function defaultDeps(env: Env = process.env): Deps {
   const app = adminApp(env);
   const auth = getAuth(app);
@@ -120,7 +150,7 @@ export function defaultDeps(env: Env = process.env): Deps {
       generateEmailVerificationLink: email => auth.generateEmailVerificationLink(email),
     },
     store: firestoreStore(getFirestore(app)),
-    mailer: () => (isLocalTest(env) ? outboxMailer() : gmailMailer(env)),
+    mailer: () => (isLocalTest(env) ? localTestMailer(env) : gmailMailer(env)),
     now: () => new Date(),
   };
 }

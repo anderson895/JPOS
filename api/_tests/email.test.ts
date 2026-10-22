@@ -4,7 +4,10 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { paymentNoticeHandler, verifyEmailHandler } from '../_lib/handlers.js';
-import { checkQuota, dayKey, DAILY_TOTAL, PAYMENT_LIMIT, VERIFY_LIMIT, type Limit, type QuotaState } from '../_lib/quota.js';
+import {
+  BUDGET, checkQuota, hourKey, last24Hours, withinBudget, PAYMENT_LIMIT, VERIFY_IP_LIMIT, VERIFY_LIMIT,
+  type Limit, type MailKind, type QuotaState,
+} from '../_lib/quota.js';
 import type { AuthUser, Deps } from '../_lib/deps.js';
 import type { Message } from '../_lib/mail.js';
 import type { PaymentRequestDoc, Reserve, Store } from '../_lib/store.js';
@@ -27,22 +30,35 @@ interface World {
 
 /** In-memory version of firestoreStore, using the same limits. */
 function memoryStore(w: World): Store {
-  const reserve = (quotaId: string, limit: Limit, now: Date, onceId?: string): Reserve => {
+  const num = (id: string) => Number((w.log.get(id) as { count?: number } | undefined)?.count ?? 0);
+  const hourId = (kind: MailKind, now: Date) => `hour_${kind}_${hourKey(now)}`;
+  const reserve = (kind: MailKind, quotaId: string, limit: Limit, now: Date, ipId?: string | null, onceId?: string): Reserve => {
     if (onceId && w.log.has(onceId)) return { ok: false, reason: 'duplicate' };
     const check = checkQuota(w.log.get(quotaId) as QuotaState | undefined, now.getTime(), limit);
     if (!check.ok) return check;
-    const dayId = `day_${dayKey(now)}`;
-    const today = Number(w.log.get(dayId) ?? 0);
-    if (today >= DAILY_TOTAL) return { ok: false, reason: 'busy' };
+    const ipCheck = ipId ? checkQuota(w.log.get(ipId) as QuotaState | undefined, now.getTime(), VERIFY_IP_LIMIT) : null;
+    if (ipCheck && !ipCheck.ok) return { ok: false, reason: 'limit', retryAfterSec: ipCheck.retryAfterSec };
+    const hours = last24Hours(now).map(h => num(`hour_${kind}_${h}`));
+    if (!withinBudget(kind, hours)) return { ok: false, reason: 'busy' };
     w.log.set(quotaId, check.next);
-    w.log.set(dayId, today + 1);
+    if (ipId && ipCheck?.ok) w.log.set(ipId, ipCheck.next);
+    w.log.set(hourId(kind, now), { count: hours[0] + 1 });
     if (onceId) w.log.set(onceId, true);
     return { ok: true };
   };
+  const release = (kind: MailKind, quotaId: string, now: Date, ipId?: string | null, onceId?: string) => {
+    const q = w.log.get(quotaId) as QuotaState | undefined;
+    if (q) w.log.set(quotaId, { ...q, count: Math.max(0, q.count - 1) });
+    if (w.log.has(hourId(kind, now))) w.log.set(hourId(kind, now), { count: Math.max(0, num(hourId(kind, now)) - 1) });
+    const ip = ipId ? (w.log.get(ipId) as QuotaState | undefined) : undefined;
+    if (ipId && ip) w.log.set(ipId, { ...ip, count: Math.max(0, ip.count - 1) });
+    if (onceId) w.log.delete(onceId);
+  };
   return {
-    reserveVerifyEmail: async (uid, now) => reserve(`verify_${uid}`, VERIFY_LIMIT, now),
-    reservePaymentNotice: async (id, uid, now) => reserve(`pay_${uid}`, PAYMENT_LIMIT, now, `paid_${id}`),
-    releasePaymentNotice: async (id) => { w.log.delete(`paid_${id}`); },
+    reserveVerifyEmail: async (uid, ipId, now) => reserve('verify', `verify_${uid}`, VERIFY_LIMIT, now, ipId),
+    releaseVerifyEmail: async (uid, ipId, now) => release('verify', `verify_${uid}`, now, ipId),
+    reservePaymentNotice: async (id, uid, now) => reserve('payment', `pay_${uid}`, PAYMENT_LIMIT, now, null, `paid_${id}`),
+    releasePaymentNotice: async (id, uid, now) => release('payment', `pay_${uid}`, now, null, `paid_${id}`),
     getPaymentRequest: async (id) => w.requests[id] ?? null,
   };
 }
@@ -61,13 +77,13 @@ function newWorld(): World {
       [REQ_ID]: {
         tenantId: 't1', tenantName: 'Kape <script>alert(1)</script>\nBcc: x@evil.test', uid: 'juan', requesterName: 'Juan',
         plan: 'business', amount: 999, channelLabel: 'GCash', reference: '1234567890123',
-        proofUrl: 'https://res.cloudinary.com/demo/proof.png', status: 'pending',
+        proofUrl: 'https://res.cloudinary.com/demo/image/upload/v1/proof.png', status: 'pending',
       },
     },
     log: new Map(),
     sent: [],
     now: START,
-    env: { APP_URL: APP, GMAIL_USER: 'jpos.owner@gmail.com', GMAIL_APP_PASSWORD: 'abcd efgh ijkl mnop' },
+    env: { APP_URL: APP, GMAIL_USER: 'jpos.owner@gmail.com', GMAIL_APP_PASSWORD: 'abcd efgh ijkl mnop', VITE_CLOUDINARY_CLOUD_NAME: 'demo' },
     mailFails: false,
     links: 0,
   };
@@ -109,10 +125,14 @@ function depsFor(w: World): () => Deps {
   });
 }
 
-const post = (path: string, token?: string, body: unknown = {}) =>
+const post = (path: string, token?: string, body: unknown = {}, ip?: string) =>
   new Request(`https://anything.test/api/${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(ip ? { 'x-real-ip': ip } : {}),
+    },
     body: JSON.stringify(body),
   });
 
@@ -157,11 +177,11 @@ describe('POST /api/email/verify', () => {
     assert.ok(!w.sent[0].text.includes('firebaseapp.com'));
   });
 
-  test("the owner's name can't become HTML", async () => {
+  test("carries no text from the sign-up form (it could be a stranger's message)", async () => {
     const w = newWorld();
     await call(verifyEmailHandler(depsFor(w)), post('email/verify', 'ok:juan'));
-    assert.ok(!w.sent[0].html.includes('<b>Dela Cruz</b>'));
-    assert.ok(w.sent[0].html.includes('Juan &lt;b&gt;Dela Cruz&lt;/b&gt;'));
+    assert.ok(!w.sent[0].html.includes('Dela Cruz'));
+    assert.ok(!w.sent[0].text.includes('Dela Cruz'));
   });
 
   test('already confirmed: nothing is sent', async () => {
@@ -201,13 +221,50 @@ describe('POST /api/email/verify', () => {
     assert.equal(w.sent.filter(s => s.to[0] === 'juan@shop.test').length, 6);
   });
 
-  test('stops for everyone when the day total is reached', async () => {
+  test('stops when the hourly or 24-hour share is used up', async () => {
     const w = newWorld();
-    w.log.set(`day_${dayKey(START)}`, DAILY_TOTAL);
+    w.log.set(`hour_verify_${hourKey(START)}`, { count: BUDGET.verify.perHour });
     const r = await call(verifyEmailHandler(depsFor(w)), post('email/verify', 'ok:juan'));
     assert.equal(r.status, 503);
     assert.equal(r.body.error.code, 'email_busy');
-    assert.equal(w.sent.length, 0);
+    // Spread over the past day (not this hour) still counts
+    const w2 = newWorld();
+    const hours = last24Hours(START);
+    for (let i = 1; i < hours.length; i++) w2.log.set(`hour_verify_${hours[i]}`, { count: Math.ceil(BUDGET.verify.perDay / 23) });
+    assert.equal((await call(verifyEmailHandler(depsFor(w2)), post('email/verify', 'ok:juan'))).status, 503);
+    assert.equal(w.sent.length + w2.sent.length, 0);
+  });
+
+  test('a flood of sign-up emails never blocks the payment emails', async () => {
+    const w = newWorld();
+    w.log.set(`hour_verify_${hourKey(START)}`, { count: BUDGET.verify.perHour });
+    const r = await call(paymentNoticeHandler(depsFor(w)), post('email/payment', 'ok:juan', { requestId: REQ_ID }));
+    assert.deepEqual(r.body, { sent: true });
+  });
+
+  test('ten accounts a day from one network, however many accounts they make', async () => {
+    const w = newWorld();
+    const h = verifyEmailHandler(depsFor(w));
+    for (let i = 0; i < 11; i++) w.users[`throwaway${i}`] = { email: `victim${i}@example.com`, emailVerified: false, disabled: false };
+    for (let i = 0; i < 11; i++) {
+      const r = await call(h, post('email/verify', `ok:throwaway${i}`, {}, '203.0.113.7'));
+      assert.equal(r.status, i < 10 ? 200 : 429, `account ${i + 1}`);
+    }
+    // Someone on another network is not held up
+    assert.equal((await call(h, post('email/verify', 'ok:juan', {}, '198.51.100.2'))).status, 200);
+    assert.equal(w.sent.length, 11);
+  });
+
+  test("a failed send doesn't use up the day's emails", async () => {
+    const w = newWorld();
+    const h = verifyEmailHandler(depsFor(w));
+    w.mailFails = true;
+    assert.equal((await call(h, post('email/verify', 'ok:juan', {}, '203.0.113.7'))).status, 502);
+    w.mailFails = false;
+    for (let i = 1; i <= 5; i++) {
+      w.now = new Date(START.getTime() + i * 61_000);
+      assert.equal((await call(h, post('email/verify', 'ok:juan', {}, '203.0.113.7'))).status, 200, `email ${i}`);
+    }
   });
 
   test('Gmail not set up: a clear message, and nothing is counted', async () => {
@@ -282,7 +339,7 @@ describe('POST /api/email/payment', () => {
     assert.ok(m.text.includes('Amount: ₱999'));
     assert.ok(m.text.includes('Reference no.: 1234567890123'));
     assert.ok(m.text.includes(`Open Super Admin: ${APP}/admin/platform`));
-    assert.ok(m.html.includes('https://res.cloudinary.com/demo/proof.png'));
+    assert.ok(m.html.includes('https://res.cloudinary.com/demo/image/upload/v1/proof.png'));
   });
 
   test('NOTIFY_EMAIL picks the recipients (bad entries dropped)', async () => {
@@ -301,12 +358,20 @@ describe('POST /api/email/payment', () => {
     assert.ok(m.html.includes('&lt;script&gt;'));
   });
 
-  test('a receipt link that is not https is left out', async () => {
-    const w = newWorld();
-    w.requests[REQ_ID].proofUrl = 'javascript:alert(1)';
-    await call(paymentNoticeHandler(depsFor(w)), pay('ok:juan'));
-    assert.ok(!w.sent[0].html.includes('javascript:'));
-    assert.ok(!w.sent[0].text.includes('javascript:'));
+  test("only JPOS's own Cloudinary pictures become a receipt link", async () => {
+    const bad = [
+      'javascript:alert(1)',
+      'https://jpos-login.example/google-signin',
+      'https://res.cloudinary.com/someone-else/image/upload/x.png',
+      'https://res.cloudinary.com.evil.test/demo/image/upload/x.png',
+    ];
+    for (const url of bad) {
+      const w = newWorld();
+      w.requests[REQ_ID].proofUrl = url;
+      await call(paymentNoticeHandler(depsFor(w)), pay('ok:juan'));
+      assert.ok(!w.sent[0].html.includes(url) && !w.sent[0].text.includes(url), url);
+      assert.ok(w.sent[0].text.includes('The receipt picture is in Super Admin.'));
+    }
   });
 
   test('one email per payment', async () => {
@@ -346,6 +411,15 @@ describe('POST /api/email/payment', () => {
       assert.equal(r.status, i < 10 ? 200 : 429, `payment ${i + 1}`);
     }
     assert.equal(w.sent.length, 10);
+  });
+});
+
+describe('withinBudget', () => {
+  test('per hour and per rolling 24 hours, per kind', () => {
+    assert.ok(withinBudget('verify', [0]));
+    assert.ok(!withinBudget('verify', [BUDGET.verify.perHour]));
+    assert.ok(!withinBudget('payment', [0, ...Array(23).fill(Math.ceil(BUDGET.payment.perDay / 23))]));
+    assert.ok(BUDGET.verify.perDay + BUDGET.payment.perDay < 500, "stays under Gmail's daily limit");
   });
 });
 

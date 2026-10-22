@@ -66,7 +66,9 @@ console.log(`
   Super Admin + demo shop owner : owner@jpos.test / owner123
   Demo shop cashier             : staff@jpos.test / staff123  (RFID card: 1111)
   Demo shop staff sign-in page  : /s/jpos-coffee
-  New shop sign-up              : /subscribe  (emails aren't sent; use the
-                                  "Local test: confirm the email for me" button)
+  New shop sign-up              : /subscribe
+                                  Real addresses get a real email (if
+                                  VITE_LOCAL_REAL_EMAIL=true in .env). Fake ones
+                                  (like @shop.test): "Local test: open the email here"
 `);
 process.exit(0);

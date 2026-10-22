@@ -14,7 +14,17 @@ const esc = (value: unknown) =>
 /** One short line (for subjects and greetings): no line breaks. */
 const oneLine = (value: unknown, max: number) => String(value ?? '').replace(/[\r\n\t]+/g, ' ').trim().slice(0, max);
 const peso = (amount: number) => `₱${Number(amount).toLocaleString('en-PH')}`;
-const isHttps = (url: unknown): url is string => typeof url === 'string' && /^https:\/\/[^\s"'<>]+$/.test(url);
+/** Only a picture uploaded to JPOS's own Cloudinary account counts as a receipt link. */
+export function isReceiptUrl(url: unknown, cloudName: string | undefined): url is string {
+  if (typeof url !== 'string' || !cloudName) return false;
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && u.hostname === 'res.cloudinary.com' && !u.username && !u.password && !u.port
+      && u.pathname.startsWith(`/${cloudName}/image/upload/`);
+  } catch {
+    return false;
+  }
+}
 
 function layout(heading: string, inner: string): string {
   return `<!doctype html><html><body style="margin:0;background:#f6efe6;font-family:Arial,Helvetica,sans-serif;color:#2b1a10">
@@ -31,10 +41,13 @@ ${inner}
 const button = (href: string, label: string) =>
   `<p style="margin:20px 0"><a href="${esc(href)}" style="display:inline-block;background:#3b2314;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:bold">${esc(label)}</a></p>`;
 
-/** Sent when a new shop owner signs up (and on "Send the email again"). */
-export function verifyEmailMessage({ name, link }: { name?: string; link: string }): Message {
-  const first = oneLine(name, 60);
-  const hi = first ? `Hi ${first},` : 'Hi,';
+/**
+ * Sent when a new shop owner signs up (and on "Send the email again"). Nobody
+ * has confirmed this address yet, so the email carries no text from the
+ * sign-up form: it can't be used to send someone else's message.
+ */
+export function verifyEmailMessage({ link }: { link: string }): Message {
+  const hi = 'Hi,';
   return {
     subject: 'Confirm your email for JPOS',
     text: [
@@ -58,7 +71,7 @@ ${button(link, 'Confirm my email')}
 }
 
 /** Sent to the Super Admin when a shop sends a payment and receipt. */
-export function paymentNoticeMessage(request: PaymentRequestDoc, adminUrl: string): Message {
+export function paymentNoticeMessage(request: PaymentRequestDoc, adminUrl: string, cloudName?: string): Message {
   const plan = PLAN_LABEL[request.plan] ?? oneLine(request.plan, 20);
   const shop = oneLine(request.tenantName, 60);
   const rows: [string, string][] = [
@@ -69,14 +82,14 @@ export function paymentNoticeMessage(request: PaymentRequestDoc, adminUrl: strin
     ['Reference no.', oneLine(request.reference, 40)],
     ['Sent by', oneLine(request.requesterName, 60)],
   ];
-  const proof = isHttps(request.proofUrl) ? request.proofUrl : null;
+  const proof = isReceiptUrl(request.proofUrl, cloudName) ? request.proofUrl : null;
   return {
     subject: `New payment: ${oneLine(shop, 40)} · ${plan} · ${peso(request.amount)}`,
     text: [
       'A shop sent a payment. Check it in your e-wallet, then approve or reject it in Super Admin.',
       '',
       ...rows.map(([k, v]) => `${k}: ${v}`),
-      ...(proof ? ['', `Receipt: ${proof}`] : []),
+      '', proof ? `Receipt: ${proof}` : 'The receipt picture is in Super Admin.',
       '',
       `Open Super Admin: ${adminUrl}`,
     ].join('\n'),
@@ -85,7 +98,9 @@ export function paymentNoticeMessage(request: PaymentRequestDoc, adminUrl: strin
 <table style="border-collapse:collapse;width:100%;font-size:14px">
 ${rows.map(([k, v]) => `<tr><td style="padding:6px 0;color:#6b5444;width:40%">${esc(k)}</td><td style="padding:6px 0;font-weight:bold">${esc(v)}</td></tr>`).join('\n')}
 </table>
-${proof ? `<p style="margin:12px 0 0"><a href="${esc(proof)}" style="color:#9a5b2a">View the receipt</a></p>` : ''}
+${proof
+    ? `<p style="margin:12px 0 0"><a href="${esc(proof)}" style="color:#9a5b2a">View the receipt</a></p>`
+    : '<p style="margin:12px 0 0;color:#6b5444">The receipt picture is in Super Admin.</p>'}
 ${button(adminUrl, 'Open Super Admin')}`),
   };
 }

@@ -33,10 +33,12 @@ export const storage = getStorage(app);
  * emulators on this computer, with fake data. Production is never touched.
  */
 export const USE_EMULATORS = import.meta.env.VITE_USE_EMULATORS === 'true';
-const AUTH_EMULATOR = 'http://127.0.0.1:9099';
+// The usual emulator ports; the automated tests use their own so they can run alongside
+const AUTH_EMULATOR = `http://${import.meta.env.VITE_AUTH_EMULATOR_HOST || '127.0.0.1:9099'}`;
+const [FIRESTORE_HOST, FIRESTORE_PORT] = (import.meta.env.VITE_FIRESTORE_EMULATOR_HOST || '127.0.0.1:8085').split(':');
 if (USE_EMULATORS) {
   connectAuthEmulator(auth, AUTH_EMULATOR, { disableWarnings: true });
-  connectFirestoreEmulator(db, '127.0.0.1', 8085);
+  connectFirestoreEmulator(db, FIRESTORE_HOST, Number(FIRESTORE_PORT));
 }
 
 /**
