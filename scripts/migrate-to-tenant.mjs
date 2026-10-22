@@ -14,6 +14,7 @@
  *   --owner <uid>         the shop owner's user id (an existing admin) (required)
  *   --apply               write. Without it: DRY RUN (reads + backup + plan only)
  *   --verify              compare old vs new (counts + checksums), no writes
+ *   --list-admins         print the admin accounts (uid + name) to pick --owner, no writes
  *   --yes-production      required to write when not on the emulator
  *
  * Safe to run more than once: a copy is written only when the target is missing or
@@ -39,12 +40,13 @@ const NAME = opt('name');
 const OWNER = opt('owner');
 const APPLY = flag('apply');
 const VERIFY = flag('verify');
+const LIST_ADMINS = flag('list-admins');
 const EMULATOR = !!process.env.FIRESTORE_EMULATOR_HOST;
 
 function die(msg) { console.error(`\nERROR: ${msg}\n`); process.exit(1); }
 if (!PROJECT) die('--project is required (e.g. jpos-f801b, or demo-jpos on the emulator)');
 if (!/^[a-zA-Z0-9_-]{1,40}$/.test(TENANT)) die('--tenant must be letters, digits, - or _');
-if (!VERIFY) {
+if (!VERIFY && !LIST_ADMINS) {
   if (!/^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/.test(SLUG)) die('--slug must be 3–40 lowercase letters, digits or dashes (e.g. kape-ni-juan)');
   if (!NAME || NAME.length > 60) die('--name is required (max 60 characters)');
   if (!OWNER) die('--owner <uid of the shop owner> is required');
@@ -87,6 +89,19 @@ async function put(ref, data, opts) {
   if (pending >= 400) { await batch.commit(); batch = db.batch(); pending = 0; }
 }
 async function flush() { if (pending) { await batch.commit(); batch = db.batch(); pending = 0; } }
+
+// ── list admins (to choose --owner) ────────────────────────────────────────
+if (LIST_ADMINS) {
+  const snap = await db.collection('users').get();
+  const rows = snap.docs.map(d => ({ uid: d.id, ...d.data() }));
+  console.log(`users: ${rows.length} total, ${rows.filter(r => r.role === 'admin').length} admin(s)
+`);
+  for (const r of rows.filter(r => r.role === 'admin')) {
+    console.log(`  ${r.uid}  ${String(r.displayName ?? '').slice(0, 40).padEnd(40)} ${r.isActive ? 'active' : 'INACTIVE'}${r.tenantId ? `  (already in shop ${r.tenantId})` : ''}`);
+  }
+  console.log('');
+  process.exit(0);
+}
 
 // ── read everything (old layout) ────────────────────────────────────────
 console.log(`\nProject ${PROJECT} ${EMULATOR ? '(EMULATOR)' : '(PRODUCTION)'} · tenant "${TENANT}" · ${APPLY ? 'APPLY' : VERIFY ? 'VERIFY' : 'DRY RUN'}\n`);
