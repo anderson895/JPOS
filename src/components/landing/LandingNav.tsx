@@ -49,7 +49,7 @@ export default function LandingNav() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10">
         <div className={cn('flex items-center justify-between gap-4 transition-all', scrolled ? 'h-16' : 'h-20')}>
           <button onClick={() => go('home')} className="text-left" aria-label="JPOS home">
-            <BrandMark tone="dark" subtitle="Coffee Shop Point of Sale" />
+            <BrandMark tone="dark" subtitle="Point of Sale" />
           </button>
 
           {/* Desktop links */}

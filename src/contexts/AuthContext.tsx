@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -17,6 +17,7 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
+import toast from 'react-hot-toast';
 import { auth, db } from '@/lib/firebase';
 import type { User } from '@/types';
 
@@ -59,10 +60,12 @@ async function fetchUserProfile(fbUser: FirebaseUser): Promise<User | null> {
  * Firebase drop that account's password (it keeps the same uid). RFID login
  * signs in with the password saved on the card, so put that password back —
  * otherwise the card would stop working with no way to fix it from the app.
+ * Admins never use RFID, so their (legacy) cards are ignored.
  */
 async function restoreRfidPassword(fbUser: FirebaseUser, profile: User) {
   const tag = profile.rfidTag?.trim();
-  if (!tag || !fbUser.email || fbUser.providerData.some(p => p.providerId === 'password')) return;
+  if (profile.role === 'admin' || !tag || !fbUser.email) return;
+  if (fbUser.providerData.some(p => p.providerId === 'password')) return;
   try {
     const card = await getDoc(doc(db, 'rfidCards', tag));
     const { userId, password } = (card.data() ?? {}) as { userId?: string; password?: string };
@@ -71,6 +74,8 @@ async function restoreRfidPassword(fbUser: FirebaseUser, profile: User) {
     }
   } catch (err) {
     console.warn('Could not restore the RFID password after Google sign-in:', err);
+    // Not fatal for this sign-in, but their card won't work until it's fixed
+    toast.error("Your RFID card couldn't be re-linked. Ask your admin to re-enter the card password in Manage Staff.", { duration: 8000 });
   }
 }
 
@@ -78,6 +83,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
+  // True while loginWithRFID is checking a card's account, so the auth listener
+  // refuses an admin session from a card instead of briefly opening it.
+  const rfidSignIn = useRef(false);
 
   useEffect(() => {
     let unsubSnapshot: (() => void) | null = null;
@@ -116,6 +124,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const profile = await fetchUserProfile(fbUser);
         if (version !== authVersion) return;
         if (!profile) {
+          resetSession();
+          return;
+        }
+        // Admins can't sign in with an RFID card (loginWithRFID shows the message)
+        if (rfidSignIn.current && profile.role === 'admin') {
           resetSession();
           return;
         }
@@ -180,42 +193,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { email, password } = cardDoc.data() as { email?: string; password?: string };
     if (!email || !password) throw new Error('RFID card is incomplete. Contact your administrator.');
 
-    let cred;
+    rfidSignIn.current = true;
     try {
-      cred = await signInWithEmailAndPassword(auth, email.trim(), password);
-    } catch (err) {
-      console.error('RFID sign-in failed for', email, err);
-      if (err instanceof FirebaseError) {
-        // Firebase temporarily locks out an account after too many failures.
-        if (err.code === 'auth/too-many-requests') {
-          throw new Error('Too many login attempts. Please wait a few minutes, then try again.');
+      let cred;
+      try {
+        cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+      } catch (err) {
+        console.error('RFID sign-in failed for', email, err);
+        if (err instanceof FirebaseError) {
+          // Firebase temporarily locks out an account after too many failures.
+          if (err.code === 'auth/too-many-requests') {
+            throw new Error('Too many login attempts. Please wait a few minutes, then try again.');
+          }
+          if (err.code === 'auth/user-not-found') {
+            throw new Error('This RFID card is linked to a deleted account. Contact your administrator.');
+          }
+          if (
+            err.code === 'auth/wrong-password' ||
+            err.code === 'auth/invalid-credential' ||
+            err.code === 'auth/invalid-login-credentials'
+          ) {
+            throw new Error(
+              "This RFID card's saved password is incorrect. Ask your administrator to re-enter the RFID password for this staff."
+            );
+          }
         }
-        if (err.code === 'auth/user-not-found') {
-          throw new Error('This RFID card is linked to a deleted account. Contact your administrator.');
-        }
-        if (
-          err.code === 'auth/wrong-password' ||
-          err.code === 'auth/invalid-credential' ||
-          err.code === 'auth/invalid-login-credentials'
-        ) {
-          throw new Error(
-            "This RFID card's saved password is incorrect. Ask your administrator to re-enter the RFID password for this staff."
-          );
-        }
+        throw new Error('RFID login failed. Please try again or contact your administrator.');
       }
-      throw new Error('RFID login failed. Please try again or contact your administrator.');
-    }
 
-    const userData = await fetchUserProfile(cred.user);
-    if (!userData) {
-      await signOut(auth);
-      throw new Error('This account no longer has access. Contact your administrator.');
+      const userData = await fetchUserProfile(cred.user);
+      if (!userData) {
+        await signOut(auth);
+        throw new Error('This account no longer has access. Contact your administrator.');
+      }
+      // A card holds its owner's password and anyone who knows the tag can read
+      // it, so admin accounts never sign in by RFID — old admin cards stop working.
+      if (userData.role === 'admin') {
+        await signOut(auth);
+        throw new Error('RFID login is not available for admin accounts. Use your email and password.');
+      }
+      if (!userData.isActive) {
+        await signOut(auth);
+        throw new Error('This account has been deactivated. Contact your administrator.');
+      }
+      // onSnapshot will handle setting currentUser automatically
+    } finally {
+      rfidSignIn.current = false;
     }
-    if (!userData.isActive) {
-      await signOut(auth);
-      throw new Error('This account has been deactivated. Contact your administrator.');
-    }
-    // onSnapshot will handle setting currentUser automatically
   };
 
   /**

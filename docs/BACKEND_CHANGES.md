@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Role** | Backend developer (logic, data, Firebase, security) |
-| **Scope** | Bug fixes from a full code review, plus a new **Google sign-in** |
-| **Status** | Implemented, type-checked and built. **Not committed yet.** |
-| **Note** | A UI redesign is in progress in the same working tree. Some files listed here are also getting visual changes from the frontend developer. The login form is moving from `src/pages/LoginPage.tsx` to `src/components/landing/LoginCard.tsx`. |
+| **Scope** | Bug fixes from a full code review, a new **Google sign-in**, **no RFID for admin accounts** (§19), a **receipt QR** (§20; the PayMongo demo was removed), code splitting (§21) and the **store-QR e-wallet** (§22) |
+| **Status** | §1–§18 were committed in the checkpoint `c179cd9` (not pushed). §19 is implemented but **not committed yet**; it goes in the next commit. |
+| **Note** | A UI redesign happened in the same working tree, so some files listed here also have visual changes from the frontend developer. The login form now lives in `src/components/landing/LoginCard.tsx` (it used to be in `src/pages/LoginPage.tsx`). |
 
 ## Contents
 1. [Action items (outside the code)](#1-action-items-outside-the-code)
@@ -26,6 +26,10 @@
 16. [Known limitations (not fixed)](#16-known-limitations-not-fixed)
 17. [Changes by file](#17-changes-by-file)
 18. [Tech Lead review follow-ups](#18-tech-lead-review-follow-ups)
+19. [Admin accounts can't use RFID](#19-admin-accounts-cant-use-rfid)
+20. [Receipt QR (PayMongo removed)](#20-receipt-qr-paymongo-removed)
+21. [Code splitting](#21-code-splitting)
+22. [Store-QR e-wallet (GCash/Maya) + reconciliation](#22-store-qr-e-wallet-gcashmaya--reconciliation)
 
 ---
 
@@ -35,11 +39,13 @@ These steps can't be done from the code. Several fixes only take effect after th
 
 | # | Where | What to do | Why |
 |---|---|---|---|
-| 1 | Firebase Console → Firestore Database → **Rules** | Publish the rules from `README.md` §3 | The security holes in §3 stay open until the new rules are live |
-| 2 | Firebase Console → Authentication → **Sign-in method** | Enable **Google** | Needed for "Continue with Google" |
-| 3 | Firebase Console → Authentication → Settings → **Authorized domains** | Add the live domain (e.g. `your-app.vercel.app`) | Firebase refuses the Google popup on domains not in this list (`localhost` is allowed by default) |
-| 4 | Terminal | `npm run build`, if you deploy from the committed `dist/` folder | `dist/` still holds the old build without these fixes |
+| 1 | Terminal (Firebase CLI) or Firebase Console → Firestore Database → **Rules** | ✅ **Done 2026-10-22.** The owner deployed `firestore.rules` to `jpos-f801b`: the exact file that passed the Tech Lead's emulator suite (62/62). An anonymous probe of production confirmed that listing `rfidCards`, `users`, `orders` and `products` is denied. **Any future rules change must pass `docs/techlead/firestore-rules.test.mjs` before it's deployed.** | The security holes in §3 stay open until the new rules are live. This includes the rule that blocks RFID cards for admins (§19) |
+| 2 | Firebase Console → Authentication → **Sign-in method** | ✅ **Done 2026-10-22.** The owner enabled **Google** and confirmed it works in production | Needed for "Continue with Google" |
+| 3 | Firebase Console → Authentication → Settings → **Authorized domains** | ✅ **Done 2026-10-22** (set up by the owner) | Firebase refuses the Google popup on domains not in this list (`localhost` is allowed by default) |
+| 4 | Terminal / hosting | Build before deploying: `npm run build`, or let Vercel or Docker build | `dist/` is no longer tracked in git (it was a stale build) |
 | 5 | Browser | Run the manual checklist in [§15](#15-verification-and-test-checklist) | Live Firebase flows (login, Google, RFID, staff edits) couldn't be tested without real accounts |
+| 6 | JPOS → Manage Staff (or Firebase Console → `rfidCards`) | **Remove every admin's RFID card.** Easiest: open each admin and click Save, which clears the tag and deletes the card. Or delete the `rfidCards` documents whose `userId` is an admin | Each old admin card still holds that admin's password in plain text (§19) |
+| 7 | JPOS → Account Settings → Password | **Change the password of every admin who had an RFID card** | Anyone who knew the tag could read the password. If the old rules were ever published, consider every saved card password exposed (§19) |
 
 ---
 
@@ -90,7 +96,7 @@ Severity: **Critical** = security hole · **High** = wrong money/data, or an out
 
 ## 3. Security: Firestore rules
 
-**File:** `README.md` §3 (the project keeps its rules there). **They must be published in the Firebase Console** (action item 1).
+**File:** `firestore.rules` at the repo root, with `firebase.json` + `.firebaserc` (project `jpos-f801b`). The rules used to live only inside `README.md` §3, which now points to the file. **They must be deployed** (action item 1).
 
 ### Problems in the old rules
 - `rfidCards: allow read: if true` let anyone **list** every card. Each card stores the email and **plaintext password** used for RFID login, including the admins'. The Firebase config is public in the JS bundle, so no login was needed to do this.
@@ -104,7 +110,7 @@ Severity: **Critical** = security hole · **High** = wrong money/data, or an out
 | `users/{uid}` | Own profile, or admin | Create/delete: admin only. Update: admin, or the user themselves but only `displayName`, `photoURL`, `updatedAt` |
 | `products`, `categories` | Active users | Admin |
 | `orders` | Active users | Create: active user, and `cashierId` must equal their own uid. Update/delete: admin |
-| `rfidCards/{tag}` | `get` (one card by tag): public, since RFID login looks a card up before signing in. `list`: **blocked** | Admin |
+| `rfidCards/{tag}` | `get` (one card by tag): public, since RFID login looks a card up before signing in. `list`: **blocked** | Create/update: admin, and **never for an admin account** (§19). Delete: admin |
 
 ### Effect on the app
 - Every existing flow was checked against the new rules: password login, RFID login, Google login, POS ordering, both dashboards, reports, staff CRUD and account settings. All of them still work.
@@ -154,7 +160,7 @@ Only **emails already registered in JPOS** can sign in with Google: staff added 
 ### Important Firebase behavior: Gmail accounts lose their password
 Staff accounts are created with email + password and their emails are never verified. When such a user signs in with Google for the first time using the same **Gmail** address, Firebase keeps the account (same uid) but **removes its password**. From then on, password login and RFID login (which signs in with the password saved on the card) would fail. The admin couldn't fix it from the app either, because saving a card requires verifying the password.
 
-- **Mitigation:** `restoreRfidPassword()`. After a Google sign-in, if the account no longer has a password and the user has an RFID card that belongs to them, the card's saved password is linked back (`linkWithCredential`). Password and RFID login keep working.
+- **Mitigation:** `restoreRfidPassword()`. After a Google sign-in, if the account no longer has a password and the user has an RFID card that belongs to them, the card's saved password is linked back (`linkWithCredential`). Password and RFID login keep working. This applies to **staff only**; admins never use RFID (§19).
 - Users **without** an RFID card keep using Google sign-in from then on.
 - **Non-Gmail** emails that already have a password can't use Google. Firebase answers with `account-exists-with-different-credential`, and the app tells them to use email and password.
 
@@ -262,7 +268,7 @@ Tags are stored trimmed in the profile, and tags containing `/` are rejected.
 
 | Change | Details |
 |---|---|
-| **RFID password sync** | After an admin changes their password, the password saved on their RFID card is updated too. Otherwise their card would stop working. If the update fails, a separate message says to re-enter it in Manage Staff. |
+| **RFID password sync** | ~~After an admin changes their password, the password saved on their RFID card is updated too.~~ **Removed in §19:** admins can't have RFID cards anymore (and the rules now refuse card writes for admins), so the sync could only show a misleading error. |
 | **Wrong-password message** | Newer Firebase projects report a wrong password as `auth/invalid-credential` (not `auth/wrong-password`). All three codes now show "Current password is incorrect". Other errors use the shared friendly messages. |
 | **Google-only accounts** | Clear message instead of a misleading error (see §5) |
 | **Photo picker** | The same file can be picked again after a failed upload |
@@ -330,6 +336,8 @@ Today plus each of the last 7 days used to be 8 separate queries run one after a
 | `@/lib/authErrors` | `CANCELLED_SIGN_IN_CODES` | **New** | Error codes for a sign-in the user backed out of |
 | `@/lib/authErrors` | `getAuthErrorMessage()` | More codes mapped | Unchanged usage |
 | `@/lib/firebase` | `createUserWithoutSignIn(email, password, onCreated?)` | **New optional callback** | Write the profile inside `onCreated`; if it throws, the login is rolled back |
+| `@/lib/orders` | `buildOrder(snapshot, orderNumber, payment?)` | **New** (§20) | One order shape for cash and online payments |
+| `@/lib/receiptQr` | `receiptQrPayload(order)` | **New** (§20) | Text for the QR on every receipt |
 
 ### Behavior to keep during the UI redesign
 - **RFID login:** keep `loadingRef.current = true` at the start of `handleRFIDScan` and `= false` in its `finally`. Also keep the scanner-speed check (`firstCharAt`, `SCANNER_MS_PER_CHAR`) and the 300 ms focus loop that runs only in RFID mode.
@@ -337,6 +345,7 @@ Today plus each of the last 7 days used to be 8 separate queries run one after a
 - **Receipt printing:** keep `id="receipt"` on the receipt block and the `@media print` rules in `src/index.css`.
 - **Modals:** keep them inside `<Portal>` so they cover the full screen.
 - **Staff cards:** keep the `isSelf` prop behavior (no delete or deactivate for yourself).
+- **Staff form:** when the role is **admin**, hide the RFID tag and password fields. `handleSave` also forces the tag to empty for admins (§19).
 - **Products:** keep the `[@media(hover:hover)]` classes, and keep "Save" disabled while uploading.
 - **Item revenue:** `order.items[].subtotal` is **before** the order-level discount. Rank "top selling" by quantity, or label revenue as gross.
 
@@ -348,6 +357,7 @@ Today plus each of the last 7 days used to be 8 separate queries run one after a
 - **Order documents:** created with `setDoc` on a pre-generated reference (still a random Firestore ID).
 - **`orders.amountTendered` / `orders.change`:** for non-cash orders, `amountTendered = total` and `change = 0`.
 - **Money fields:** `subtotal`, `discount`, `total`, `amountTendered`, `change` and `items[].subtotal` are rounded to 2 decimals.
+- **`orders.paymentReference`** (§22): the GCash/Maya reference (normalized, unique per wallet via `paymentRefs`) or a card approval code. E-wallet orders also carry `paymentVerification: "manual"` + `verifiedBy`; `paymentNote` flags anything for review.
 - **`users.rfidTag`:** stored trimmed.
 - **`rfidCards/{tag}`:** shape unchanged: `{ email, password, userId, staffName, createdAt | updatedAt }`. `userId` is now used to check who owns a card before reusing or deleting it.
 - **Queries:**
@@ -391,12 +401,17 @@ The 21 logic checks covered:
 14. **Google (registered account):** a registered Gmail account logs in with its usual role. For a staff member with an RFID card, the card still works after the Google login.
 15. **Google (unknown account):** an unregistered Google account is refused, and no new user is left in Firebase → Authentication.
 16. **Google (cancel):** closing the Google popup shows no error.
+17. **Admin RFID login:** tap an old admin card. It's refused with "RFID login is not available for admin accounts…", and the admin dashboard never flashes open.
+18. **Admin with a card:** open the admin in Manage Staff and click Save. The toast says the RFID card was removed, and the card no longer exists in Firebase.
+19. **Promote with a card:** promote a staff member who has a card to admin. The card is deleted in the same save.
+20. **Demote with a card:** demote an admin to staff and give them a tag in the same save. It saves; this checks the `getAfter()` rule.
+21. **Create staff with a card:** with the new rules published, create a staff member with an RFID tag. It saves; this checks `getAfter()` on the new profile.
 
 ---
 
 ## 16. Known limitations (not fixed)
 
-- **Plaintext passwords on RFID cards.** This is how RFID login was designed: the card document holds the password used to sign in. The new rules stop anyone from listing the cards, but someone who knows a tag can still read that one card. The proper fix is a Cloud Function that turns a scanned tag into a sign-in token, which requires Firebase's paid Blaze plan.
+- **Plaintext passwords on RFID cards.** This is how RFID login was designed: the card document holds the password used to sign in. The new rules stop anyone from listing the cards, but someone who knows a tag can still read that one card. Since §19 this only applies to **staff** cards, because admins can't have one. The proper fix is a Cloud Function that turns a scanned tag into a sign-in token, which requires Firebase's paid Blaze plan.
 - **Deleted staff keep their Firebase login.** The browser can't delete another user's login, so a deleted staff member's email can't be reused for a new account. Delete the login in the Firebase Console first.
 - **Google sign-in works only with Gmail for existing password accounts** (see §5).
 - **Google-only staff can't get RFID set up from Manage Staff.** Setting up a card requires verifying their password, which they no longer have.
@@ -411,17 +426,21 @@ To review any file, run `git diff -- <path>`.
 
 | File | Changes |
 |---|---|
-| `README.md` | Hardened Firestore rules (§3); Google sign-in setup and behavior; first-admin note; feature list |
+| `README.md` | §3 now points to `firestore.rules` and says what the rules enforce; Google sign-in setup and behavior; first-admin note; RFID setup note (no admin cards); feature list |
 | `docs/BACKEND_CHANGES.md` | This document |
-| `src/contexts/AuthContext.tsx` | `authVersion` guard, `resetSession()`, first-admin bootstrap removed, `/` tag check, `loginWithGoogle()`, `restoreRfidPassword()` |
+| `tsconfig.json`, `tests/tsconfig.json` | Dropped the deprecated `baseUrl`. VS Code flagged it: TypeScript 7 stops supporting it. `paths` (`@/*` → `./src/*`) now resolves relative to the tsconfig file; tests inherit it. Same behavior; `tsc`, `--strict` and the build pass |
+| `firestore.rules` | **New.** The Firestore rules as a real file (single source of truth), including no RFID cards for admins |
+| `firebase.json`, `.firebaserc` | **New.** Firebase CLI config, so `firebase deploy --only firestore:rules` deploys `firestore.rules` to project `jpos-f801b` |
+| `.gitignore` | Ignore Firebase CLI and emulator logs and cache (`firebase-debug.log`, `firestore-debug.log`, `ui-debug.log`, `.firebase/`) |
+| `src/contexts/AuthContext.tsx` | `authVersion` guard, `resetSession()`, first-admin bootstrap removed, `/` tag check, `loginWithGoogle()`, `restoreRfidPassword()` (staff only); RFID login refused for admins, including the `rfidSignIn` listener gate (§19) |
 | `src/types/index.ts` | JSDoc on `Order.discount` / `discountType` (discount is always pesos) |
 | `src/contexts/CartContext.tsx` | Per-user reset, clamped and rounded `discountAmount`, rounded totals |
 | `src/lib/utils.ts` | `roundMoney()`, `generateOrderNumber(uniqueId)` |
 | `src/lib/firebase.ts` | In-memory secondary auth, `onCreated` + rollback in `createUserWithoutSignIn` |
 | `src/lib/authErrors.ts` | Google error messages, generic `operation-not-allowed`, `CANCELLED_SIGN_IN_CODES` |
 | `src/components/shared/POSComponent.tsx` | Unique order numbers via `setDoc`, cash-only tendered/change, discount input clamp, rounding, menu load error |
-| `src/pages/admin/Staff.tsx` | RFID tag change/clear/move logic in one batch, duplicate-tag check, self-protection (`isSelf`), staff creation with rollback, delete in a batch, tag checks, load error, file reset |
-| `src/components/admin/AccountSettingsModal.tsx` | RFID password sync, wrong-password codes, Google-only message, file reset |
+| `src/pages/admin/Staff.tsx` | RFID tag change/clear/move logic in one batch, duplicate-tag check, self-protection (`isSelf`), staff creation with rollback, delete in a batch, tag checks, load error, file reset; admins get no RFID tag and their card is removed on save (§19) |
+| `src/components/admin/AccountSettingsModal.tsx` | Wrong-password codes, Google-only message, file reset (the RFID password sync was added, then removed in §19) |
 | `src/pages/admin/Reports.tsx` | Range query + race guard, load-error toast, `sharePct()`, daily keys, `parseISO`, PDF currency/time/columns/header line |
 | `src/pages/admin/Dashboard.tsx` | One 7-day query, real badges vs the same time yesterday, load-error toast |
 | `src/pages/staff/Dashboard.tsx` | Local-day range query, newest first |
@@ -461,5 +480,181 @@ They also ran `tsc`, `tsc --strict` and `vite build`; all passed.
 
 **Notes from the review:**
 - **`Order.discount`:** JSDoc added in `src/types/index.ts`. `discount` is always the **peso amount** deducted, even when `discountType` is `'percent'`. **Done.**
-- **RFID card security** (§16): the Tech Lead will raise it with the owner as a design decision, e.g. don't give admin accounts an RFID card.
+- **RFID card security** (§16): raised with the owner as a design decision. Decided: **admin accounts can't use RFID** (§19).
 - **`tsconfig.json`:** it has `"strict": false`, yet the whole tree already passes `--strict`. The Tech Lead recommends enabling strict mode once the UI redesign is finished.
+
+---
+
+## 19. Admin accounts can't use RFID
+
+**Decision:** made by the owner and passed on by the Tech Lead (`jpos-48`).
+**Status:**
+- Backend files: done.
+- UI files: applied by `jpos-54` and verified.
+- `tsc`, `tsc --strict` and `vite build` pass.
+- Not committed yet; this goes in the next commit.
+
+### Why
+An RFID card document (`rfidCards/{tag}`) stores its owner's **login email and plaintext password**, because RFID login signs in with them. Card reads must stay public so the login screen can look a card up before anyone is signed in. So **anyone who knows an admin's tag could read the admin's password** and take over the whole system.
+
+Blocking cards for admins removes that risk. Staff cards stay, since their worst case is POS access only.
+
+### What changed
+| Where | Change | Applied by |
+|---|---|---|
+| `src/contexts/AuthContext.tsx`: `loginWithRFID` | After loading the profile: if the account is an admin, sign out and throw *"RFID login is not available for admin accounts. Use your email and password."* Existing admin cards stop working right away | Backend |
+| `src/contexts/AuthContext.tsx`: auth listener | New `rfidSignIn` ref, set while `loginWithRFID` runs. The listener refuses an admin profile while it's set. Without this, the listener could open the admin dashboard for a split second, and start loading its data, before `loginWithRFID` signed out | Backend |
+| `src/contexts/AuthContext.tsx`: `restoreRfidPassword` | Skips admins, so an old admin card is never used to re-link a password after a Google sign-in | Backend |
+| `firestore.rules`: `rfidCards` | `allow create, update: if isAdmin() && getAfter(users/{userId}).data.role != 'admin'`, plus `allow delete: if isAdmin()` (see below) | Backend |
+| `README.md`: RFID Setup | Note that admins can't use RFID, and that saving an admin removes their card | Backend |
+| `src/pages/admin/Staff.tsx`: `handleSave` | For the admin role, the tag is forced to empty. The existing batch then deletes the admin's old card in the same atomic write; this also covers promoting a staff member who has a card. The toast says *"RFID card removed (admins can't use RFID)"* | `jpos-54` |
+| `src/pages/admin/Staff.tsx`: staff form | When the role is admin, the RFID fields are hidden and a note explains why. They come back when switching the role to Staff | `jpos-54` |
+| `src/components/admin/AccountSettingsModal.tsx` | The RFID password sync after a password change was removed. Only admins use this modal, and they no longer have cards | `jpos-54` |
+
+### Why the rule uses `getAfter()`, not `get()`
+The rule must look at the **owner's role**. In a batched write, `get()` sees the data **before** the batch, and `getAfter()` sees it **after**. Two app flows write the profile and the card in the same batch:
+
+| Flow (one batch) | With `get()` | With `getAfter()` |
+|---|---|---|
+| **Create staff with a card**: new `users/{uid}` + new card | The profile doesn't exist yet, so `get()` fails and **staff creation with RFID breaks** | Sees the new profile (role staff), so it's allowed ✓ |
+| **Demote an admin and give them a card** in one save | Sees the old role (admin), so it's refused | Sees the new role (staff), so it's allowed ✓ |
+| **Promote staff with a card to admin**: update `users` + delete the card | The delete rule only needs `isAdmin()` ✓ | Same ✓ |
+| Single card write (no profile change) | Current profile | Same as `get()` ✓ |
+
+### What the owner must do (also in §1)
+1. **Deploy the updated rules** (`firestore.rules`).
+2. **Remove existing admin cards:** in JPOS, open each admin in Manage Staff and click **Save**. Or delete the `rfidCards` documents whose `userId` is an admin in the Firebase Console.
+3. **Change the password of every admin who had a card** (Account Settings → Password), since anyone who knew the tag could read it.
+   - If the *old* rules (public card listing) were ever published, treat every saved card password as exposed.
+   - Staff passwords can be reset from Firebase Console → Authentication. Then re-enter the new password on the staff member's card in Manage Staff.
+
+### Tests
+Checklist items 17–21 in [§15](#15-verification-and-test-checklist).
+
+---
+
+## 20. Receipt QR (PayMongo removed)
+
+**Status:** the PayMongo TEST-mode integration was built, reviewed and then **removed by owner decision**: JPOS takes manual payments only (cash, the store's own GCash/Maya QR, card). The **receipt QR stays**.
+
+### PayMongo: archived, then removed
+- **Archive:** local branch `archive/paymongo-test`, commit `b6d643c`. It's **not pushed** and not part of `main`.
+  - It holds the `api/` functions (config/checkout/status/cancel), the `sk_test_`-only latch, Firebase ID-token checks, 36 unit tests, the client and POS hook, and `docs/backend/PAYMONGO.md`, with the POS and configs as they were.
+  - To look at it: `git log archive/paymongo-test`. To restore it, merge or cherry-pick into a branch.
+- **Removed from the working tree:**
+  - `api/`, `scripts/test-api.mjs`, `src/lib/paymongo.ts`, `src/lib/usePayMongoCheckout.ts`, `public/pay/`, `docs/backend/PAYMONGO.md`
+  - the `jose` dependency and the `test:api` script
+  - the `Order.paymentProvider`, `paymentSessionId` and `paymentStatus` fields
+- **Restored to the last commit:**
+  - `vite.config.ts`: no dev `/api` plugin
+  - `vercel.json`: plain SPA rewrite
+  - `.env.example`: no PayMongo key
+  - `build` is back to `tsc && vite build`
+- **Kept:**
+  - `qrcode.react` and `src/lib/receiptQr.ts` (the receipt QR)
+  - `src/lib/orders.ts`: `OrderSnapshot` and `buildOrder`, now with the store-QR `ManualPayment`
+  - `Order.paymentReference` and `paymentNote`, which the store-QR e-wallet uses
+- **Moot after the removal:**
+  - the review follow-up P2 (retry after `save_failed`)
+  - the proposed API response-shape change
+  - the P1 fix (dev `/api` 503), which went away with the plugin
+- **Frontend:** `frontend` removes the PayMongo UI in `POSComponent.tsx` and the demo mock, using the exact diff sent by backend.
+- **Owner:** if `PAYMONGO_SECRET_KEY` was ever added in Vercel → Environment Variables, delete it.
+
+### Receipt QR (the spec that stays)
+Every receipt, cash included, has a QR code built by `receiptQrPayload(order)` in `src/lib/receiptQr.ts`. It holds plain text:
+
+```
+JPOS ORDER ORD-20261022-K3F9QA
+2026-10-22 07:30
+TOTAL PHP 280.00
+PAID GCASH
+REF 1234567890123    ← GCash/Maya reference, or a card approval code, when there is one
+```
+
+- Staff scan it to find an order, e.g. for a refund. It is **not a link** and **not proof of payment**: anyone could print one, so check the order in Reports.
+- It uses `PHP` instead of `₱` so every scanner reads it.
+- It's rendered with `qrcode.react` (`<QRCodeSVG size={128} level="M" marginSize={2}>`) inside `#receipt`, so it prints.
+- Worst case measured (115 characters): QR version 7, about 34 mm printed, 0.69 mm per module (about 5.5 dots at 203 dpi). It scans fine on 80 mm thermal paper.
+
+---
+
+## 21. Code splitting
+
+**Requested by:** the Tech Lead (low priority, after PayMongo). **Status:** done and measured. Not committed yet.
+
+The public landing page used to download the whole app in one 1.7 MB file: every admin page, recharts, jspdf and the POS.
+
+| Change | File | Owner |
+|---|---|---|
+| `React.lazy` for both layouts and all admin/staff pages. `<Suspense>` shows `LoadingScreen` while a layout loads, and a small spinner inside the content area while a page loads, so the sidebar stays put | `src/App.tsx` | Backend |
+| `jspdf` and `jspdf-autotable` are imported inside `downloadPDF()`, so they load only when a PDF is downloaded. The "Generating…" spinner now actually shows | `src/pages/admin/Reports.tsx` | Applied by the frontend (`jpos-83`) |
+
+### Before / after (`vite build`)
+| Chunk | Before | After |
+|---|---|---|
+| Main: landing, login, auth, Firebase | **1,729 kB** (gzip 486 kB) | **742 kB** (gzip 196 kB): −57% raw, −60% gzip |
+| Reports page | inside main | 45 kB |
+| Dashboard pages (recharts, shared) | inside main | 386 kB, loaded only with Dashboard/Reports |
+| POS (with QR code) | inside main | 48 kB |
+| jspdf + autotable (+ html2canvas, purify) | inside main / lazy | 390 + 31 kB (+ 224 kB), loaded only on "Download PDF" |
+
+`tsc --strict` and the build pass. The landing page no longer downloads recharts, jspdf or any admin code.
+
+---
+
+## 22. Store-QR e-wallet (GCash/Maya) + reconciliation
+
+> ⚠️ **Deploy the rules in TWO STAGES.**
+> - **Stage A** (the current `firestore.rules`) is safe now. It adds Payment Settings and reference uniqueness, and still accepts the live app's GCash/Maya orders, which have no reference.
+> - **Stage B** is for after the new app is live: delete the `// STAGE A only` line so the reference becomes required.
+> - Details: [EWALLET_QR.md](backend/EWALLET_QR.md).
+
+**Requested by:** the owner (manual payments only); contract approved by the Tech Lead (WO-3).
+**Status:** done and verified (WO-3, WO-4a, WO-4b). Not committed yet. **Rules not deployed**; deploy stage A as described above.
+**Full documentation:** [`docs/backend/EWALLET_QR.md`](backend/EWALLET_QR.md)
+
+### Summary
+- **Flow:**
+  - Customers pay the store's own GCash/Maya QR.
+  - The cashier enters the **reference number** and ticks "I saw ₱X received".
+  - The order and a `paymentRefs/{method}_{REF}` claim are saved **in one batch**, so a reference can't be used twice.
+- **Rules (`firestore.rules`):**
+  - GCash/Maya orders need a well-formed reference, `paymentVerification: 'manual'`, `verifiedBy` = the cashier, and the matching claim in the same batch.
+  - Claims are create-only, with exact and typed fields.
+  - `settings/payments` is admin-only: a staff member who could swap the QR would receive the shop's payments, and a wallet can't be on without a QR.
+  - Card takes an optional approval code; cash is unchanged.
+- **Helpers:**
+  - `src/lib/eWallet.ts`: normalization, validation, defaults, claim key
+  - `src/lib/storeSettings.ts`: the single path helper; load, live and save
+  - `src/lib/saveOrder.ts`: atomic save + `ReferenceUsedError`; idempotent if the save had already landed
+  - `src/lib/orders.ts`: `ManualPayment`
+  - `src/lib/reports.ts`: per-method count + total, and the Ref label
+- **Route:** `/admin/payments` (lazy) in `src/App.tsx`, for the frontend's Payment Settings page.
+
+### QA lows (WO-3)
+| # | Fix | Where |
+|---|---|---|
+| a | The payment method resets to **Cash** after every saved order | POS `saveOrder` (frontend applies) |
+| b | Switching the discount from ₱ to % clamps it to ≤ 100 | POS discount toggle (frontend applies) |
+| c | If re-linking the RFID password fails after a Google sign-in, a toast says so: "ask your admin to re-enter the card password in Manage Staff". It used to be a silent `console.warn` | `src/contexts/AuthContext.tsx` (backend) |
+
+### Verification
+| Check | Result |
+|---|---|
+| Firestore rules on the emulator (`docs/techlead/firestore-rules.test.mjs`) | **105/105** in stage A **and** stage B (62 existing + 43 store-QR; the suite detects the stage) |
+| `npm run test:unit` | **17/17** |
+| `tsc --strict`, `tsc -p tests`, `npm run build` | Pass on the **whole tree** after the frontend applied WO-4a (Payment Settings) and WO-4b (POS + Reports + router flags) |
+| Frontend logic check (backend) | POS: atomic save, ReferenceUsedError, Confirm guarded by reference + "received", back to Cash after each order and when a method is switched off, ₱→% clamp. Reports: `paymentBreakdown`, Ref column on screen and in the PDF |
+
+### Changes by file
+| File | Change |
+|---|---|
+| `firestore.rules` | `eWalletOk`/`cardOk` on order create; `paymentRefs` (create-only, typed fields, getAfter pairing); `settings/payments` (admin-only, validated) |
+| `src/lib/eWallet.ts`, `storeSettings.ts`, `saveOrder.ts`, `reports.ts` | **New** |
+| `src/lib/orders.ts` | `ManualPayment` in `buildOrder` |
+| `src/types/index.ts` | `WalletSettings`, `PaymentSettings`; `Order.paymentVerification`, `verifiedBy` |
+| `src/App.tsx` | `/admin/payments` route |
+| `src/contexts/AuthContext.tsx` | RFID re-link failure toast |
+| `tests/unit/*`, `tests/tsconfig.json`, `scripts/test-unit.mjs`, `package.json` (`test:unit`) | **New** unit tests and runner |
+| `docs/techlead/firestore-rules.test.mjs` | Emulator host from `FIRESTORE_EMULATOR_HOST`; 41 store-QR cases (edited with the Tech Lead's permission) |

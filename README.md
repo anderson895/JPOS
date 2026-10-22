@@ -41,7 +41,7 @@ Authentication → Settings → **Authorized domains** (`localhost` is allowed b
 How Google sign-in works in JPOS:
 - Only emails already in JPOS can use it (added in **Manage Staff**, or the first admin). Unknown Google accounts are turned away.
 - For a **Gmail** address, Firebase signs in to the existing JPOS account (same user). If that email was never verified,
-  Firebase removes the account's password at that moment. JPOS puts it back automatically when the person has an RFID card;
+  Firebase removes the account's password at that moment. JPOS puts it back automatically when the staff member has an RFID card;
   otherwise that person keeps using Google sign-in from then on.
 - A non-Gmail email that already has a password login can't use Google; keep using email/password or RFID.
 
@@ -110,63 +110,18 @@ Create the following collections:
 
 ### 3. Firestore Security Rules
 
-> ⚠️ These rules only take effect once published in **Firebase Console → Firestore Database → Rules**.
-> The previous version let anyone list every RFID card (with its saved password) and let any
-> signed-in user give themselves the `admin` role — publish this version to close both holes.
+The rules live in [`firestore.rules`](firestore.rules). The project config is `firebase.json` + `.firebaserc` (project `jpos-f801b`).
 
-```javascript
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    function isAdmin() {
-      return request.auth != null
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
-    }
-    function isActiveUser() {
-      return request.auth != null
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
-    }
+> ⚠️ Rules only take effect once deployed. Either run `firebase deploy --only firestore:rules`
+> (Firebase CLI, logged in to the project), or paste the file into **Firebase Console → Firestore Database → Rules**
+> and click **Publish**. The previous rules let anyone list every RFID card (with its saved password) and let any
+> signed-in user give themselves the `admin` role.
 
-    match /users/{userId} {
-      // Own profile only; admins can see everyone (Staff Management)
-      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
-      // Only admins create/delete accounts (create the very first admin in the console)
-      allow create, delete: if isAdmin();
-      // Users may change their own name/photo — never their role or active status
-      allow update: if isAdmin() || (
-        request.auth != null && request.auth.uid == userId &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['displayName', 'photoURL', 'updatedAt'])
-      );
-    }
-    match /products/{id} {
-      allow read: if isActiveUser();
-      allow write: if isAdmin();
-    }
-    match /categories/{id} {
-      allow read: if isActiveUser();
-      allow write: if isAdmin();
-    }
-    match /orders/{id} {
-      allow read: if isActiveUser();
-      // Cashiers can only record orders under their own account
-      allow create: if isActiveUser() && request.resource.data.cashierId == request.auth.uid;
-      allow update, delete: if isAdmin();
-    }
-
-    // RFID login looks up a single card BEFORE signing in, so `get` stays public,
-    // but listing all cards (and their saved passwords) is blocked.
-    // Staff accounts are created on a secondary app, so the admin's session
-    // stays signed in and admin-only writes work.
-    match /rfidCards/{tag} {
-      allow get: if true;
-      allow list: if false;
-      allow write: if isAdmin();
-    }
-  }
-}
-```
+What they enforce:
+- `users`: read your own profile (admins read all). Only admins create or delete accounts. Users may edit only their own name and photo, never their role or active status.
+- `products`, `categories`: active users read; admins write.
+- `orders`: active users read. Cashiers can create orders only under their own uid. Admins update and delete.
+- `rfidCards`: one card can be read before sign-in (RFID login needs it), but listing all cards is blocked. Only admins write, and **an admin account can never have a card**.
 
 ### 4. Creating First Admin
 
@@ -249,6 +204,11 @@ To assign RFID tags to staff:
 1. Go to Admin → Staff Management
 2. Edit the staff member
 3. Enter or scan the RFID tag in the "RFID Tag" field
+
+**Admin accounts can't use RFID.** A card stores its owner's password, and anyone who knows the
+tag can read it, so an admin card would hand out admin access. Admins sign in with email and
+password (or Google). Saving an admin in Staff Management removes any card they had, and
+existing admin cards are refused at the RFID login.
 
 ---
 

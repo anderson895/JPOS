@@ -1,0 +1,9 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["unit/**/*.ts", "../src/vite-env.d.ts"]
+}

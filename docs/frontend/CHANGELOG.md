@@ -4,7 +4,7 @@
 |---|---|
 | **Role** | Frontend developer (UI, styling, pages, components, `public/` assets) |
 | **Scope** | Full UI redesign of JPOS to follow `reference_UI/` (landing page + login, app shell, every admin/staff screen) |
-| **Status** | All frontend work through §13 is committed: the redesign in checkpoint `c179cd9`, and the polish and review fixes (§9, §13) in the follow-up frontend commit. Nothing is pushed. |
+| **Status** | §1–§13 are committed: the redesign in checkpoint `c179cd9`, then the polish and review fixes in the follow-up frontend commit. §14–§16 are **not committed yet** (waiting for the Tech Lead's review). Nothing is pushed. |
 | **Reference** | `reference_UI/FullUI.png` (full page), `reference_UI/JPOS Coffee Shop POS Landing Page.png` (hero + login card), plus the photo and asset PNGs |
 | **Companion docs** | [`DESIGN-SYSTEM.md`](DESIGN-SYSTEM.md): tokens, classes and components for building new screens · [`../BACKEND_CHANGES.md`](../BACKEND_CHANGES.md): logic changes |
 
@@ -22,6 +22,13 @@
 11. [Changes by file](#11-changes-by-file)
 12. [Coordination rules followed](#12-coordination-rules-followed)
 13. [Tech Lead review follow-ups](#13-tech-lead-review-follow-ups)
+14. [POS: PayMongo (TEST) checkout + order QR on every receipt](#14-pos-paymongo-test-checkout--order-qr-on-every-receipt)
+15. [Small fixes: scroll reset, sticky modal header/footer, lazy PDF](#15-small-fixes-scroll-reset-sticky-modal-headerfooter-lazy-pdf)
+16. [Tutorial video: confidential, not on the landing page](#16-tutorial-video-confidential-not-on-the-landing-page)
+17. [WO-2: approved packages on the pricing section](#17-wo-2-approved-packages-on-the-pricing-section)
+18. [WO-2b: landing copy for every small business](#18-wo-2b-landing-copy-for-every-small-business)
+19. [WO-4a: admin Payment Settings page](#19-wo-4a-admin-payment-settings-page)
+20. [WO-4b: POS store-QR e-wallet checkout + Reports reconciliation](#20-wo-4b-pos-store-qr-e-wallet-checkout--reports-reconciliation)
 
 ---
 
@@ -39,10 +46,10 @@
 | # | Item | Where | Why it matters |
 |---|---|---|---|
 | 1 | **Testimonials are placeholders** (names and quotes come from the mockup) | `src/components/landing/content.ts` → `TESTIMONIALS` | Fake reviews must not go live. Replace them with real quotes, or remove `<TestimonialsSection />` from `LoginPage.tsx` |
-| 2 | **Pricing is placeholder** (₱499 / ₱999 / ₱1,999) | `content.ts` → `PLANS` | Confirm the real plans, or remove `<PricingSection />` |
+| 2 | ~~Pricing is placeholder~~ ✅ **Resolved:** the pricing now shows the approved packages (§17) | `content.ts` → `PLANS` | Prices and features become editable by the Super Admin in Phase 2 |
 | 3 | **External links are empty** (Facebook, YouTube, email, FAQ, Docs, Privacy, Terms) | `content.ts` → `EXTERNAL_LINKS` | Until filled in, clicking one shows "… is coming soon." Fill in a URL and that link starts working, with no other code change |
 | 4 | **The newsletter form has no backend** | `LandingFooter.tsx` → `subscribe` | It says "Newsletter sign-ups open soon" and doesn't store anything. It needs a backend task if it should be real |
-| 5 | **"Inventory Management" is advertised** (features, pricing, hero copy), but the app has no stock screen | `content.ts` | The copy comes from the mockup. Either build a stock page (backend + frontend) or reword it |
+| 5 | ~~"Inventory Management" is advertised~~ ✅ **Resolved:** Inventory, Multi-Branch and Advanced Analytics were removed from all copy (§17) | — | — |
 | 6 | **Main JS bundle is ~1.7 MB** (Vite warns about it; it was this size before the redesign) | `App.tsx` routes | Lazy-loading pages with `React.lazy` would cut it. `App.tsx` is the backend's file, so this needs their OK |
 | 7 | **`public/coffeelogo.png` (1.1 MB) is no longer referenced**; the app uses `logo.png` (256 px) and `favicon.png` | `public/` | Kept as the high-res source for the logo. Safe to delete if not needed |
 
@@ -222,3 +229,178 @@ Review by `jpos-48`: **approved** with 1 Medium and 2 Low findings. All are fixe
 3. Clicked the footer link "Features": the page stayed on Features, and focus went back to the RFID box without scrolling.
 
 `tsc --noUnusedLocals --noUnusedParameters` and `vite build` pass.
+
+## 14. POS: PayMongo (TEST) checkout + order QR on every receipt
+
+The contract came from the backend and was approved by the Tech Lead. The backend wrote the logic; the frontend applied it to `src/components/shared/POSComponent.tsx` word for word, and the backend then verified it.
+
+> ✅ **PayMongo REMOVED (user decision: manual payments only, WO-1).** PayMongo is archived by the backend on the local branch `archive/paymongo-test`. The frontend applied the backend's exact removal diff to `POSComponent.tsx`:
+> - removed: the PayMongo imports and state, `payWithPayMongo`, `closeCheckout`, the cart lock, the waiting panel, the TEST MODE note and the ₱20 hint;
+> - the footer is back to Cancel + Confirm Order;
+> - also deleted: `scripts/demo/mocks/paymongo.ts` and its alias.
+>
+> **Kept:** `takeSnapshot` / `saveOrder` / `placeOrder` (via the backend's `buildOrder`), the receipt `Ref` / note lines, the **order QR on every receipt**, and the scrollable receipt modal.
+> Checks: `grep -ri paymongo src/` finds nothing; `tsc --strict --noUnusedLocals --noUnusedParameters` and `npm run build` pass.
+> The store-QR GCash/Maya checkout comes next (WO-3).
+>
+> *The text below describes the removed PayMongo UI, kept as history.*
+
+**Logic (backend's, copied verbatim):** `takeSnapshot`, `saveOrder`, `placeOrder`, `payWithPayMongo`. The order is frozen when Pay is pressed, and `usePayMongoCheckout` guarantees it is placed **exactly once**. Frontend addition: `closeCheckout()`. While a checkout runs, the X and Cancel buttons cancel it instead of closing the modal.
+
+**UI (frontend):**
+- **Cart lock** (`cartLocked`): disabled on product add, qty −/+, remove, the %/₱ toggles, the discount input, Clear Cart, the Table/Customer inputs, the payment methods, Notes and Checkout.
+- **Non-cash checkout** with PayMongo enabled: the primary button is **"Pay with PayMongo (TEST)"**. A **TEST MODE** badge and a "Record without PayMongo" link sit under the methods.
+- **Below ₱20** (`payMongoAmountProblem`): an amber hint, and only the manual **Confirm Order** button.
+- **Waiting panel:**
+  - Creating checkout… → a large QR of the checkout URL plus a real "Open checkout page" link → Waiting for payment…, with a hint for each method. An amber note appears if the last attempt failed. → Cancelling…
+  - A **TEST MODE** badge is always shown.
+- **Receipt:**
+  - A `Ref` line and a payment note for online payments.
+  - **An order QR on every receipt** (`receiptQrPayload`, 128 px, about 34 mm printed), inside `#receipt` so it prints.
+
+**Verified** in the demo preview (fake PayMongo; the real hook runs on top):
+- The cart locks while waiting.
+- An auto-paid checkout produces exactly one receipt, with the `pay_…` reference and the QR.
+- "Cancel payment" and X cancel the checkout and keep the modal open, with no order created.
+- A ₱6 total shows the hint and only Confirm.
+- In print emulation at 80 mm, the receipt and QR are complete.
+
+Not checked: machine-decoding the QR (no decoder on this PC; please scan once with a phone), and real PayMongo.
+
+## 15. Small fixes: scroll reset, sticky modal header/footer, lazy PDF
+
+| File | Change | Why |
+|---|---|---|
+| `shared/AppShell.tsx` | `<main>` scrolls to the top on every route change | `<main>` is shared by all pages, so Reports opened half-way down after you'd scrolled the Dashboard (the demo recorder found this) |
+| `src/index.css` | `.modal-header` / `.modal-footer` are `sticky` with solid backgrounds | On screens about 720 px tall, Confirm/Pay/Save sat below the fold inside a scrolling modal. Laptops at 1366×768 hit this |
+| `POSComponent.tsx` | Receipt modal: `max-h-[92vh] overflow-y-auto` | With the QR it can be taller than short screens. Printing is unaffected: `#receipt`'s containing block is the fixed backdrop, which print emulation confirmed |
+| `admin/Reports.tsx` | `jspdf` + `jspdf-autotable` are loaded with `import()` when "Download PDF" is clicked; the error text was updated | The backend's code-splitting change, applied as written. It keeps ~400 kB off the Reports page |
+
+## 16. Tutorial video: confidential, not on the landing page
+
+**Decision (user, through the Tech Lead):** the video shows the admin side (dashboard, reports, staff), so it's **confidential and for subscribers only**. The final tutorial will be recorded **at the very end** and shown on an in-app Help page behind login, served from protected storage.
+
+**What changed:**
+- **Removed from the landing page:** `<DemoSection>` in `LoginPage.tsx`, the **Demo** navbar link, the hero **Watch demo** button, and `DEMO_VIDEO`/`DEMO_STEPS` in `content.ts`.
+- **Video files moved out of `public/`.** Anything in `public/` is deployed and reachable by URL, even when unlinked. `jpos-demo.mp4` + `.jpg` now live in `scripts/demo/output/`, which `scripts/demo/.gitignore` ignores, and the recorder writes there. `public/demo/` no longer exists. **Never commit the video.**
+- **No player controls** (user request). No Download, playback speed or picture-in-picture menu, and no play/pause: `controls` was removed, `controlsList="nodownload …"`, `disablePictureInPicture`, `disableRemotePlayback`, and right-click is blocked. This only hides the UI; anyone with the URL can still fetch the file, which is why it must stay behind login.
+- `DemoSection.tsx` is **kept for reuse but not used**. It now takes props (`src`, `poster`, `steps`, `title`, …), so the Help page can pass a protected URL. Behavior: it plays while visible and pauses off-screen; with reduced motion it doesn't autoplay (clicking a chapter starts it); the chapter list is real text and clickable.
+- `scripts/demo/` (recorder + mocks) is **kept** for the final tutorial. The PayMongo mock is deleted.
+
+**About the v1 recording:** H.264 `yuv420p`, 1280×720, 54.5 s, 1.17 MB, fake data only (see `scripts/demo/README.md`). It's not deployed anywhere. It will be re-recorded once all features are final.
+
+## 17. WO-2: approved packages on the pricing section
+
+Source: `docs/techlead/SUBSCRIPTION-PLAN.md`, "Packages". These are defaults; the Super Admin will be able to edit them in Phase 2.
+
+| Plan | Price | Accounts | Features shown |
+|---|---|---|---|
+| Starter Plan (*"Also included in the 7-day free trial"*) | ₱499/month | Up to 3 | POS with Cash + the shop's own GCash/Maya QR · receipts with an order QR code · menu & products · Reports: Today / This Week · Messenger support |
+| Business Plan (**Most Popular**) | ₱999/month | Up to 10 | Everything in Starter · Month & custom-range reports + PDF export · sales trends dashboard · RFID card login for staff · Messenger support |
+| Enterprise | ₱1,999/month | Unlimited | Everything in Business · priority support (Messenger) |
+
+- **Pricing cards** (`PricingSection.tsx`): the account limit is shown as a highlighted pill, followed by a "What's included" list. Check icons are top-aligned so wrapped lines look right. The CTAs are unchanged until `/subscribe` exists (Phase 2): **Get Started** focuses the sign-in card; **Contact Us** scrolls to the footer.
+- **Features that don't exist were removed everywhere:**
+  - `FEATURES`: "Inventory Management" → **Menu Management**; "Multi-Payment Support" → **Cash, GCash & Maya**.
+  - Hero: "Track sales, inventory, and orders" → "sales, orders, and staff".
+  - About copy: "sales and inventory" → "sales and orders".
+  - Dashboard mock sidebar: "Inventory" → "Products".
+  - `index.html` meta description: inventory → staff.
+  - `grep -ri "inventory|multi-branch|advanced analytics" src index.html` finds nothing.
+
+Screenshots: [`img/wo2-pricing-1440.jpg`](img/wo2-pricing-1440.jpg) · [`img/wo2-pricing-390.jpg`](img/wo2-pricing-390.jpg)
+
+Checks: `tsc --strict --noUnusedLocals --noUnusedParameters` and `npm run build` pass (after the PayMongo removal in §14).
+
+## 18. WO-2b: landing copy for every small business
+
+The owner's direction (`SUBSCRIPTION-PLAN.md` §9.4): JPOS becomes a POS for every small business. **Only the copy changed.** The design, the photos and the coffee decorations on the landing page stay.
+
+| Where | Before → After |
+|---|---|
+| Hero script line | "Good Coffee • Better Days" → **"Good Business • Better Days"** (`whitespace-nowrap`, 30 px on phones so it fits at 360 px) |
+| Hero headline / subtitle | "Your Coffee Shop, *Simplified*" → **"Your Business, *Simplified*"**. "Manage your coffee shop…" → "Run your café, store or service shop with JPOS. Track sales, orders, and staff — all in one place." |
+| Hero divider | "Brewing Business Success" → a **"Built for" chip strip** (`BUILT_FOR` in `content.ts`): Café · Milk tea · Bakery · Restaurant · Sari-sari · Retail · Salon · Laundry · Car wash, each with an icon. Shown on phones too |
+| About | "A Smart Solution for Your Small Business"; the paragraph names cafés, milk tea shops, sari-sari stores, salons; the label is "GOOD SERVICE • GREAT BUSINESS"; the point is "Built for Small Businesses" |
+| Features | Subtitle "…run your business smoothly"; "Menu Management" → **Products & Services** |
+| Testimonials | Mixed placeholders (milk tea shop, sari-sari store, salon), each quote naming only features that exist. The subtitle is neutral, and a visible **"Sample reviews for illustration."** note is added. Replace them with real, permitted quotes before launch |
+| Pricing | Unchanged from WO-2, except the Business tagline: "For growing coffee shops" → "For growing businesses" |
+| Navbar / LoginCard / footer | Subtitle "Coffee Shop Point of Sale" → **"Point of Sale"**. LoginCard footer → "Business Management System". Footer: "Point of Sale for Small Businesses", and "Brew Smarter" → "Sell Smarter. Grow Bigger." |
+| `index.html` | Title **"JPOS — POS for Small Businesses"**; the meta description lists cafés, milk tea shops, sari-sari stores, salons |
+
+Not changed yet (tenant side; comes with branding, WO-6 / Phase B): the receipt header "JPOS COFFEE SHOP", the PDF title "JPOS Coffee Shop", and the loading screen's "Brewing your workspace…".
+
+Screenshots: [`img/wo2b-hero-1440.jpg`](img/wo2b-hero-1440.jpg) · [`img/wo2b-hero-390-360.jpg`](img/wo2b-hero-390-360.jpg)
+
+## 19. WO-4a: admin Payment Settings page
+
+`/admin/payments` (`src/pages/admin/PaymentSettings.tsx`). The lazy route was added by the backend in `App.tsx`, and the **Payment Settings** nav item (Wallet icon) is in `AdminLayout`. The page is admin-only through the route. It uses the backend's `storeSettings.ts` / `eWallet.ts` helpers, whose signatures the backend confirmed won't change.
+
+- **GCash and Maya cards:**
+  - an on/off **switch** (new shared `Switch.tsx`, `role="switch"`)
+  - **QR upload** with preview (`uploadImage`; image type and ≤ 5 MB checked first), Replace on hover, and **Remove QR** (which also turns the wallet off)
+  - **Account name** (≤ 60) and **number hint** (≤ 30, "hide most digits"), each with a counter
+- **Card:** a switch, for payments on the shop's own terminal.
+- **Validation:** `paymentSettingsProblem()` runs live and shows in the save bar; Save stays disabled while there's a problem. The backend confirmed that when this returns null, the rules accept the save.
+- **Confirm dialog:** shown when a wallet's QR changes to a new image: "**Customer payments will go to this account.** Make sure it's your shop's own … account." It previews the new QR, name and hint, then asks **"Yes, use this QR"**.
+- **Saving:**
+  - `savePaymentSettings(fullDraft)`, then it re-reads.
+  - `permission-denied` → "Only admins can change payment settings."
+  - A sticky save bar shows unsaved / saved / problem, with **Discard** and **Save changes**.
+  - The browser warns before closing the tab with unsaved changes.
+- **Loading:** a skeleton while it loads. **If loading fails: an error + Retry and NO editing**, so the defaults can never overwrite a doc that couldn't be read.
+- **Last saved** chip from `updatedAt`.
+
+**Verified** on the demo server (fake data; `mocks/cloudinary.ts` fakes the upload):
+- Turning Maya on without a QR shows "Upload the Maya QR code before turning Maya on." and Save is disabled.
+- After uploading a QR, Save is enabled and the confirm dialog shows.
+- "Yes, use this QR" closes it; the bar says "All changes saved." and Maya reads "On: offered at checkout".
+- Layout checked at 1440 and 390.
+- `tsc --strict --noUnusedLocals --noUnusedParameters` is clean.
+
+Screenshots: [`img/wo4a-payments-1440.jpg`](img/wo4a-payments-1440.jpg) · [`img/wo4a-qr-confirm.jpg`](img/wo4a-qr-confirm.jpg) · [`img/wo4a-payments-390.jpg`](img/wo4a-payments-390.jpg)
+
+## 20. WO-4b: POS store-QR e-wallet checkout + Reports reconciliation
+
+The backend wrote the logic (its WO-3: `storeSettings`, `eWallet`, `saveOrder`, `reports`, firestore.rules), and the frontend applied its exact diffs. The styling is the frontend's.
+
+**POS (`POSComponent.tsx`):**
+- **Live payment settings** (`subscribePaymentSettings`). A method that isn't set up is disabled ("Not set up yet"), with a hint: admins get a **"Set up in Payment Settings"** link, and staff are told to ask an admin. If the admin switches off the selected method mid-checkout, the POS falls back to Cash.
+- **GCash/Maya panel:**
+  - "Customer pays the store's GCash" and the **amount, large**
+  - the store's **QR** (tap → **full screen** on a white page, sized `min(90vw, 70vh)` with crisp scaling; tap or Esc closes)
+  - the recipient name + hint
+  - a **required reference no.** (normalized to A–Z/0–9 while typing, validated by `referenceProblem`)
+  - a **required "I saw ₱X received"** checkbox, which unticks when the total changes
+- **Confirm Order** stays disabled until `canConfirm` passes; the same guards run again in `placeOrder`.
+- **Card:** an optional **approval code**; the receipt labels it "Approval".
+- **Saving** goes through `saveOrderAtomically`, which claims the reference in the same batch. A reused reference shows "This reference was already used for order ORD-…" (8 s), and no order is saved.
+- **QA lows:**
+  - after each order the method resets to Cash
+  - switching the discount from ₱ to % clamps it to ≤ 100
+- Receipt: unchanged, apart from the Approval/Ref label. The order QR, `#receipt` and printing are as before.
+
+**Reports (`Reports.tsx`):**
+- Pie data now comes from `paymentBreakdown(orders)`.
+- New **reconciliation table** (Method · Orders · Total): every method, zeros included, with the note "Match these with the cash drawer and the GCash/Maya statements".
+- **Ref** column in Order Details (`paymentRefLabel`).
+- PDF: the payment table gains an Orders column; the order details gain a Ref column ('-' when empty), and "Items" becomes "Qty", using the backend's column widths.
+
+**Also:**
+- `main.tsx`: `BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}` (backend request; silences the React Router v7 warnings).
+- Demo mocks:
+  - `onSnapshot` now delivers live doc updates;
+  - a batch claiming an existing `paymentRefs` doc is denied, like the rules.
+
+**Verified** (demo server, fake data):
+- Maya is disabled, with the setup link.
+- The GCash QR shows; "1234 5678-90123" is normalized to `1234567890123`; Confirm stays disabled until both the reference and the tick are set.
+- The order saves, and the receipt shows the Ref.
+- The same reference again shows the "already used" toast, with no second order.
+- Full-screen QR: 560 px wide at 1280×800.
+- Card: an empty code is OK; "ab-12 34" becomes `AB1234`, and the receipt shows "Approval".
+- The Reports reconciliation table renders.
+- `tsc --strict --noUnusedLocals --noUnusedParameters` and `npm run build` pass.
+
+Screenshots: [`img/wo4b-pos-gcash.jpg`](img/wo4b-pos-gcash.jpg) · [`img/wo4b-qr-fullscreen.jpg`](img/wo4b-qr-fullscreen.jpg) · [`img/wo4b-reports-reconciliation.jpg`](img/wo4b-reports-reconciliation.jpg)
+

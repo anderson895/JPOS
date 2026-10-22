@@ -1,0 +1,3 @@
+# Rendered videos are CONFIDENTIAL (they show the admin side): never commit them,
+# never put them in public/. The final tutorial is served from protected storage.
+output/

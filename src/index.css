@@ -84,12 +84,13 @@
     @apply bg-cream-50 rounded-4xl border border-cream-300 shadow-2xl w-full animate-slide-up;
   }
 
+  /* Header and footer stay visible while a tall modal scrolls (short laptop screens) */
   .modal-header {
-    @apply flex items-center justify-between px-6 py-5 border-b border-cream-300/70;
+    @apply sticky top-0 z-10 flex items-center justify-between px-6 py-5 border-b border-cream-300/70 bg-cream-50 rounded-t-4xl;
   }
 
   .modal-footer {
-    @apply flex gap-3 px-6 py-5 border-t border-cream-300/70 bg-cream-100/60 rounded-b-4xl;
+    @apply sticky bottom-0 z-10 flex gap-3 px-6 py-5 border-t border-cream-300/70 bg-cream-100 rounded-b-4xl;
   }
 
   .icon-btn {

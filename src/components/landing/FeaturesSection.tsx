@@ -16,7 +16,7 @@ export default function FeaturesSection() {
       <CoffeeBean className="hidden lg:block absolute left-[6%] bottom-[18%] w-7 animate-float-slow" style={{ '--r': '-50deg' } as CSSProperties} />
 
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-10">
-        <SectionTitle title="Key Features" subtitle="Everything you need to run your coffee shop smoothly." />
+        <SectionTitle title="Key Features" subtitle="Everything you need to run your business smoothly." />
 
         <div className="mt-12 grid gap-3 sm:gap-5 grid-cols-2 lg:grid-cols-3 max-w-5xl mx-auto">
           {FEATURES.map(({ icon: Icon, title, text }) => (

@@ -144,7 +144,7 @@ export default function LoginCard() {
           <div className="mt-1 flex items-center justify-center gap-2 text-[13px] font-medium text-espresso-800">
             <span className="h-px w-8 sm:w-12 bg-gradient-to-r from-transparent to-caramel-500" />
             <span className="w-1 h-1 rotate-45 bg-caramel-500" />
-            Coffee Shop Point of Sale
+            Point of Sale
             <span className="w-1 h-1 rotate-45 bg-caramel-500" />
             <span className="h-px w-8 sm:w-12 bg-gradient-to-l from-transparent to-caramel-500" />
           </div>
@@ -312,7 +312,7 @@ export default function LoginCard() {
         </div>
 
         <p className="relative text-center text-bark-500 text-[11px] mt-6">
-          JPOS v1.0 · <span className="text-espresso-700">Coffee Shop Management System</span>
+          JPOS v1.0 · <span className="text-espresso-700">Business Management System</span>
         </p>
       </div>
     </div>

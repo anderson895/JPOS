@@ -3,6 +3,7 @@ import { ArrowRight, BarChart3, Coffee, ShieldCheck } from 'lucide-react';
 import LoginCard from './LoginCard';
 import { CoffeeBean, Swash, Wave } from '@/components/shared/Decor';
 import { focusLogin, scrollToSection } from './scroll';
+import { BUILT_FOR } from './content';
 
 const HIGHLIGHTS = [
   { icon: Coffee, line1: 'Fast & Easy', line2: 'Transactions' },
@@ -18,7 +19,7 @@ const BEANS: { className: string; rotate: number }[] = [
   { className: 'top-[12%] left-[57%] w-4 animate-float-slow', rotate: 10 },
 ];
 
-/** Landing hero: café photo, headline, highlights, CTAs and the sign-in card. */
+/** Landing hero: photo, headline, highlights, CTAs, "Built for" chips and the sign-in card. */
 export default function Hero() {
   return (
     <section id="home" className="relative isolate overflow-hidden bg-espresso-950 text-cream-50">
@@ -45,13 +46,13 @@ export default function Hero() {
       <div className="relative max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-10 pt-28 sm:pt-32 lg:pt-36 pb-16 lg:pb-24 grid gap-12 lg:gap-10 items-center lg:grid-cols-[1.15fr_minmax(0,420px)] xl:grid-cols-[1.3fr_minmax(0,420px)_0.22fr]">
         {/* Copy */}
         <div className="animate-slide-up">
-          <p className="relative inline-block font-script text-4xl sm:text-5xl text-caramel-300">
-            Good Coffee <span className="mx-1 text-caramel-400">•</span> Better Days
+          <p className="relative inline-block whitespace-nowrap font-script text-[30px] min-[400px]:text-4xl sm:text-5xl text-caramel-300">
+            Good Business <span className="mx-1 text-caramel-400">•</span> Better Days
             <Swash className="absolute left-6 -bottom-2 w-[85%] h-3 text-caramel-400/80" />
           </p>
 
           <h1 className="mt-5 font-display font-semibold leading-[1.02] text-[40px] min-[400px]:text-[44px] sm:text-6xl lg:text-[52px] xl:text-[68px] 2xl:text-[76px] tracking-tight">
-            <span className="whitespace-nowrap">Your Coffee Shop,</span>
+            <span className="whitespace-nowrap">Your Business,</span>
             <br />
             <span className="relative inline-block italic text-gradient-caramel pr-2">
               Simplified
@@ -60,8 +61,8 @@ export default function Hero() {
           </h1>
 
           <p className="mt-8 max-w-xl text-base sm:text-lg text-cream-100/85 leading-relaxed">
-            Manage your coffee shop effortlessly with JPOS.
-            <br className="hidden sm:block" /> Track sales, inventory, and orders — all in one place.
+            Run your café, store or service shop with JPOS.
+            <br className="hidden sm:block" /> Track sales, orders, and staff — all in one place.
           </p>
 
           <ul className="mt-8 flex flex-wrap gap-x-8 gap-y-4">
@@ -75,7 +76,7 @@ export default function Hero() {
             ))}
           </ul>
 
-          <div className="mt-10 flex flex-wrap items-center gap-6">
+          <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-4">
             <button onClick={focusLogin} className="btn-caramel px-7 py-3.5 text-base">
               <Coffee className="w-5 h-5" />
               Get Started
@@ -92,11 +93,23 @@ export default function Hero() {
             </button>
           </div>
 
-          <div className="mt-10 hidden sm:flex items-center gap-3 text-sm text-cream-100/70">
-            <span className="h-px w-20 bg-gradient-to-r from-transparent to-caramel-400/60" />
-            <CoffeeBean className="w-3 h-4 opacity-80" />
-            Brewing Business Success
-            <span className="h-px w-20 bg-gradient-to-l from-transparent to-caramel-400/60" />
+          {/* "Built for" — the kinds of small businesses JPOS serves */}
+          <div className="mt-10">
+            <p className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-caramel-200/80">
+              <span className="h-px w-10 bg-gradient-to-r from-transparent to-caramel-400/60" />
+              Built for
+            </p>
+            <ul className="mt-3 flex flex-wrap gap-2 max-w-xl" aria-label="Built for">
+              {BUILT_FOR.map(({ icon: Icon, label }) => (
+                <li
+                  key={label}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-cream-100/15 bg-white/[0.06] px-3 py-1.5 text-[13px] text-cream-100/90 backdrop-blur-sm"
+                >
+                  <Icon className="w-3.5 h-3.5 text-caramel-300" aria-hidden="true" />
+                  {label}
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
 

@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react';
-import { Outlet, NavLink } from 'react-router-dom';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import { LogOut, Menu, X, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import BrandMark from '@/components/shared/BrandMark';
@@ -44,6 +44,12 @@ export default function AppShell({
   const [collapsed, setCollapsed] = useState(false);
   // Mobile drawer open/closed.
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // <main> is shared by every page, so its scroll position would carry over
+  // (e.g. Reports opening half-way down after scrolling the Dashboard).
+  const { pathname } = useLocation();
+  const mainRef = useRef<HTMLElement>(null);
+  useEffect(() => { mainRef.current?.scrollTo(0, 0); }, [pathname]);
 
   const initials = user?.displayName
     ?.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) || fallbackInitial;
@@ -187,7 +193,7 @@ export default function AppShell({
           <div className="ml-auto">{avatar}</div>
         </header>
 
-        <main className="flex-1 overflow-y-auto">
+        <main ref={mainRef} className="flex-1 overflow-y-auto">
           <Outlet />
         </main>
       </div>

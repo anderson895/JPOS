@@ -3,3 +3,9 @@
 note.md
 /dist/
 .claude/
+
+# Firebase CLI / emulator logs and cache
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+.firebase/

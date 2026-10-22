@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { Coffee, LayoutDashboard, BarChart3, ShoppingCart, Users } from 'lucide-react';
+import { Coffee, LayoutDashboard, BarChart3, ShoppingCart, Users, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import AppShell, { type ShellNavItem } from '@/components/shared/AppShell';
 import AccountSettingsModal from '@/components/admin/AccountSettingsModal';
@@ -12,6 +12,7 @@ const navItems: ShellNavItem[] = [
   { to: '/admin/products', icon: Coffee,          label: 'Products' },
   { to: '/admin/reports',  icon: BarChart3,       label: 'Reports' },
   { to: '/admin/staff',    icon: Users,           label: 'Manage Staff' },
+  { to: '/admin/payments', icon: Wallet,          label: 'Payment Settings' },
 ];
 
 export default function AdminLayout() {

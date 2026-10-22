@@ -14,7 +14,7 @@ export default function AboutSection() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 flex justify-end">
         <p className="flex items-center gap-3 text-[11px] font-semibold tracking-[0.2em] text-caramel-600">
           <span className="h-px w-16 bg-gradient-to-r from-transparent to-caramel-500/70" />
-          GOOD COFFEE <span className="text-caramel-400">•</span> GREAT BUSINESS
+          GOOD SERVICE <span className="text-caramel-400">•</span> GREAT BUSINESS
         </p>
       </div>
 
@@ -25,10 +25,10 @@ export default function AboutSection() {
             <span className="font-script text-6xl sm:text-7xl text-caramel-500 leading-none">About</span>
             <span className="font-display text-5xl sm:text-6xl font-semibold text-espresso-900 leading-none pb-1">JPOS</span>
           </h2>
-          <p className="mt-4 text-lg font-semibold text-espresso-800">A Smart Solution for Your Coffee Business</p>
+          <p className="mt-4 text-lg font-semibold text-espresso-800">A Smart Solution for Your Small Business</p>
           <p className="mt-4 max-w-lg text-bark-600 leading-relaxed">
-            JPOS is a modern and easy-to-use Coffee Shop Point of Sale system designed to help you
-            manage your business more efficiently. From sales and inventory to detailed reports,
+            JPOS is a modern, easy-to-use point of sale for small businesses: cafés, milk tea
+            shops, sari-sari stores, salons and more. From sales and orders to detailed reports,
             everything you need is in one powerful tool.
           </p>
           <ul className="mt-6 space-y-3">

@@ -26,7 +26,7 @@ export default function TestimonialsSection() {
   return (
     <section className="relative bg-cream-100 py-16 lg:py-20 overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10">
-        <SectionTitle title="What Our Customers Say" subtitle="Trusted by coffee shop owners everywhere." />
+        <SectionTitle title="What Our Customers Say" subtitle="What small business owners like about JPOS." />
 
         <div
           ref={rowRef}
@@ -51,6 +51,8 @@ export default function TestimonialsSection() {
             </figure>
           ))}
         </div>
+
+        <p className="mt-4 text-center text-xs text-bark-400">Sample reviews for illustration.</p>
 
         {/* Dots — only meaningful while the row scrolls (below md) */}
         <div className="mt-6 flex justify-center gap-2 md:hidden">

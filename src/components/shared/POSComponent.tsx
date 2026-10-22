@@ -1,14 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
-import { collection, doc, getDocs, setDoc, query, where } from 'firebase/firestore';
+import { Link } from 'react-router-dom';
+import { collection, doc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCart } from '@/contexts/CartContext';
 import { formatCurrency, generateOrderNumber, roundMoney } from '@/lib/utils';
 import Portal from '@/components/shared/Portal';
-import type { Product, Category, Order, PaymentMethod } from '@/types';
+import type { Product, Category, Order, PaymentMethod, PaymentSettings } from '@/types';
+import type { DocumentReference } from 'firebase/firestore';
+import { buildOrder, type OrderSnapshot } from '@/lib/orders';
+import { receiptQrPayload } from '@/lib/receiptQr';
+import { subscribePaymentSettings } from '@/lib/storeSettings';
+import { DEFAULT_PAYMENT_SETTINGS, WALLET_LABEL, approvalCodeProblem, normalizeReference, referenceProblem, walletReady, type WalletMethod } from '@/lib/eWallet';
+import { saveOrderAtomically, ReferenceUsedError } from '@/lib/saveOrder';
+import { QRCodeSVG } from 'qrcode.react';
 import {
   Search, ShoppingCart, Plus, Minus, Trash2, X, CreditCard,
-  Banknote, Smartphone, CheckCircle, Printer, Coffee, Tag, Loader2
+  Banknote, Smartphone, CheckCircle, Printer, Coffee, Tag, Loader2, Maximize2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -37,6 +45,12 @@ export default function POSComponent() {
   const [receipt, setReceipt] = useState<Order | null>(null);
   const [cartOpen, setCartOpen] = useState(false); // mobile cart slide-over
   const receiptRef = useRef<HTMLDivElement>(null);
+  const [paySettings, setPaySettings] = useState<PaymentSettings>(DEFAULT_PAYMENT_SETTINGS);
+  const [eRef, setERef] = useState('');           // GCash/Maya reference, or the card approval code (normalized)
+  const [eReceived, setEReceived] = useState(false);
+  const [qrFullscreen, setQrFullscreen] = useState(false);
+  // Live: a new QR or a wallet switched off shows up at once
+  useEffect(() => subscribePaymentSettings(setPaySettings, () => toast.error('Failed to load payment settings')), []);
 
   useEffect(() => { fetchMenuData(); }, []);
 
@@ -62,6 +76,25 @@ export default function POSComponent() {
   const isCash = paymentMethod === 'cash';
   const tendered = Number(amountTendered);
   const change = isCash && amountTendered ? roundMoney(Math.max(0, tendered - total)) : 0;
+  const isAdmin = currentUser?.role === 'admin';
+  const walletMethod: WalletMethod | null = paymentMethod === 'gcash' || paymentMethod === 'maya' ? paymentMethod : null;
+  const wallet = walletMethod ? paySettings[walletMethod] : null;
+  const methodAvailable = (m: PaymentMethod) =>
+    m === 'cash' || (m === 'card' ? paySettings.card.enabled : walletReady(paySettings, m));
+  const refIssue = walletMethod ? referenceProblem(eRef, walletMethod)
+    : paymentMethod === 'card' ? approvalCodeProblem(eRef) : null;
+  const canConfirm = !placing && !refIssue && (!walletMethod || eReceived) && methodAvailable(paymentMethod);
+  // The admin switched the chosen method off mid-checkout → back to cash
+  useEffect(() => { if (!methodAvailable(paymentMethod)) setPaymentMethod('cash'); }, [paySettings]); // eslint-disable-line
+  // "I saw ₱X received" is about a specific amount; untick it if the total changes
+  useEffect(() => { setEReceived(false); }, [total]);
+  // Esc closes the full-screen QR
+  useEffect(() => {
+    if (!qrFullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setQrFullscreen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [qrFullscreen]);
 
   const filteredProducts = products.filter(p => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
@@ -69,62 +102,44 @@ export default function POSComponent() {
     return matchSearch && matchCat;
   });
 
-  async function placeOrder() {
-    if (cartItems.length === 0) { toast.error('Cart is empty'); return; }
-    if (isCash && amountTendered && !(tendered >= total)) {
-      toast.error('Insufficient payment amount');
-      return;
-    }
+  function takeSnapshot(): OrderSnapshot {
+    return {
+      items: cartItems.map(i => ({ ...i })),
+      subtotal, discountAmount, discountType, total, paymentMethod,
+      amountTendered: isCash && amountTendered ? roundMoney(tendered) : total,
+      change,
+      cashierId: currentUser?.id || '',
+      cashierName: currentUser?.displayName || '',
+      customerName, tableNumber, notes,
+    };
+  }
 
+  async function saveOrder(orderRef: DocumentReference, order: Omit<Order, 'id'>) {
+    await saveOrderAtomically(orderRef, order);   // claims the e-wallet reference in the same batch
+    setReceipt({ id: orderRef.id, ...order });
+    clearCart();
+    setCheckoutOpen(false);
+    setCartOpen(false);
+    setAmountTendered(''); setCustomerName(''); setTableNumber(''); setNotes('');
+    setPaymentMethod('cash'); setERef(''); setEReceived(false);
+    toast.success(`Order ${order.orderNumber} placed!`);
+  }
+
+  async function placeOrder() {           // cash, or a manually recorded payment
+    if (cartItems.length === 0) { toast.error('Cart is empty'); return; }
+    if (isCash && amountTendered && !(tendered >= total)) { toast.error('Insufficient payment amount'); return; }
+    if (!methodAvailable(paymentMethod)) { toast.error("That payment method isn't set up. Choose another."); return; }
+    if (refIssue) { toast.error(refIssue); return; }
+    if (walletMethod && !eReceived) { toast.error(`Confirm the payment arrived in the store's ${WALLET_LABEL[walletMethod]}.`); return; }
     setPlacing(true);
     try {
-      // Reserve the document id first so it can make the order number unique.
       const orderRef = doc(collection(db, 'orders'));
-      // Firestore rejects undefined — strip every optional field
-      const order: Omit<Order, 'id'> = {
-        orderNumber: generateOrderNumber(orderRef.id),
-        items: cartItems.map(i => ({
-          productId: i.productId,
-          productName: i.productName,
-          price: i.price,
-          quantity: i.quantity,
-          subtotal: roundMoney(i.price * i.quantity),
-          ...(i.variantId   ? { variantId: i.variantId }     : {}),
-          ...(i.variantName ? { variantName: i.variantName } : {}),
-          ...(i.notes       ? { notes: i.notes }             : {}),
-        })),
-        subtotal,
-        discount: discountAmount,
-        discountType,
-        tax: 0,
-        total,
-        paymentMethod,
-        amountTendered: isCash && amountTendered ? roundMoney(tendered) : total,
-        change,
-        status: 'completed',
-        cashierId: currentUser?.id || '',
-        cashierName: currentUser?.displayName || '',
-        ...(customerName ? { customerName } : {}),
-        ...(tableNumber  ? { tableNumber }  : {}),
-        ...(notes        ? { notes }        : {}),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      await setDoc(orderRef, order);
-      const savedOrder = { id: orderRef.id, ...order };
-      setReceipt(savedOrder);
-      clearCart();
-      setCheckoutOpen(false);
-      setCartOpen(false);
-      setAmountTendered('');
-      setCustomerName('');
-      setTableNumber('');
-      setNotes('');
-      toast.success(`Order ${order.orderNumber} placed!`);
+      const payment = paymentMethod === 'cash' ? undefined
+        : { verification: 'manual' as const, reference: eRef, verifiedBy: currentUser?.id || '' };
+      await saveOrder(orderRef, buildOrder(takeSnapshot(), generateOrderNumber(orderRef.id), payment));
     } catch (err) {
-      console.error(err);
-      toast.error('Failed to place order');
+      if (err instanceof ReferenceUsedError) toast.error(err.message, { duration: 8000 }); // "…already used for order ORD-…"
+      else { console.error(err); toast.error('Failed to place order'); }
     } finally {
       setPlacing(false);
     }
@@ -337,7 +352,7 @@ export default function POSComponent() {
               <Tag className="w-4 h-4 text-caramel-600" />
               <span className="text-sm text-bark-600 flex-1">Discount</span>
               <div className="flex items-center gap-0.5 bg-cream-200 rounded-full p-0.5 border border-cream-400/60">
-                <button onClick={() => setDiscountType('percent')}
+                <button onClick={() => { setDiscountType('percent'); setDiscount(Math.min(discount, 100)); }}
                   className={`w-7 h-6 rounded-full text-xs font-semibold transition-all ${discountType === 'percent' ? 'bg-espresso-800 text-cream-50 shadow-sm' : 'text-bark-500'}`}>
                   %
                 </button>
@@ -419,7 +434,7 @@ export default function POSComponent() {
                 <p className="eyebrow text-2xl -mb-1">Almost there</p>
                 <h2 className="font-display text-2xl text-espresso-900">Checkout</h2>
               </div>
-              <button onClick={() => setCheckoutOpen(false)} className="icon-btn"><X className="w-5 h-5" /></button>
+              <button onClick={() => setCheckoutOpen(false)} className="icon-btn" title="Close"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-5">
               {/* Order Summary */}
@@ -446,21 +461,34 @@ export default function POSComponent() {
               <div>
                 <label className="label">Payment Method</label>
                 <div className="grid grid-cols-4 gap-2">
-                  {PAYMENT_METHODS.map(({ value, label, icon: Icon }) => (
-                    <button
-                      key={value}
-                      onClick={() => setPaymentMethod(value)}
-                      className={`flex flex-col items-center gap-1 py-3 rounded-2xl border-2 transition-all ${
-                        paymentMethod === value
-                          ? 'border-espresso-800 bg-espresso-800 text-cream-50 shadow-[0_8px_18px_-8px_rgb(44_26_15/0.8)]'
-                          : 'border-cream-400/70 bg-cream-50 text-bark-500 hover:border-caramel-400 hover:text-espresso-800'
-                      }`}
-                    >
-                      <Icon className="w-5 h-5" />
-                      <span className="text-xs font-semibold">{label}</span>
-                    </button>
-                  ))}
+                  {PAYMENT_METHODS.map(({ value, label, icon: Icon }) => {
+                    const available = methodAvailable(value);
+                    return (
+                      <button
+                        key={value}
+                        disabled={!available}
+                        title={available ? undefined : 'Not set up yet'}
+                        onClick={() => { setPaymentMethod(value); setERef(''); setEReceived(false); }}
+                        className={`flex flex-col items-center gap-1 py-3 rounded-2xl border-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                          paymentMethod === value
+                            ? 'border-espresso-800 bg-espresso-800 text-cream-50 shadow-[0_8px_18px_-8px_rgb(44_26_15/0.8)]'
+                            : 'border-cream-400/70 bg-cream-50 text-bark-500 hover:border-caramel-400 hover:text-espresso-800'
+                        }`}
+                      >
+                        <Icon className="w-5 h-5" />
+                        <span className="text-xs font-semibold">{label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
+                {(!walletReady(paySettings, 'gcash') || !walletReady(paySettings, 'maya') || !paySettings.card.enabled) && (
+                  <p className="mt-2 text-xs text-bark-500">
+                    Some methods aren't set up.{' '}
+                    {isAdmin
+                      ? <Link to="/admin/payments" className="font-semibold text-caramel-700 hover:underline">Set up in Payment Settings</Link>
+                      : 'Ask an admin to set them up in Payment Settings.'}
+                  </p>
+                )}
               </div>
 
               {/* Cash tender */}
@@ -484,6 +512,76 @@ export default function POSComponent() {
                 </div>
               )}
 
+              {/* E-wallet: the store's own GCash/Maya QR */}
+              {walletMethod && wallet && walletReady(paySettings, walletMethod) && (
+                <div className="rounded-3xl border border-cream-300 bg-cream-100 p-4 sm:p-5 space-y-4">
+                  <div className="text-center">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-bark-500">
+                      Customer pays the store's {WALLET_LABEL[walletMethod]}
+                    </p>
+                    <p className="mt-1 font-display text-4xl font-semibold text-espresso-900">{formatCurrency(total)}</p>
+                  </div>
+                  <div className="flex flex-col items-center">
+                    <button
+                      type="button"
+                      onClick={() => setQrFullscreen(true)}
+                      title="Tap to enlarge for the customer"
+                      className="group relative rounded-2xl bg-white p-2 ring-1 ring-cream-300 shadow-card hover:ring-caramel-400 transition"
+                    >
+                      <img src={wallet.qrImageUrl} alt={`${WALLET_LABEL[walletMethod]} QR`} className="w-48 h-48 object-contain" />
+                      <span className="absolute bottom-2 right-2 rounded-full bg-espresso-900/80 p-1.5 text-cream-50 group-hover:bg-espresso-900">
+                        <Maximize2 className="w-3.5 h-3.5" />
+                      </span>
+                    </button>
+                    <p className="mt-2 text-sm font-medium text-espresso-800 text-center">
+                      {wallet.accountName}{wallet.accountHint && ` · ${wallet.accountHint}`}
+                    </p>
+                    <p className="text-[11px] text-bark-400">Tap the QR to show it full screen</p>
+                  </div>
+                  <div>
+                    <label htmlFor="e-ref" className="label">{`${WALLET_LABEL[walletMethod]} reference no. *`}</label>
+                    <input
+                      id="e-ref"
+                      className="input font-mono"
+                      autoComplete="off"
+                      maxLength={30}
+                      value={eRef}
+                      onChange={e => setERef(normalizeReference(e.target.value))}
+                      placeholder={walletMethod === 'gcash' ? '13-digit reference' : 'Reference from the Maya receipt'}
+                    />
+                    {eRef && refIssue && <p className="text-xs text-amber-700 mt-1 px-1">{refIssue}</p>}
+                  </div>
+                  <label className="flex items-start gap-3 rounded-2xl border border-cream-300 bg-cream-50 px-4 py-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={eReceived}
+                      onChange={e => setEReceived(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-espresso-700 flex-shrink-0"
+                    />
+                    <span className="text-sm text-espresso-800">
+                      I saw <strong>{formatCurrency(total)}</strong> received in the store's {WALLET_LABEL[walletMethod]}.
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              {/* Card: optional approval code */}
+              {paymentMethod === 'card' && (
+                <div>
+                  <label htmlFor="card-code" className="label">Approval code <span className="font-normal text-bark-400">(optional)</span></label>
+                  <input
+                    id="card-code"
+                    className="input font-mono"
+                    autoComplete="off"
+                    maxLength={30}
+                    value={eRef}
+                    onChange={e => setERef(normalizeReference(e.target.value))}
+                    placeholder="From the card terminal slip"
+                  />
+                  {refIssue && <p className="text-xs text-amber-700 mt-1 px-1">{refIssue}</p>}
+                </div>
+              )}
+
               <div>
                 <label className="label">Notes (optional)</label>
                 <input className="input" placeholder="Special instructions..." value={notes} onChange={e => setNotes(e.target.value)} />
@@ -491,7 +589,7 @@ export default function POSComponent() {
             </div>
             <div className="modal-footer">
               <button onClick={() => setCheckoutOpen(false)} className="btn-secondary flex-1">Cancel</button>
-              <button onClick={placeOrder} disabled={placing} className="btn-primary flex-1">
+              <button onClick={placeOrder} disabled={!canConfirm} className="btn-primary flex-1">
                 {placing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                 {placing ? 'Processing...' : 'Confirm Order'}
               </button>
@@ -501,11 +599,28 @@ export default function POSComponent() {
         </Portal>
       )}
 
+      {/* Full-screen store QR for the customer to scan (above the checkout modal) */}
+      {qrFullscreen && wallet && (
+        <Portal>
+          <div
+            className="fixed inset-0 z-[60] bg-white flex flex-col items-center justify-center p-6 text-espresso-900"
+            onClick={() => setQrFullscreen(false)}
+            role="dialog"
+            aria-label="Payment QR"
+          >
+            <img src={wallet.qrImageUrl} alt="" className="w-[min(90vw,70vh)] h-[min(90vw,70vh)] object-contain [image-rendering:pixelated]" />
+            <p className="mt-4 font-display text-4xl font-semibold">{formatCurrency(total)}</p>
+            <p className="text-sm text-bark-600">{wallet.accountName} {wallet.accountHint}</p>
+            <p className="mt-6 text-xs text-bark-500">Tap anywhere to close</p>
+          </div>
+        </Portal>
+      )}
+
       {/* Receipt Modal */}
       {receipt && (
         <Portal>
         <div className="modal-backdrop">
-          <div className="modal-panel max-w-sm">
+          <div className="modal-panel max-w-sm max-h-[92vh] overflow-y-auto">
             <div className="p-6 text-center border-b border-cream-300/70">
               <div className="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3 ring-8 ring-emerald-50">
                 <CheckCircle className="w-7 h-7 text-emerald-600" />
@@ -531,7 +646,14 @@ export default function POSComponent() {
                 {receipt.discount > 0 && <div className="flex justify-between"><span>Discount</span><span>-{formatCurrency(receipt.discount)}</span></div>}
                 <div className="flex justify-between font-bold text-sm"><span>TOTAL</span><span>{formatCurrency(receipt.total)}</span></div>
                 <div className="flex justify-between"><span>{receipt.paymentMethod.toUpperCase()}</span><span>{formatCurrency(receipt.amountTendered || receipt.total)}</span></div>
+                {receipt.paymentReference && <div className="flex justify-between gap-2"><span>{receipt.paymentMethod === 'card' ? 'Approval' : 'Ref'}</span><span className="break-all text-right">{receipt.paymentReference}</span></div>}
+                {receipt.paymentNote && <p className="text-amber-700">⚠ {receipt.paymentNote}</p>}
                 {(receipt.change || 0) > 0 && <div className="flex justify-between"><span>Change</span><span>{formatCurrency(receipt.change || 0)}</span></div>}
+              </div>
+              {/* Order QR on every receipt (cash too): plain order details staff can scan */}
+              <div className="flex flex-col items-center pt-3">
+                <QRCodeSVG value={receiptQrPayload(receipt)} size={128} level="M" marginSize={2} />
+                <p className="mt-1 text-[10px]">{receipt.orderNumber}</p>
               </div>
               <p className="text-center text-bark-500 mt-2">Thank you for your order!</p>
               <p className="text-center text-bark-400">Cashier: {receipt.cashierName}</p>

@@ -58,7 +58,7 @@ Rules:
 | `.segmented` + `.segmented-item` (+ `.active`) | Segmented control (Password/RFID, date ranges, role) |
 | `.pill` (+ `.active`) | Category or filter chip |
 | `.badge`, `.badge-success`, `.badge-warning`, `.badge-danger`, `.badge-info`, `.badge-dark` | Status chips |
-| `.modal-backdrop` → `.modal-panel` → `.modal-header` / body / `.modal-footer` | Modal structure; always render it inside `<Portal>` |
+| `.modal-backdrop` → `.modal-panel` → `.modal-header` / body / `.modal-footer` | Modal structure; always render it inside `<Portal>`. Give the panel `max-h-[90vh] overflow-y-auto` when it can be tall: the header and footer are **sticky**, so the action buttons stay visible on short screens |
 | `.drawer-backdrop` | Backdrop for the mobile sidebar |
 | `.sidebar-link` (+ `.active`) | Nav link on the dark sidebar |
 | `.table-header`, `.table-row`, `.table-cell` | Data tables (the header row is a cream pill) |

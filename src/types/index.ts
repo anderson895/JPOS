@@ -79,8 +79,39 @@ export interface Order {
   tableNumber?: string;
   customerName?: string;
   notes?: string;
+  /**
+   * GCash/Maya: the e-wallet reference number (normalized, unique per wallet).
+   * Card: an optional approval code. Shown on the receipt and in its QR.
+   */
+  paymentReference?: string;
+  /** Store-QR e-wallet (GCash/Maya): the cashier confirmed the money arrived. */
+  paymentVerification?: 'manual';
+  /** Uid of the cashier who confirmed the e-wallet payment. */
+  verifiedBy?: string;
+  /** Something about the payment needs a human look. */
+  paymentNote?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** One of the store's own e-wallet QR codes (Payment Settings). */
+export interface WalletSettings {
+  enabled: boolean;
+  /** Cloudinary https URL of the store's GCash/Maya QR image. */
+  qrImageUrl: string;
+  /** Shown to the customer so they can check who they're paying. */
+  accountName: string;
+  /** e.g. "0917•••1234". */
+  accountHint: string;
+}
+
+/** settings/payments: how this store takes payments. Admins edit it; everyone signed in reads it. */
+export interface PaymentSettings {
+  gcash: WalletSettings;
+  maya: WalletSettings;
+  card: { enabled: boolean };
+  updatedAt?: string;
+  updatedBy?: string;
 }
 
 export interface DailySales {

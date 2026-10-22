@@ -19,7 +19,7 @@ const TOP_ITEMS = [
 const NAV = [
   { icon: LayoutDashboard, label: 'Dashboard', active: true },
   { icon: ShoppingCart, label: 'Sales' },
-  { icon: Package, label: 'Inventory' },
+  { icon: Package, label: 'Products' },
   { icon: FileText, label: 'Reports' },
   { icon: Settings, label: 'Settings' },
   { icon: LogOut, label: 'Logout' },

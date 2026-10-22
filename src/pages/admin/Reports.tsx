@@ -14,12 +14,11 @@ import {
   PieChart, Pie, Cell,
 } from 'recharts';
 import { TrendingUp, ShoppingBag, CreditCard, Download, Calendar, Loader2 } from 'lucide-react';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/shared/PageHeader';
 import StatCard from '@/components/shared/StatCard';
 import { CHART, CHART_SERIES, TOOLTIP_STYLE } from '@/components/shared/chartTheme';
+import { paymentBreakdown, paymentRefLabel } from '@/lib/reports';
 
 type Range = 'today' | 'week' | 'month' | 'custom';
 const COLORS = CHART_SERIES;
@@ -109,9 +108,9 @@ export default function AdminReports() {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([day, d]) => ({ date: format(parseISO(day), 'MM/dd'), ...d }));
 
-  const paymentMap: Record<string, number> = {};
-  completed.forEach(o => { paymentMap[o.paymentMethod] = (paymentMap[o.paymentMethod] || 0) + o.total; });
-  const paymentData = Object.entries(paymentMap).map(([name, value]) => ({ name: name.toUpperCase(), value }));
+  // Per-method totals for reconciliation (completed orders; every method, zeros included)
+  const breakdown = paymentBreakdown(orders);
+  const paymentData = breakdown.filter(m => m.total > 0).map(m => ({ name: m.label, value: m.total }));
 
   const productMap: Record<string, { name: string; qty: number; revenue: number }> = {};
   completed.forEach(o => {
@@ -132,9 +131,11 @@ export default function AdminReports() {
     : { today: 'Today', week: 'This Week', month: 'This Month' }[range]!;
 
   // ── PDF generation (client-side, no server needed) ───────────────────────
-  function downloadPDF() {
+  async function downloadPDF() {
     setPdfLoading(true);
     try {
+      // The PDF libraries load only when a report is downloaded (keeps ~400 kB off the Reports page)
+      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
       const doc  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       const W    = doc.internal.pageSize.getWidth();
       const H    = doc.internal.pageSize.getHeight();
@@ -255,18 +256,20 @@ export default function AdminReports() {
       autoTable(doc, {
         startY: y,
         margin: { left: ML, right: MR },
-        head: [['Method', 'Revenue', 'Share']],
-        body: paymentData.map(p => [
-          p.name,
-          peso(p.value),
-          `${((p.value / (totalSales || 1)) * 100).toFixed(1)}%`,
+        head: [['Method', 'Orders', 'Revenue', 'Share']],
+        body: breakdown.map(m => [
+          m.label,
+          String(m.count),
+          peso(m.total),
+          `${((m.total / (totalSales || 1)) * 100).toFixed(1)}%`,
         ]),
         styles:     { fontSize: 8, cellPadding: 3 },
         headStyles: { fillColor: ESPRESSO, textColor: WHITE, fontStyle: 'bold' },
         alternateRowStyles: { fillColor: LIGHT_ROW },
         columnStyles: {
-          1: { halign: 'right' },
-          2: { halign: 'right', cellWidth: 25 },
+          1: { halign: 'right', cellWidth: 18 },
+          2: { halign: 'right' },
+          3: { halign: 'right', cellWidth: 25 },
         },
       });
 
@@ -323,7 +326,7 @@ export default function AdminReports() {
       autoTable(doc, {
         startY: 24,
         margin: { left: ML, right: MR },
-        head: [['Order #', 'Date & Time', 'Cashier', 'Items', 'Total', 'Payment']],
+        head: [['Order #', 'Date & Time', 'Cashier', 'Qty', 'Total', 'Payment', 'Ref']],
         body: orders.slice(0, 300).map(o => [
           o.orderNumber,
           // Local time — the stored ISO string is UTC (8 hours behind in PH)
@@ -332,17 +335,19 @@ export default function AdminReports() {
           String(o.items.reduce((s, i) => s + i.quantity, 0)),
           peso(o.total),
           o.paymentMethod.toUpperCase(),
+          paymentRefLabel(o, '-'),
         ]),
         styles:     { fontSize: 7.5, cellPadding: 2.5, overflow: 'ellipsize' },
         headStyles: { fillColor: ESPRESSO, textColor: WHITE, fontStyle: 'bold', fontSize: 8 },
         alternateRowStyles: { fillColor: LIGHT_ROW },
-        // Order # wide enough for the full number (22mm cut it off); Cashier takes the rest
+        // Fixed widths sum to 151 mm, so Cashier gets about 31 mm
         columnStyles: {
           0: { cellWidth: 40, fontStyle: 'bold' },
-          1: { cellWidth: 30 },
-          3: { cellWidth: 14, halign: 'center' },
-          4: { cellWidth: 28, halign: 'right' },
-          5: { cellWidth: 20, halign: 'center' },
+          1: { cellWidth: 27 },
+          3: { cellWidth: 12, halign: 'center' },
+          4: { cellWidth: 26, halign: 'right' },
+          5: { cellWidth: 18, halign: 'center' },
+          6: { cellWidth: 28 },
         },
       });
 
@@ -351,7 +356,7 @@ export default function AdminReports() {
       doc.save(`sales-report-${format(now, 'yyyy-MM-dd')}.pdf`);
     } catch (err) {
       console.error('[PDF]', err);
-      alert('PDF generation failed. Make sure jspdf and jspdf-autotable are installed.');
+      alert('PDF generation failed. Check your connection and try again.');
     } finally {
       setPdfLoading(false);
     }
@@ -462,6 +467,29 @@ export default function AdminReports() {
               </ul>
             </>
           )}
+
+          {/* Reconciliation: every method, zeros included */}
+          <div className="mt-5 pt-4 border-t border-cream-300/70">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-wider text-bark-500">
+                  <th className="text-left font-semibold pb-2">Method</th>
+                  <th className="text-right font-semibold pb-2">Orders</th>
+                  <th className="text-right font-semibold pb-2">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {breakdown.map(m => (
+                  <tr key={m.method} className="border-t border-cream-300/50">
+                    <td className="py-1.5 text-espresso-800">{m.label}</td>
+                    <td className="py-1.5 text-right font-mono text-bark-600">{m.count}</td>
+                    <td className="py-1.5 text-right font-semibold text-espresso-800">{formatCurrency(m.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="mt-2 text-[11px] text-bark-400">Match these with the cash drawer and the GCash/Maya statements.</p>
+          </div>
         </div>
       </div>
 
@@ -507,7 +535,7 @@ export default function AdminReports() {
       <div className="card p-6">
         <h2 className="font-display text-xl text-espresso-900 mb-4">Order Details</h2>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px]">
+          <table className="w-full min-w-[720px]">
             <thead><tr>
               <th className="table-header">Order #</th>
               <th className="table-header">Date</th>
@@ -515,6 +543,7 @@ export default function AdminReports() {
               <th className="table-header">Items</th>
               <th className="table-header">Total</th>
               <th className="table-header">Payment</th>
+              <th className="table-header">Ref</th>
             </tr></thead>
             <tbody>
               {orders.slice(0, 50).map(o => (
@@ -525,10 +554,11 @@ export default function AdminReports() {
                   <td className="table-cell">{o.items.reduce((s, i) => s + i.quantity, 0)} items</td>
                   <td className="table-cell font-semibold">{formatCurrency(o.total)}</td>
                   <td className="table-cell"><span className="badge-info uppercase text-[10px]">{o.paymentMethod}</span></td>
+                  <td className="table-cell font-mono text-xs">{paymentRefLabel(o)}</td>
                 </tr>
               ))}
               {orders.length === 0 && (
-                <tr><td colSpan={6} className="text-center py-8 text-bark-400 text-sm">No orders in selected period</td></tr>
+                <tr><td colSpan={7} className="text-center py-8 text-bark-400 text-sm">No orders in selected period</td></tr>
               )}
             </tbody>
           </table>

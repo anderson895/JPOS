@@ -39,10 +39,10 @@ export default function LandingFooter() {
             <img src="/logo.png" alt="JPOS" className="w-16 h-16 rounded-full ring-2 ring-caramel-400/60 shadow-lg" />
             <div>
               <p className="font-display text-3xl font-semibold text-cream-50 leading-none">JPOS</p>
-              <p className="text-sm text-cream-200/75 mt-1">Coffee Shop Point of Sale</p>
+              <p className="text-sm text-cream-200/75 mt-1">Point of Sale for Small Businesses</p>
             </div>
           </div>
-          <p className="mt-5 font-display text-xl text-cream-50">Brew Smarter. Grow Bigger.</p>
+          <p className="mt-5 font-display text-xl text-cream-50">Sell Smarter. Grow Bigger.</p>
           <div className="mt-5 flex gap-3">
             {SOCIALS.map(({ icon: Icon, label, url }) => (
               <button

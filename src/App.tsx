@@ -1,16 +1,36 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import LoginPage from './pages/LoginPage';
-import AdminLayout from './components/admin/AdminLayout';
-import StaffLayout from './components/staff/StaffLayout';
-import AdminDashboard from './pages/admin/Dashboard';
-import AdminProducts from './pages/admin/Products';
-import AdminReports from './pages/admin/Reports';
-import AdminPOS from './pages/admin/POS';
-import AdminStaff from './pages/admin/Staff';
-import StaffDashboard from './pages/staff/Dashboard';
-import StaffPOS from './pages/staff/POS';
 import LoadingScreen from './components/shared/LoadingScreen';
+
+// The signed-in areas load on demand, so the public landing page doesn't
+// download recharts, jspdf, the POS and every admin page up front.
+const AdminLayout    = lazy(() => import('./components/admin/AdminLayout'));
+const StaffLayout    = lazy(() => import('./components/staff/StaffLayout'));
+const AdminDashboard = lazy(() => import('./pages/admin/Dashboard'));
+const AdminProducts  = lazy(() => import('./pages/admin/Products'));
+const AdminReports   = lazy(() => import('./pages/admin/Reports'));
+const AdminPOS       = lazy(() => import('./pages/admin/POS'));
+const AdminStaff     = lazy(() => import('./pages/admin/Staff'));
+const AdminPayments  = lazy(() => import('./pages/admin/PaymentSettings'));
+const StaffDashboard = lazy(() => import('./pages/staff/Dashboard'));
+const StaffPOS       = lazy(() => import('./pages/staff/POS'));
+
+/** A page inside a layout: only the content area waits for its code, the sidebar stays put. */
+function Page({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[50vh] items-center justify-center" role="status" aria-label="Loading">
+          <div className="h-9 w-9 animate-spin rounded-full border-[3px] border-caramel-400 border-t-transparent" />
+        </div>
+      }
+    >
+      {children}
+    </Suspense>
+  );
+}
 
 function ProtectedRoute({ children, role }: { children: React.ReactNode; role?: 'admin' | 'staff' }) {
   const { currentUser, loading } = useAuth();
@@ -28,42 +48,46 @@ export default function App() {
   if (loading) return <LoadingScreen />;
 
   return (
-    <Routes>
-      <Route
-        path="/login"
-        element={
+    // Shown while a layout's code loads (first visit to the admin or staff area)
+    <Suspense fallback={<LoadingScreen />}>
+      <Routes>
+        <Route
+          path="/login"
+          element={
+            currentUser
+              ? <Navigate to={currentUser.role === 'admin' ? '/admin' : '/staff'} replace />
+              : <LoginPage />
+          }
+        />
+
+        {/* Admin Routes */}
+        <Route path="/admin" element={
+          <ProtectedRoute role="admin"><AdminLayout /></ProtectedRoute>
+        }>
+          <Route index element={<Page><AdminDashboard /></Page>} />
+          <Route path="products" element={<Page><AdminProducts /></Page>} />
+          <Route path="reports" element={<Page><AdminReports /></Page>} />
+          <Route path="pos" element={<Page><AdminPOS /></Page>} />
+          <Route path="staff" element={<Page><AdminStaff /></Page>} />
+          <Route path="payments" element={<Page><AdminPayments /></Page>} />
+        </Route>
+
+        {/* Staff Routes */}
+        <Route path="/staff" element={
+          <ProtectedRoute role="staff"><StaffLayout /></ProtectedRoute>
+        }>
+          <Route index element={<Page><StaffDashboard /></Page>} />
+          <Route path="pos" element={<Page><StaffPOS /></Page>} />
+        </Route>
+
+        {/* Default redirect */}
+        <Route path="/" element={
           currentUser
             ? <Navigate to={currentUser.role === 'admin' ? '/admin' : '/staff'} replace />
-            : <LoginPage />
-        }
-      />
-
-      {/* Admin Routes */}
-      <Route path="/admin" element={
-        <ProtectedRoute role="admin"><AdminLayout /></ProtectedRoute>
-      }>
-        <Route index element={<AdminDashboard />} />
-        <Route path="products" element={<AdminProducts />} />
-        <Route path="reports" element={<AdminReports />} />
-        <Route path="pos" element={<AdminPOS />} />
-        <Route path="staff" element={<AdminStaff />} />
-      </Route>
-
-      {/* Staff Routes */}
-      <Route path="/staff" element={
-        <ProtectedRoute role="staff"><StaffLayout /></ProtectedRoute>
-      }>
-        <Route index element={<StaffDashboard />} />
-        <Route path="pos" element={<StaffPOS />} />
-      </Route>
-
-      {/* Default redirect */}
-      <Route path="/" element={
-        currentUser
-          ? <Navigate to={currentUser.role === 'admin' ? '/admin' : '/staff'} replace />
-          : <Navigate to="/login" replace />
-      } />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+            : <Navigate to="/login" replace />
+        } />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   );
 }

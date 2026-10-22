@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { Check } from 'lucide-react';
+import { Check, Users } from 'lucide-react';
 import { CoffeeBean, CoffeeBranch, SectionTitle } from '@/components/shared/Decor';
 import { PLANS } from './content';
 import { focusLogin, scrollToSection } from './scroll';
@@ -40,10 +40,15 @@ export default function PricingSection() {
                 <span className="font-display text-5xl font-bold text-espresso-900 leading-none">{plan.price}</span>
                 <span className="text-sm text-bark-500 pb-1">/month</span>
               </p>
-              <ul className="mt-6 space-y-2.5 text-sm text-espresso-800 text-left mx-auto">
+              {/* Account limit, highlighted */}
+              <p className="mt-5 inline-flex items-center justify-center gap-2 self-center rounded-full bg-espresso-800 px-4 py-1.5 text-sm font-semibold text-caramel-200">
+                <Users className="w-4 h-4" /> {plan.accounts}
+              </p>
+              <p className="mt-5 text-[11px] font-semibold uppercase tracking-wider text-bark-400">What's included</p>
+              <ul className="mt-2.5 space-y-2.5 text-sm text-espresso-800 text-left mx-auto">
                 {plan.features.map(f => (
-                  <li key={f} className="flex items-center gap-2.5">
-                    <Check className="w-4 h-4 text-espresso-800" strokeWidth={2.6} /> {f}
+                  <li key={f} className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 mt-0.5 flex-shrink-0 text-espresso-800" strokeWidth={2.6} /> {f}
                   </li>
                 ))}
               </ul>
