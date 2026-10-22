@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Check, Clock, ImagePlus, Loader2, Sparkles, X, Hourglass, Ban, CheckCircle2, XCircle, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -24,7 +24,7 @@ const STATE_TEXT = {
 
 /** The shop owner's subscription: status, free trial, pay by QR + receipt, history. */
 export default function Billing() {
-  const { tenant, currentUser } = useAuth();
+  const { tenant, currentUser, isSuperAdmin } = useAuth();
   const { settings, loaded } = usePlatformSettings();
   const [params] = useSearchParams();
   const [plan, setPlan] = useState<PlanId>((PLAN_IDS.includes(params.get('plan') as PlanId) ? params.get('plan') : tenant?.desiredPlan ?? 'business') as PlanId);
@@ -39,10 +39,42 @@ export default function Billing() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { if (!channelId && channels[0]) setChannelId(channels[0].id); }, [channels, channelId]);
+  // Picked "Start free trial" at sign-up: start it right away, then open the shop
+  const navigate = useNavigate();
+  const autoTrial = useRef(false);
+  useEffect(() => {
+    if (autoTrial.current || params.get('start') !== 'trial' || !tenant || isSuperAdmin) return;
+    if (tenant.status !== 'setup' || tenant.trialUsed) return;
+    autoTrial.current = true;
+    startTrial(tenant)
+      .then(() => {
+        toast.success(`Your free trial has started. Enjoy JPOS for ${tenant.trialDays} days!`);
+        navigate('/admin', { replace: true });
+      })
+      .catch(err => toast.error(err instanceof Error ? err.message : 'Could not start the trial.'));
+  }, [params, tenant, isSuperAdmin, navigate]);
   useEffect(() => (tenant ? watchShopRequests(tenant.id, setRequests, () => { /* rules */ }) : undefined), [tenant?.id]);
   useEffect(() => () => { if (proofPreview) URL.revokeObjectURL(proofPreview); }, [proofPreview]);
 
   if (!tenant || !currentUser) return null;
+
+  // The JPOS owner's own shop never pays for itself
+  if (isSuperAdmin) {
+    return (
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1100px] mx-auto animate-fade-in">
+        <PageHeader eyebrow="Your plan" title="Subscription" subtitle="Your own shop, as the owner of JPOS." />
+        <div className="card p-6 flex flex-wrap items-center gap-4">
+          <ShieldCheck className="w-8 h-8 text-caramel-600" aria-hidden="true" />
+          <div className="flex-1 min-w-[220px]">
+            <p className="font-semibold text-espresso-900">No subscription needed</p>
+            <p className="text-sm text-bark-600">You run JPOS, so your shop has every feature for free. Payments from other shops are in Super Admin.</p>
+          </div>
+          <Link to="/admin/platform" className="btn-primary">Open Super Admin</Link>
+        </div>
+      </div>
+    );
+  }
+
   const state = shopState(tenant);
   const end = periodEnd(tenant);
   const left = daysLeft(tenant);

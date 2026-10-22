@@ -6,6 +6,7 @@ import { auth, db } from '@/lib/firebase';
 import { uploadImage } from '@/lib/cloudinary';
 import { normalizeReference } from '@/lib/eWallet';
 import { getPlatformSettings } from '@/lib/platform';
+import { callApi } from '@/lib/api';
 import { PLAN_LABEL } from '@/lib/entitlements';
 import type { PlanId, SubscriptionRequest, Tenant } from '@/types';
 
@@ -139,6 +140,8 @@ export async function submitPaymentRequest(input: {
     }
     throw err;
   }
+  // Email the Super Admin too. The in-app bell works even if this fails.
+  callApi('email/payment', { requestId: reqRef.id }).catch(err => console.warn('Payment email not sent:', err));
   return { id: reqRef.id, reference, amount: plan.price, channelLabel: channel.label };
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { FirebaseError } from 'firebase/app';
-import { Check, Eye, EyeOff, Loader2, Mail, Store, User as UserIcon, Lock, ArrowLeft, RefreshCw } from 'lucide-react';
+import { BadgeCheck, Check, Sparkles, Eye, EyeOff, Loader2, Mail, Store, User as UserIcon, Lock, ArrowLeft, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { applyTheme } from '@/components/shared/theme';
@@ -9,13 +9,14 @@ import BrandMark from '@/components/shared/BrandMark';
 import ContactOwner, { usePlatformSettings } from '@/components/shared/ContactOwner';
 import { getAuthErrorMessage, CANCELLED_SIGN_IN_CODES } from '@/lib/authErrors';
 import { createShop, isSlugAvailable, slugify, slugProblem, SlugTakenError } from '@/lib/subscriptions';
-import { PLAN_IDS, PLAN_LABEL } from '@/lib/entitlements';
+import { PLAN_LABEL } from '@/lib/entitlements';
+import PlanCards, { isPlanChoice, type PlanChoice } from '@/components/shared/PlanCards';
 import { USE_EMULATORS } from '@/lib/firebase';
 import { cn } from '@/lib/utils';
 import type { PlanId } from '@/types';
 
 const DRAFT_KEY = 'jpos-signup-draft';
-interface Draft { shopName: string; slug: string; ownerName: string; plan: PlanId }
+interface Draft { shopName: string; slug: string; ownerName: string; plan: PlanChoice | null }
 
 function loadDraft(): Partial<Draft> {
   try { return JSON.parse(sessionStorage.getItem(DRAFT_KEY) ?? '{}'); } catch { return {}; }
@@ -33,10 +34,12 @@ export default function SubscribePage() {
   const { currentUser, firebaseUser, noShop, loading, signUp, loginWithGoogle, checkEmailVerified, resendVerification, logout } = useAuth();
   const { settings } = usePlatformSettings();
   const [params] = useSearchParams();
-  const initialPlan = (PLAN_IDS.includes(params.get('plan') as PlanId) ? params.get('plan') : 'business') as PlanId;
+  const fromLink = params.get('plan');
   const draft = useMemo(loadDraft, []);
 
-  const [plan, setPlan] = useState<PlanId>(draft.plan ?? initialPlan);
+  // The free trial or a package; null = show the cards first
+  const [choice, setChoice] = useState<PlanChoice | null>(isPlanChoice(fromLink) ? fromLink : isPlanChoice(draft.plan) ? draft.plan : null);
+  const plan: PlanId = !choice || choice === 'trial' ? 'starter' : choice;
   const [shopName, setShopName] = useState(draft.shopName ?? '');
   const [slug, setSlug] = useState(draft.slug ?? '');
   const [slugTouched, setSlugTouched] = useState(!!draft.slug);
@@ -46,6 +49,20 @@ export default function SubscribePage() {
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [busy, setBusy] = useState(false);
+  // "Send the email again" waits a minute between emails (the server's limit too)
+  const [resendAt, setResendAt] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (resendAt <= Date.now()) return;
+    const timer = setInterval(() => {
+      const t = Date.now();
+      setNow(t);
+      if (t >= resendAt) clearInterval(timer);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendAt]);
+  const waitSec = Math.max(0, Math.ceil((resendAt - now) / 1000));
+  const startResendWait = () => { setNow(Date.now()); setResendAt(Date.now() + 60_000); };
 
   useEffect(() => { applyTheme(null); }, []);
   // The shop link follows the shop name until the owner edits it
@@ -59,8 +76,11 @@ export default function SubscribePage() {
   }, [slug]);
 
   if (loading) return <Shell><Loader2 className="w-8 h-8 animate-spin mx-auto text-caramel-500" /></Shell>;
-  // Already has a shop: go pay / start the trial
-  if (currentUser) return <Navigate to={currentUser.role === 'admin' ? `/admin/billing?plan=${plan}` : '/staff'} replace />;
+  // Already has a shop: start the free trial they picked, or go pay
+  if (currentUser) {
+    const billing = choice === 'trial' ? '/admin/billing?start=trial' : choice ? `/admin/billing?plan=${choice}` : '/admin/billing';
+    return <Navigate to={currentUser.role === 'admin' ? billing : '/staff'} replace />;
+  }
 
   const signedIn = !!firebaseUser && noShop;
   const verified = !!firebaseUser?.emailVerified;
@@ -88,11 +108,12 @@ export default function SubscribePage() {
     e.preventDefault();
     if (shopProblem) { toast.error(shopProblem); return; }
     if (password.length < 6) { toast.error('Use a password with at least 6 characters.'); return; }
-    saveDraft({ shopName, slug, ownerName, plan });
+    saveDraft({ shopName, slug, ownerName, plan: choice });
     setBusy(true);
     try {
-      await signUp(email, password, ownerName);
-      toast.success('Account created. Check your email to verify it.');
+      const { emailSent, problem } = await signUp(email, password, ownerName);
+      if (emailSent) { toast.success('Account created. Check your email to confirm it.'); startResendWait(); }
+      else toast.error(`Account created, but ${problem ?? 'the email was not sent.'} Press "Send the email again".`, { duration: 8000 });
     } catch (err) {
       toast.error(getAuthErrorMessage(err, 'Could not create the account.'));
     } finally {
@@ -102,7 +123,7 @@ export default function SubscribePage() {
 
   const google = async () => {
     if (shopProblem) { toast.error(shopProblem); return; }
-    saveDraft({ shopName, slug, ownerName, plan });
+    saveDraft({ shopName, slug, ownerName, plan: choice });
     setBusy(true);
     try {
       await loginWithGoogle();
@@ -121,10 +142,13 @@ export default function SubscribePage() {
           <Mail className="w-12 h-12 mx-auto text-caramel-600" aria-hidden="true" />
           <h1 className="mt-3 font-display text-2xl text-espresso-900">Check your email</h1>
           <p className="mt-2 text-sm text-bark-600">
-            We sent a link to <strong>{firebaseUser?.email}</strong>. Open it to confirm your email, then come back here.
+            {USE_EMULATORS
+              ? <>Local test: no real email is sent to <strong>{firebaseUser?.email}</strong>. Open it with the button below.</>
+              : <>We sent a link to <strong>{firebaseUser?.email}</strong>. Open it to confirm your email, then come back here.</>}
           </p>
         </div>
         <div className="mt-6 space-y-3">
+          {USE_EMULATORS && <LocalVerifyHelper email={firebaseUser?.email ?? ''} />}
           <button
             className="btn-primary w-full py-3"
             disabled={busy}
@@ -137,12 +161,36 @@ export default function SubscribePage() {
           >
             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} I've confirmed my email
           </button>
-          <button className="btn-secondary w-full" onClick={() => resendVerification().then(() => toast.success('Email sent again.')).catch(e => toast.error(getAuthErrorMessage(e)))}>
-            <RefreshCw className="w-4 h-4" aria-hidden="true" /> Send the email again
+          <button
+            className="btn-secondary w-full"
+            disabled={waitSec > 0}
+            onClick={() => resendVerification()
+              .then(() => { toast.success('Email sent again.'); startResendWait(); })
+              .catch(e => toast.error(getAuthErrorMessage(e)))}
+          >
+            <RefreshCw className="w-4 h-4" aria-hidden="true" /> {waitSec > 0 ? `Send again in ${waitSec}s` : 'Send the email again'}
           </button>
-          {USE_EMULATORS && <LocalVerifyHelper email={firebaseUser?.email ?? ''} />}
           <button className="btn-ghost w-full text-sm" onClick={() => logout()}>Use a different account</button>
         </div>
+      </Shell>
+    );
+  }
+
+  // ── Pick the free trial or a package (skipped when the link already says) ───
+  if (!choice) {
+    return (
+      <Shell wide="xl">
+        <Link to="/login" className="inline-flex items-center gap-1 text-sm text-bark-500 hover:text-espresso-800">
+          <ArrowLeft className="w-4 h-4" aria-hidden="true" /> Back
+        </Link>
+        <h1 className="mt-2 text-center font-display text-3xl sm:text-4xl text-espresso-900">Try JPOS free for {settings.trialDays} days</h1>
+        <p className="mt-2 mb-8 text-center text-sm text-bark-600">Free to sign up. Pay only when you're ready.</p>
+        <PlanCards onChoose={setChoice} />
+        {!signedIn && (
+          <p className="mt-6 text-center text-sm text-bark-500">
+            Already have an account? <Link to="/login" className="font-semibold text-espresso-800 underline">Sign in</Link>
+          </p>
+        )}
       </Shell>
     );
   }
@@ -155,29 +203,23 @@ export default function SubscribePage() {
       </Link>
       <h1 className="mt-3 font-display text-3xl text-espresso-900">{signedIn ? 'Set up your shop' : 'Create your JPOS account'}</h1>
       <p className="mt-1 text-sm text-bark-600">
-        {signedIn ? 'Almost done! Tell us about your shop.' : `Start with a free ${settings.trialDays}-day trial, or subscribe right away. No payment needed to sign up.`}
+        {signedIn ? 'Almost done! Tell us about your shop.' : 'It only takes a few minutes.'}
       </p>
 
-      {/* Package */}
-      <p className="label mt-6">Package</p>
-      <div className="grid gap-3 sm:grid-cols-3">
-        {PLAN_IDS.map(id => {
-          const p = settings.plans[id];
-          return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setPlan(id)}
-              className={cn('rounded-3xl border p-4 text-left transition-all', plan === id ? 'border-espresso-800 bg-cream-50 ring-2 ring-espresso-800/70' : 'border-cream-300 bg-white/60 hover:border-caramel-400')}
-            >
-              <span className="block font-semibold text-espresso-900">{p?.name ?? PLAN_LABEL[id]}</span>
-              <span className="block font-display text-2xl text-espresso-900">₱{(p?.price ?? 0).toLocaleString('en-PH')}<span className="text-xs font-body text-bark-500">/month</span></span>
-              <span className="block text-xs text-bark-500 mt-1">
-                {p?.entitlements.staffLimit == null ? 'Unlimited accounts' : `Up to ${p.entitlements.staffLimit} accounts`}
-              </span>
-            </button>
-          );
-        })}
+      {/* Signing up is free: make that impossible to miss */}
+      <div className="mt-5 flex items-center gap-3 rounded-3xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+        <BadgeCheck className="w-6 h-6 shrink-0 text-emerald-700" aria-hidden="true" />
+        <p className="font-semibold text-emerald-900">Free to sign up. You won't pay anything today.</p>
+      </div>
+
+      {/* What they picked, with a way back to the cards */}
+      <div className="mt-4 flex items-center justify-between gap-3 rounded-full border border-cream-300 bg-white/70 py-2 pl-4 pr-2 text-sm">
+        <span className="flex items-center gap-2 font-semibold text-espresso-900">
+          {choice === 'trial'
+            ? <><Sparkles className="w-4 h-4 text-caramel-600" aria-hidden="true" /> Free trial · {settings.trialDays} days</>
+            : <>{settings.plans[plan]?.name ?? PLAN_LABEL[plan]} · ₱{(settings.plans[plan]?.price ?? 0).toLocaleString('en-PH')}/month <span className="font-normal text-bark-500">(pay later)</span></>}
+        </span>
+        <button type="button" onClick={() => setChoice(null)} className="btn-ghost px-3 py-1.5 text-sm">Change</button>
       </div>
 
       <form onSubmit={signedIn ? (e) => { e.preventDefault(); finishShop(); } : createAccount} className="mt-6 grid gap-4 sm:grid-cols-2">
@@ -224,7 +266,7 @@ export default function SubscribePage() {
         <div className="sm:col-span-2 flex flex-col gap-3">
           <button type="submit" disabled={busy || !!shopProblem} className="btn-primary w-full py-3">
             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-            {signedIn ? 'Create my shop' : 'Create account'}
+            {signedIn ? 'Create my shop for free' : 'Create free account'}
           </button>
           {!signedIn && (
             <button type="button" onClick={google} disabled={busy || !!shopProblem} className="btn w-full py-3 bg-white text-espresso-900 border border-cream-400/80">
@@ -248,12 +290,13 @@ export default function SubscribePage() {
   );
 }
 
-function Shell({ children, wide }: { children: React.ReactNode; wide?: boolean }) {
+export function Shell({ children, wide }: { children: React.ReactNode; wide?: boolean | 'xl' }) {
   return (
     <div data-theme="espresso" className="min-h-dvh bg-cream-100 px-4 py-8 sm:py-12">
-      <div className={cn('mx-auto', wide ? 'max-w-2xl' : 'max-w-md')}>
+      <div className={cn('mx-auto', wide === 'xl' ? 'max-w-5xl' : wide ? 'max-w-2xl' : 'max-w-md')}>
         <div className="mb-6 flex justify-center"><BrandMark /></div>
-        <div className="card-glass p-6 sm:p-8">{children}</div>
+        {/* The package cards are cards themselves: no box around them */}
+        {wide === 'xl' ? children : <div className="card-glass p-6 sm:p-8">{children}</div>}
       </div>
     </div>
   );
@@ -271,26 +314,15 @@ function Field({ icon: Icon, label, children }: { icon: typeof Mail; label: stri
   );
 }
 
-/** Local test mode only: the emulator doesn't send emails, so open the link from here. */
+/**
+ * Local test mode only: emails aren't really sent. This opens the newest email
+ * the local server "sent" to this address, shown the way it looks in an inbox,
+ * so the owner taps "Confirm my email" just like in Gmail.
+ */
 function LocalVerifyHelper({ email }: { email: string }) {
-  const open = async () => {
-    const base = 'http://127.0.0.1:9099';
-    const r = await fetch(`${base}/emulator/v1/projects/demo-jpos/oobCodes`).catch(() => null);
-    const { oobCodes = [] } = r ? await r.json() : {};
-    const code = [...oobCodes].reverse().find((c: { email: string; requestType: string }) => c.email === email && c.requestType === 'VERIFY_EMAIL');
-    if (!code) { toast.error('No verification email found yet.'); return; }
-    // Same as clicking the link in the email
-    const ok = await fetch(`${base}/identitytoolkit.googleapis.com/v1/accounts:update?key=demo-key`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ oobCode: code.oobCode }),
-    }).then(res => res.ok).catch(() => false);
-    if (!ok) { toast.error('Could not confirm the email. Is the local test running?'); return; }
-    toast.success('Email confirmed (local test). Now press "I\'ve confirmed my email".');
-  };
   return (
-    <button className="btn-outline w-full text-sm" onClick={open}>
-      Local test: confirm the email for me
+    <button className="btn-caramel w-full" onClick={() => window.location.assign(`/__dev/mail?to=${encodeURIComponent(email)}`)}>
+      <Mail className="w-4 h-4" aria-hidden="true" /> Local test: open the email
     </button>
   );
 }

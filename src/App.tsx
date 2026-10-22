@@ -4,6 +4,7 @@ import { useAuth } from './contexts/AuthContext';
 import LoginPage from './pages/LoginPage';
 import TerminalPage from './pages/TerminalPage';
 import SubscribePage from './pages/SubscribePage';
+import VerifyEmailPage from './pages/VerifyEmailPage';
 import LoadingScreen from './components/shared/LoadingScreen';
 import { signedOutHome } from './lib/terminal';
 
@@ -70,6 +71,8 @@ export default function App() {
 
         {/* New shops: create an account, verify the email, create the shop */}
         <Route path="/subscribe" element={<SubscribePage />} />
+        {/* The "Confirm my email" link in the sign-up email */}
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
 
         {/* A shop's counter terminal (RFID + password), bookmarked on the POS device */}
         <Route

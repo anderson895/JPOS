@@ -29,7 +29,7 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 
 /**
- * Local test mode (`npm run dev:local`): everything runs against the Firebase
+ * Local test mode (`npm run dev`): everything runs against the Firebase
  * emulators on this computer, with fake data. Production is never touched.
  */
 export const USE_EMULATORS = import.meta.env.VITE_USE_EMULATORS === 'true';

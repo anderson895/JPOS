@@ -61,53 +61,6 @@ export const TESTIMONIALS = [
 ]
 
 /**
- * Where interested shops reach the owner until self-serve sign-up exists (Phase 2).
- * The pricing buttons open Messenger with a ready-made message.
- */
-export const MESSENGER_URL = 'https://m.me/joshuapadilla895';
-
-// Packages from the approved plan (docs/techlead/SUBSCRIPTION-PLAN.md → "Packages").
-// Defaults only: the Super Admin will be able to edit prices, limits and features (Phase 2).
-export const PLANS = [
-  {
-    id: 'starter' as const,
-    name: 'Starter Plan', tagline: 'Also included in the 7-day free trial', price: '₱499',
-    accounts: 'Up to 3 accounts',
-    features: [
-      "POS with Cash + your shop's own GCash/Maya QR",
-      'Receipts with order QR code',
-      'Menu & products',
-      'Reports: Today / This Week',
-      'Messenger support',
-    ],
-    cta: 'Get Started',
-  },
-  {
-    id: 'business' as const,
-    name: 'Business Plan', tagline: 'For growing businesses', price: '₱999',
-    accounts: 'Up to 10 accounts',
-    features: [
-      'Everything in Starter',
-      'Month & custom-range reports + PDF export',
-      'Sales trends dashboard',
-      'RFID card login for staff',
-      'Messenger support',
-    ],
-    cta: 'Get Started', popular: true,
-  },
-  {
-    id: 'enterprise' as const,
-    name: 'Enterprise', tagline: 'For large teams', price: '₱1,999',
-    accounts: 'Unlimited accounts',
-    features: [
-      'Everything in Business',
-      'Priority support (Messenger)',
-    ],
-    cta: 'Get Started', outline: true,
-  },
-];
-
-/**
  * External links. Leave a value empty ('') until the real URL exists —
  * empty links show a "coming soon" notice instead of going nowhere.
  */

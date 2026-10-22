@@ -15,9 +15,10 @@ import { cn } from '@/lib/utils';
  * for review. Admins get the buttons; staff are told to ask their admin.
  */
 export default function SubscriptionBanner() {
-  const { tenant, currentUser } = useAuth();
+  const { tenant, currentUser, isSuperAdmin } = useAuth();
   const [starting, setStarting] = useState(false);
-  if (!tenant || !currentUser) return null;
+  // The JPOS owner's own shop has no subscription to remind about
+  if (!tenant || !currentUser || isSuperAdmin) return null;
 
   const isAdmin = currentUser.role === 'admin';
   const state = shopState(tenant);

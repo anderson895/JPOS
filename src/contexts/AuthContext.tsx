@@ -2,7 +2,6 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  sendEmailVerification,
   updateProfile,
   reload,
   signInWithPopup,
@@ -23,6 +22,7 @@ import toast from 'react-hot-toast';
 import { auth, db } from '@/lib/firebase';
 import { setCurrentTenant, tenantDoc, tenantRef } from '@/lib/tenant';
 import { isSuperAdmin as checkSuperAdmin } from '@/lib/platform';
+import { callApi } from '@/lib/api';
 import type { Tenant, User } from '@/types';
 
 interface AuthContextType {
@@ -39,8 +39,8 @@ interface AuthContextType {
   /** RFID works only on a shop's own staff sign-in page (/s/:slug), so the card lookup knows the shop. */
   loginWithRFID: (rfidTag: string, terminalSlug: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
-  /** New account for a shop owner; sends the email verification. */
-  signUp: (email: string, password: string, displayName: string) => Promise<void>;
+  /** New account for a shop owner; emails the confirmation link (from JPOS's Gmail). */
+  signUp: (email: string, password: string, displayName: string) => Promise<{ emailSent: boolean; problem?: string }>;
   resendVerification: () => Promise<void>;
   /** Re-reads the account after the owner clicked the email link. True when verified. */
   checkEmailVerified: () => Promise<boolean>;
@@ -322,14 +322,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp = async (email: string, password: string, displayName: string) => {
     const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+    // Before the email goes out: it greets the owner by name
     await updateProfile(cred.user, { displayName: displayName.trim() }).catch(() => { /* cosmetic */ });
-    await sendEmailVerification(cred.user, { url: `${window.location.origin}/subscribe` });
+    // The account exists even if the email fails; "Send the email again" retries
+    try {
+      await callApi('email/verify');
+      return { emailSent: true };
+    } catch (err) {
+      return { emailSent: false, problem: err instanceof Error ? err.message : 'We could not send the email.' };
+    }
   };
 
   const resendVerification = async () => {
-    const user = auth.currentUser;
-    if (!user) throw new Error('Sign in again.');
-    await sendEmailVerification(user, { url: `${window.location.origin}/subscribe` });
+    if (!auth.currentUser) throw new Error('Sign in again.');
+    await callApi('email/verify');
   };
 
   const checkEmailVerified = async () => {

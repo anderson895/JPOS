@@ -42,8 +42,9 @@ export default function AdminLayout() {
     });
   }, [isSuperAdmin]);
 
+  // The JPOS owner's own shop never pays, so Subscription gives way to Super Admin
   const items: ShellNavItem[] = isSuperAdmin
-    ? [...navItems, { to: '/admin/platform', icon: ShieldCheck, label: pendingCount ? `Super Admin (${pendingCount})` : 'Super Admin' }]
+    ? [...navItems.filter(i => i.to !== '/admin/billing'), { to: '/admin/platform', icon: ShieldCheck, label: pendingCount ? `Super Admin (${pendingCount})` : 'Super Admin' }]
     : navItems;
 
   const handleLogout = async () => {

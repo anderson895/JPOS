@@ -224,6 +224,12 @@ await t('Super Admin suspends a shop (with audit)', 'allow', () => suspend(as('s
 await t('suspend without an audit entry', 'deny', () => suspend(as('super'), false));
 await t('anyone makes themselves Super Admin', 'deny', () => setDoc(doc(as('adminS'), 'platformAdmins/adminS'), { name: 'me' }));
 
+// ── Email counters: the server's only (Admin SDK), never the app ────────────
+await t('a shop admin reads the email counters', 'deny', () => getDoc(doc(as('adminS'), 'mailLog/verify_adminS')));
+await t('a shop admin resets their email limit', 'deny', () => setDoc(doc(as('adminS'), 'mailLog/verify_adminS'), { count: 0, windowStart: 0, lastSentAt: 0 }));
+await t('the Super Admin edits the email counters', 'deny', () => setDoc(doc(as('super'), 'mailLog/day_2026-10-23'), { count: 0 }));
+await t('a stranger lists the email counters', 'deny', () => getDocs(collection(anon(), 'mailLog')));
+
 await env.cleanup();
 for (const [s, e, n] of results) console.log(`${s}  [${e.padEnd(5)}]  ${n}`);
 const failed = results.filter(r => r[0] === 'FAIL').length;
