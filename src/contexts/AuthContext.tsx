@@ -19,14 +19,18 @@ import {
 import { FirebaseError } from 'firebase/app';
 import toast from 'react-hot-toast';
 import { auth, db } from '@/lib/firebase';
-import type { User } from '@/types';
+import { setCurrentTenant, tenantDoc, tenantRef } from '@/lib/tenant';
+import type { Tenant, User } from '@/types';
 
 interface AuthContextType {
   currentUser: User | null;
+  /** The signed-in user's shop (live). Null while loading or signed out. */
+  tenant: Tenant | null;
   firebaseUser: FirebaseUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  loginWithRFID: (rfidTag: string) => Promise<void>;
+  /** RFID works only on a shop's own terminal page (/s/:slug), so the card lookup knows the shop. */
+  loginWithRFID: (rfidTag: string, terminalSlug: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -55,6 +59,19 @@ async function fetchUserProfile(fbUser: FirebaseUser): Promise<User | null> {
   return snap.exists() ? ({ id: fbUser.uid, ...snap.data() } as User) : null;
 }
 
+const NO_SHOP_MESSAGE = "This account isn't linked to a shop. Contact your administrator.";
+
+/** slugs/{slug} -> the shop's id (a public lookup, so a terminal can find its shop before sign-in). */
+async function resolveTerminalShop(slug: string): Promise<string> {
+  const clean = slug.trim().toLowerCase();
+  const invalid = "This terminal link isn't valid. Check the shop's link.";
+  if (!/^[a-z0-9-]{1,60}$/.test(clean)) throw new Error(invalid);
+  const snap = await getDoc(doc(db, 'slugs', clean));
+  const tenantId = snap.exists() ? (snap.data() as { tenantId?: string }).tenantId : undefined;
+  if (!tenantId) throw new Error(invalid);
+  return tenantId;
+}
+
 /**
  * The first Google sign-in to an account whose email was never verified makes
  * Firebase drop that account's password (it keeps the same uid). RFID login
@@ -67,7 +84,7 @@ async function restoreRfidPassword(fbUser: FirebaseUser, profile: User) {
   if (profile.role === 'admin' || !tag || !fbUser.email) return;
   if (fbUser.providerData.some(p => p.providerId === 'password')) return;
   try {
-    const card = await getDoc(doc(db, 'rfidCards', tag));
+    const card = await getDoc(tenantDoc('rfidCards', tag, profile.tenantId));
     const { userId, password } = (card.data() ?? {}) as { userId?: string; password?: string };
     if (userId === fbUser.uid && password) {
       await linkWithCredential(fbUser, EmailAuthProvider.credential(fbUser.email, password));
@@ -81,14 +98,18 @@ async function restoreRfidPassword(fbUser: FirebaseUser, profile: User) {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [tenant, setTenant] = useState<Tenant | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   // True while loginWithRFID is checking a card's account, so the auth listener
   // refuses an admin session from a card instead of briefly opening it.
   const rfidSignIn = useRef(false);
+  // The shop whose terminal the card was tapped at; the card's account must belong to it.
+  const rfidTenant = useRef<string | null>(null);
 
   useEffect(() => {
     let unsubSnapshot: (() => void) | null = null;
+    let unsubTenant: (() => void) | null = null;
     // Bumped on every auth change (and on unmount). Async work started for an
     // older auth state checks it before touching anything, so a slow profile
     // fetch for a user who has since signed out can't attach a listener that
@@ -99,6 +120,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // with no profile would strand the user: onAuthStateChanged only fires when
     // the uid changes, so retrying the same login would never load the profile.
     const resetSession = () => {
+      if (unsubTenant) { unsubTenant(); unsubTenant = null; }
+      setCurrentTenant(null);
+      setTenant(null);
       setCurrentUser(null);
       setFirebaseUser(null);
       setLoading(false);
@@ -107,12 +131,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const unsubAuth = onAuthStateChanged(auth, async (fbUser) => {
       const version = ++authVersion;
-      // Clean up any previous Firestore listener when auth state changes
+      // Clean up any previous Firestore listeners when auth state changes
       if (unsubSnapshot) { unsubSnapshot(); unsubSnapshot = null; }
+      if (unsubTenant) { unsubTenant(); unsubTenant = null; }
 
       setFirebaseUser(fbUser);
 
       if (!fbUser) {
+        setCurrentTenant(null);
+        setTenant(null);
         setCurrentUser(null);
         setLoading(false);
         return;
@@ -127,11 +154,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           resetSession();
           return;
         }
-        // Admins can't sign in with an RFID card (loginWithRFID shows the message)
-        if (rfidSignIn.current && profile.role === 'admin') {
+        // Admins can't sign in with an RFID card, and a card only opens its own
+        // shop's terminal (loginWithRFID shows the message)
+        if (rfidSignIn.current && (profile.role === 'admin' || profile.tenantId !== rfidTenant.current)) {
           resetSession();
           return;
         }
+        // Every account belongs to exactly one shop; per-shop paths are built from it.
+        const shopId = profile.tenantId;
+        if (!shopId) {
+          resetSession();
+          return;
+        }
+        setCurrentTenant(shopId);
+
+        // Live shop document: status, package and period (read-only for shop users)
+        unsubTenant = onSnapshot(
+          tenantRef(shopId),
+          (snap) => {
+            if (version !== authVersion) return;
+            if (snap.exists()) setTenant({ id: snap.id, ...snap.data() } as Tenant);
+            else resetSession();   // the shop was removed
+          },
+          (err) => {
+            console.error('Shop snapshot error:', err);
+            if (version === authVersion) resetSession();
+          }
+        );
 
         // ── Real-time listener on the user's Firestore doc ──────────────
         // Any write to this doc (profile update, admin editing staff, etc.)
@@ -141,6 +190,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           (snap) => {
             if (version !== authVersion) return;
             const userData = snap.exists() ? ({ id: fbUser.uid, ...snap.data() } as User) : null;
+            // Moved to another shop mid-session (never expected): start over
+            if (userData && userData.tenantId !== shopId) { resetSession(); return; }
             if (userData?.isActive) {
               setCurrentUser(userData);
               setLoading(false);
@@ -164,6 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       authVersion++;
       unsubAuth();
       if (unsubSnapshot) unsubSnapshot();
+      if (unsubTenant) unsubTenant();
     };
   }, []);
 
@@ -174,6 +226,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await signOut(auth);
       throw new Error('This account no longer has access. Contact your administrator.');
     }
+    if (!userData.tenantId) {
+      await signOut(auth);
+      throw new Error(NO_SHOP_MESSAGE);
+    }
     if (!userData.isActive) {
       await signOut(auth);
       throw new Error('This account has been deactivated. Contact your administrator.');
@@ -181,19 +237,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // onSnapshot will handle setting currentUser automatically
   };
 
-  const loginWithRFID = async (rfidTag: string) => {
+  const loginWithRFID = async (rfidTag: string, terminalSlug: string) => {
     const trimmed = rfidTag.trim().replace(/[\r\n]/g, '');
     if (!trimmed) throw new Error('No RFID tag detected. Please scan again.');
     // A "/" would be read as a sub-path and make the lookup itself throw.
     if (trimmed.includes('/')) throw new Error('RFID card not registered. Contact your administrator.');
 
-    const cardDoc = await getDoc(doc(db, 'rfidCards', trimmed));
+    // The terminal's shop: its cards live under tenants/{T}/rfidCards
+    const shopId = await resolveTerminalShop(terminalSlug);
+    let cardDoc;
+    try {
+      cardDoc = await getDoc(tenantDoc('rfidCards', trimmed, shopId));
+    } catch (err) {
+      // The rules hide cards when the shop's package doesn't include RFID
+      if (err instanceof FirebaseError && err.code === 'permission-denied') {
+        throw new Error("RFID login isn't included in this shop's package. Sign in with your email and password.");
+      }
+      throw err;
+    }
     if (!cardDoc.exists()) throw new Error('RFID card not registered. Contact your administrator.');
 
     const { email, password } = cardDoc.data() as { email?: string; password?: string };
     if (!email || !password) throw new Error('RFID card is incomplete. Contact your administrator.');
 
     rfidSignIn.current = true;
+    rfidTenant.current = shopId;
     try {
       let cred;
       try {
@@ -232,6 +300,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await signOut(auth);
         throw new Error('RFID login is not available for admin accounts. Use your email and password.');
       }
+      // A card registered in another shop can't open this shop's terminal
+      if (userData.tenantId !== shopId) {
+        await signOut(auth);
+        throw new Error('This card belongs to a different shop.');
+      }
       if (!userData.isActive) {
         await signOut(auth);
         throw new Error('This account has been deactivated. Contact your administrator.');
@@ -239,6 +312,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // onSnapshot will handle setting currentUser automatically
     } finally {
       rfidSignIn.current = false;
+      rfidTenant.current = null;
     }
   };
 
@@ -263,6 +337,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await signOut(auth).catch(() => { /* already signed out */ });
       throw new Error("This Google account isn't registered in JPOS. Ask your administrator to add your email first.");
     }
+    if (!userData.tenantId) {
+      await signOut(auth);
+      throw new Error(NO_SHOP_MESSAGE);
+    }
     if (!userData.isActive) {
       await signOut(auth);
       throw new Error('This account has been deactivated. Contact your administrator.');
@@ -273,6 +351,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try { await signOut(auth); } catch { /* already signed out */ }
+    setCurrentTenant(null);
+    setTenant(null);
     setCurrentUser(null);
     setFirebaseUser(null);
   };
@@ -289,7 +369,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-      currentUser, firebaseUser, loading,
+      currentUser, tenant, firebaseUser, loading,
       login, loginWithRFID, loginWithGoogle, logout, refreshUser,
     }}>
       {children}

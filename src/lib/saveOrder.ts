@@ -1,6 +1,7 @@
-import { doc, getDoc, writeBatch, type DocumentReference } from 'firebase/firestore';
+import { getDoc, writeBatch, type DocumentReference } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
 import { db } from '@/lib/firebase';
+import { tenantDoc } from '@/lib/tenant';
 import { paymentRefKey } from '@/lib/eWallet';
 import type { Order } from '@/types';
 
@@ -25,7 +26,7 @@ export async function saveOrderAtomically(orderRef: DocumentReference, order: Om
   const batch = writeBatch(db);
   batch.set(orderRef, order);
   if (key) {
-    batch.set(doc(db, 'paymentRefs', key), {
+    batch.set(tenantDoc('paymentRefs', key), {
       orderId: orderRef.id,
       orderNumber: order.orderNumber,
       cashierId: order.cashierId,
@@ -40,7 +41,7 @@ export async function saveOrderAtomically(orderRef: DocumentReference, order: Om
   } catch (err) {
     if (!key || !(err instanceof FirebaseError) || err.code !== 'permission-denied') throw err;
     // Denied: find out whether the reference is already taken, and by which order
-    const claim = await getDoc(doc(db, 'paymentRefs', key)).catch(() => null);
+    const claim = await getDoc(tenantDoc('paymentRefs', key)).catch(() => null);
     if (!claim?.exists()) throw err;
     const { orderId, orderNumber } = claim.data() as { orderId?: string; orderNumber?: string };
     if (orderId === orderRef.id) return;   // our own earlier attempt went through

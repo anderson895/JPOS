@@ -1,127 +1,180 @@
 rules_version = '2';
+// JPOS multi-store rules (Phase 1). Every shop's data lives under tenants/{t}/…
+// and only that shop's active members can read it. See docs/backend/SAAS_V2_CONTRACT.md
+// and docs/techlead/SUBSCRIPTION-PLAN.md §10.1 (setup / trial / active).
+// The old single-store collections at the root are no longer matched, so they
+// are denied (deploy the app and run the migration FIRST: docs/backend/CUTOVER.md).
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isAdmin() {
-      return request.auth != null
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
+
+    // ── Who is asking ─────────────────────────────────────────────────────
+    function signedIn()      { return request.auth != null; }
+    function me()            { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function hasProfile()    { return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)); }
+    function memberOf(t)     { return hasProfile() && me().tenantId == t && me().isActive == true; }
+    function adminOf(t)      { return memberOf(t) && me().role == 'admin'; }
+    function isSuperAdmin()  { return signedIn() && exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)); }
+
+    // ── The shop's subscription state (server clock, exact) ──────────────
+    function shop(t)         { return get(/databases/$(database)/documents/tenants/$(t)).data; }
+    function trialEnd(s)     { return s.trialStartedAt + duration.value(s.trialDays, 'd'); }
+    // Taking orders: a running trial, or a paid period that hasn't ended
+    function canSell(t) {
+      let s = shop(t);
+      return s.suspended == false
+        && ((s.status == 'trial' && request.time < trialEnd(s))
+            || (s.status == 'active' && request.time < s.currentPeriodEnd));
     }
-    function isActiveUser() {
-      return request.auth != null
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
+    // Preparing the shop (menu, staff, settings): setup mode, any trial (even
+    // ended), or a paid period that hasn't ended. An expired paid shop is read-only.
+    function canSetup(t) {
+      let s = shop(t);
+      return s.suspended == false
+        && (s.status in ['setup', 'trial']
+            || (s.status == 'active' && request.time < s.currentPeriodEnd));
     }
 
-    match /users/{userId} {
-      // Own profile only; admins can see everyone (Staff Management)
-      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
-      // Only admins create/delete accounts (create the very first admin in the console)
-      allow create, delete: if isAdmin();
-      // Users may change their own name/photo — never their role or active status
-      allow update: if isAdmin() || (
-        request.auth != null && request.auth.uid == userId &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['displayName', 'photoURL', 'updatedAt'])
-      );
-    }
-    match /products/{id} {
-      allow read: if isActiveUser();
-      allow write: if isAdmin();
-    }
-    match /categories/{id} {
-      allow read: if isActiveUser();
-      allow write: if isAdmin();
-    }
-    // GCash/Maya through the store's own QR: the e-wallet reference must be valid,
-    // the cashier vouches they saw the money arrive (verifiedBy), and the reference
-    // is claimed in paymentRefs IN THE SAME BATCH, so it can never be used twice.
-    //
-    // STAGE B (live since the new app shipped): the reference is REQUIRED for
-    // GCash/Maya. See docs/backend/EWALLET_QR.md "Deploy in two stages".
-    function eWalletOk(id, o) {
-      return !(o.paymentMethod in ['gcash', 'maya'])
-        || (o.get('paymentReference', '') is string
-            && o.get('paymentReference', '').matches('^[A-Z0-9]{6,30}$')
-            && o.get('paymentVerification', '') == 'manual'
-            && o.get('verifiedBy', '') == request.auth.uid
-            && getAfter(/databases/$(database)/documents/paymentRefs/$(o.paymentMethod + '_' + o.paymentReference)).data.orderId == id);
-    }
-    // Card: an optional approval code (codes repeat, so not unique)
-    function cardOk(o) {
-      return o.paymentMethod != 'card'
-        || !('paymentReference' in o)
-        || (o.paymentReference is string && o.paymentReference.size() <= 30);
+    // ── People: one shop per login (users/{uid}.tenantId) ────────────────
+    match /users/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || adminOf(resource.data.tenantId) || isSuperAdmin());
+      // Lists must be pinned to the admin's own shop: where('tenantId', '==', T)
+      allow list: if signedIn() && (adminOf(resource.data.tenantId) || isSuperAdmin());
+      // A shop admin adds people to their OWN shop only
+      allow create: if adminOf(request.resource.data.tenantId)
+        && canSetup(request.resource.data.tenantId)
+        && request.resource.data.keys().hasOnly(['tenantId', 'email', 'displayName', 'role', 'isActive', 'rfidTag', 'photoURL', 'createdAt', 'updatedAt'])
+        && request.resource.data.role in ['admin', 'staff']
+        && request.resource.data.isActive is bool;
+      allow update: if (
+          adminOf(resource.data.tenantId)
+          && canSetup(resource.data.tenantId)
+          // nobody can be moved to another shop
+          && request.resource.data.tenantId == resource.data.tenantId
+          && request.resource.data.role in ['admin', 'staff']
+          // the shop owner's role and active flag can only be changed by the owner
+          && !(uid == shop(resource.data.tenantId).ownerUid && request.auth.uid != uid
+               && request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isActive']))
+        ) || (
+          // anyone may change their own name and photo, never their role or shop
+          request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt'])
+        );
+      allow delete: if adminOf(resource.data.tenantId)
+        && canSetup(resource.data.tenantId)
+        && uid != request.auth.uid
+        && uid != shop(resource.data.tenantId).ownerUid;
     }
 
-    match /orders/{id} {
-      allow read: if isActiveUser();
-      // Cashiers can only record orders under their own account
-      allow create: if isActiveUser() && request.resource.data.cashierId == request.auth.uid
-        && eWalletOk(id, request.resource.data) && cardOk(request.resource.data);
-      allow update, delete: if isAdmin();
-    }
-
-    // One e-wallet reference = one order. Created in the same batch as its order;
-    // a reused reference makes this create an update, which is denied, so the
-    // whole batch (order included) fails.
-    match /paymentRefs/{key} {
-      allow get: if isActiveUser();   // so the POS can say which order already used it
-      allow list: if isAdmin();
-      allow create: if isActiveUser()
-        && request.resource.data.keys().hasOnly(['orderId', 'orderNumber', 'cashierId', 'method', 'reference', 'createdAt'])
-        && request.resource.data.cashierId == request.auth.uid
-        && request.resource.data.method in ['gcash', 'maya']
-        && request.resource.data.reference.matches('^[A-Z0-9]{6,30}$')
-        && request.resource.data.orderNumber is string && request.resource.data.orderNumber.size() <= 64
-        // ISO timestamp as written by the app, e.g. 2026-10-22T07:30:00.000Z
-        && request.resource.data.createdAt is string && request.resource.data.createdAt.size() <= 30
-        && request.resource.data.createdAt.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$')
-        && key == request.resource.data.method + '_' + request.resource.data.reference
-        && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.cashierId == request.auth.uid
-        && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.paymentMethod == request.resource.data.method
-        && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.paymentReference == request.resource.data.reference;
-      allow update: if false;
-      allow delete: if isAdmin();
-    }
-
-    // The store's own GCash/Maya QR codes. Admin-only writes: a staff member who
-    // swapped in their own QR would receive the shop's payments.
-    function validWallet(w) {
-      return w is map
-        && w.keys().hasOnly(['enabled', 'qrImageUrl', 'accountName', 'accountHint'])
-        && w.enabled is bool
-        && w.qrImageUrl is string && w.qrImageUrl.size() <= 500
-        && (w.qrImageUrl == '' || w.qrImageUrl.matches('^https://.+'))
-        && w.accountName is string && w.accountName.size() <= 60
-        && w.accountHint is string && w.accountHint.size() <= 30
-        && (!w.enabled || w.qrImageUrl != '');   // a wallet can't be on without a QR
-    }
-    match /settings/payments {
-      allow read: if isActiveUser();
-      allow create, update: if isAdmin()
-        && request.resource.data.keys().hasOnly(['gcash', 'maya', 'card', 'updatedAt', 'updatedBy'])
-        && validWallet(request.resource.data.gcash)
-        && validWallet(request.resource.data.maya)
-        && request.resource.data.card is map
-        && request.resource.data.card.keys().hasOnly(['enabled'])
-        && request.resource.data.card.enabled is bool
-        && request.resource.data.updatedAt is string
-        && request.resource.data.updatedBy == request.auth.uid;
-    }
-
-    // RFID login looks up a single card BEFORE signing in, so `get` stays public,
-    // but listing all cards (and their saved passwords) is blocked.
-    // Staff accounts are created on a secondary app, so the admin's session
-    // stays signed in and admin-only writes work.
-    // Cards are never allowed for ADMIN accounts: a card holds its owner's
-    // password, and anyone who knows the tag can read it. getAfter() checks the
-    // profile as it will be after the write, so a batch that creates a staff
-    // (profile + card) or demotes an admin while giving them a card still works.
-    match /rfidCards/{tag} {
+    // ── Public lookups ────────────────────────────────────────────────────
+    // A terminal (/s/:slug) finds its shop before anyone signs in
+    match /slugs/{slug} {
       allow get: if true;
       allow list: if false;
-      allow create, update: if isAdmin()
-        && getAfter(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.role != 'admin';
-      allow delete: if isAdmin();
+      allow write: if false;            // Phase 2: shop sign-up creates it
+    }
+    match /platformAdmins/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list, write: if false;      // created by hand in the Firebase Console
+    }
+
+    // ── A shop and everything in it ───────────────────────────────────────
+    match /tenants/{t} {
+      allow get: if memberOf(t) || isSuperAdmin();
+      allow list: if isSuperAdmin();
+      allow write: if false;            // Phase 2: sign-up, trial start, Super Admin
+
+      match /products/{id} {
+        allow read: if memberOf(t);
+        allow write: if adminOf(t) && canSetup(t);
+      }
+      match /categories/{id} {
+        allow read: if memberOf(t);
+        allow write: if adminOf(t) && canSetup(t);
+      }
+
+      // GCash/Maya through the shop's own QR: the e-wallet reference must be valid,
+      // the cashier vouches they saw the money arrive (verifiedBy), and the
+      // reference is claimed in paymentRefs IN THE SAME BATCH (never reused).
+      function eWalletOk(id, o) {
+        return !(o.paymentMethod in ['gcash', 'maya'])
+          || (o.get('paymentReference', '') is string
+              && o.get('paymentReference', '').matches('^[A-Z0-9]{6,30}$')
+              && o.get('paymentVerification', '') == 'manual'
+              && o.get('verifiedBy', '') == request.auth.uid
+              && getAfter(/databases/$(database)/documents/tenants/$(t)/paymentRefs/$(o.paymentMethod + '_' + o.paymentReference)).data.orderId == id);
+      }
+      // Card: an optional approval code (codes repeat, so not unique)
+      function cardOk(o) {
+        return o.paymentMethod != 'card'
+          || !('paymentReference' in o)
+          || (o.paymentReference is string && o.paymentReference.size() <= 30);
+      }
+      match /orders/{id} {
+        allow read: if memberOf(t);
+        // Cashiers record sales under their own account, only while the shop may sell
+        allow create: if memberOf(t) && canSell(t)
+          && request.resource.data.cashierId == request.auth.uid
+          && eWalletOk(id, request.resource.data) && cardOk(request.resource.data);
+        allow update, delete: if adminOf(t) && canSetup(t);
+      }
+
+      // One e-wallet reference = one order (created in the order's batch)
+      match /paymentRefs/{key} {
+        allow get: if memberOf(t);      // so the POS can say which order already used it
+        allow list: if adminOf(t);
+        allow create: if memberOf(t) && canSell(t)
+          && request.resource.data.keys().hasOnly(['orderId', 'orderNumber', 'cashierId', 'method', 'reference', 'createdAt'])
+          && request.resource.data.cashierId == request.auth.uid
+          && request.resource.data.method in ['gcash', 'maya']
+          && request.resource.data.reference.matches('^[A-Z0-9]{6,30}$')
+          && request.resource.data.orderNumber is string && request.resource.data.orderNumber.size() <= 64
+          && request.resource.data.createdAt is string && request.resource.data.createdAt.size() <= 30
+          && request.resource.data.createdAt.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$')
+          && key == request.resource.data.method + '_' + request.resource.data.reference
+          && getAfter(/databases/$(database)/documents/tenants/$(t)/orders/$(request.resource.data.orderId)).data.cashierId == request.auth.uid
+          && getAfter(/databases/$(database)/documents/tenants/$(t)/orders/$(request.resource.data.orderId)).data.paymentMethod == request.resource.data.method
+          && getAfter(/databases/$(database)/documents/tenants/$(t)/orders/$(request.resource.data.orderId)).data.paymentReference == request.resource.data.reference;
+        allow update: if false;
+        allow delete: if adminOf(t);
+      }
+
+      // The shop's own GCash/Maya QR codes. Admin-only writes: a staff member who
+      // swapped in their own QR would receive the shop's payments.
+      function validWallet(w) {
+        return w is map
+          && w.keys().hasOnly(['enabled', 'qrImageUrl', 'accountName', 'accountHint'])
+          && w.enabled is bool
+          && w.qrImageUrl is string && w.qrImageUrl.size() <= 500
+          && (w.qrImageUrl == '' || w.qrImageUrl.matches('^https://.+'))
+          && w.accountName is string && w.accountName.size() <= 60
+          && w.accountHint is string && w.accountHint.size() <= 30
+          && (!w.enabled || w.qrImageUrl != '');   // a wallet can't be on without a QR
+      }
+      match /settings/payments {
+        allow read: if memberOf(t);
+        allow create, update: if adminOf(t) && canSetup(t)
+          && request.resource.data.keys().hasOnly(['gcash', 'maya', 'card', 'updatedAt', 'updatedBy'])
+          && validWallet(request.resource.data.gcash)
+          && validWallet(request.resource.data.maya)
+          && request.resource.data.card is map
+          && request.resource.data.card.keys().hasOnly(['enabled'])
+          && request.resource.data.card.enabled is bool
+          && request.resource.data.updatedAt is string
+          && request.resource.data.updatedBy == request.auth.uid;
+      }
+
+      // RFID: a terminal looks up ONE card before sign-in (public get, only when
+      // the shop's package includes RFID); listing cards is never allowed.
+      // Cards are never for admin accounts, and the card's owner must be in this shop.
+      match /rfidCards/{tag} {
+        allow get: if shop(t).entitlements.rfid == true;
+        allow list: if false;
+        allow create, update: if adminOf(t) && canSetup(t)
+          && shop(t).entitlements.rfid == true
+          && getAfter(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.tenantId == t
+          && getAfter(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.role != 'admin';
+        allow delete: if adminOf(t);
+      }
     }
   }
 }

@@ -2,6 +2,8 @@ export type UserRole = 'admin' | 'staff';
 
 export interface User {
   id: string;
+  /** The shop this login belongs to (tenants/{tenantId}). One shop per login. */
+  tenantId: string;
   email: string;
   displayName: string;
   role: UserRole;
@@ -11,6 +13,42 @@ export interface User {
   createdAt: string;
   updatedAt: string;
 }
+
+/** What a package unlocks. Snapshotted on the shop when a payment is approved. */
+export interface Entitlements {
+  plan: PlanId;
+  /** Max user accounts (owner included); null = unlimited. */
+  staffLimit: number | null;
+  rfid: boolean;
+  fullReports: boolean;
+  pdfExport: boolean;
+  trends: boolean;
+}
+
+export type PlanId = 'starter' | 'business' | 'enterprise';
+
+/**
+ * A subscribing shop: tenants/{id}. Written only by the platform (migration,
+ * trial sign-up, Super Admin); shop admins can't change status/period/entitlements.
+ * Firestore Timestamps are read as `{ toDate(): Date }`.
+ */
+export interface Tenant {
+  id: string;
+  name: string;
+  slug: string;
+  ownerUid: string;
+  plan: PlanId;
+  status: 'trial' | 'active';
+  suspended: boolean;
+  createdAt: FirestoreTime;
+  trialDays: number;
+  currentPeriodEnd?: FirestoreTime;
+  entitlements: Entitlements;
+  staffCount: number;
+}
+
+/** A Firestore Timestamp as the client SDK returns it. */
+export interface FirestoreTime { toDate(): Date; toMillis(): number }
 
 export interface Category {
   id: string;

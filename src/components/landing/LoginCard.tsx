@@ -25,9 +25,13 @@ function GoogleIcon({ className }: { className?: string }) {
  * Auth logic is unchanged from the previous LoginPage — only the markup moved here.
  * `id="login"` and `id="login-email"` are scroll/focus targets for the landing CTAs.
  */
-export default function LoginCard() {
+export default function LoginCard({ terminalSlug }: {
+  /** Set on a shop's terminal page (/s/:slug). RFID is offered only there: the card lookup needs the shop. */
+  terminalSlug?: string;
+} = {}) {
   const { login, loginWithRFID, loginWithGoogle } = useAuth();
-  const [mode, setMode] = useState<'password' | 'rfid'>('password');
+  // A terminal opens on RFID (cashiers tap their card); the public page is password/Google only
+  const [mode, setMode] = useState<'password' | 'rfid'>(terminalSlug ? 'rfid' : 'password');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
@@ -73,7 +77,7 @@ export default function LoginCard() {
     setRfidInput(tag);
     setLoading(true);
     try {
-      await loginWithRFID(tag);
+      await loginWithRFID(tag, terminalSlug ?? '');
       toast.success('Welcome back!');
     } catch (err) {
       toast.error(getAuthErrorMessage(err, 'RFID card not recognized'));
@@ -150,7 +154,8 @@ export default function LoginCard() {
           </div>
         </div>
 
-        {/* Mode Toggle */}
+        {/* Mode Toggle (terminal only) */}
+        {terminalSlug && (
         <div className="segmented relative mt-6" role="tablist" aria-label="Sign-in method">
           <button
             type="button"
@@ -173,6 +178,7 @@ export default function LoginCard() {
             RFID Card
           </button>
         </div>
+        )}
 
         <div className="relative mt-6">
           {mode === 'password' ? (
@@ -310,6 +316,13 @@ export default function LoginCard() {
             </div>
           )}
         </div>
+
+        {!terminalSlug && (
+          <p className="relative mt-5 flex items-start gap-2 text-left text-[11px] leading-relaxed text-bark-500">
+            <CreditCard className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-caramel-600" aria-hidden="true" />
+            Signing in with an RFID card? Open your shop's terminal link (…/s/your-shop) on the counter device.
+          </p>
+        )}
 
         <p className="relative text-center text-bark-500 text-[11px] mt-6">
           JPOS v1.0 · <span className="text-espresso-700">Business Management System</span>

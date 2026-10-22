@@ -484,3 +484,13 @@ Checks: `tsc --strict --noUnusedLocals --noUnusedParameters` and `npm run build`
 - Toasts: "coming soon" → `Clock`, Messenger → `MessageCircle`, newsletter → `Mail`. `scroll.ts` builds them with `createElement`, since it's plain TS.
 - Receipt payment note: "⚠" → `AlertTriangle`. Staff form RFID hint: "✓" → `Check`.
 
+## 25. Phase 1 UI: shop terminal (branch `p1-multistore`)
+- New **`/s/:slug` terminal page** (`src/pages/TerminalPage.tsx`):
+  - checks the link (`slugs/{slug}`) and shows "Terminal link not found" for a bad one
+  - otherwise shows the sign-in card **opened on the RFID tab**
+  - the device remembers its terminal (`src/lib/terminal.ts`)
+- `LoginCard` takes an optional `terminalSlug`. Without it (the public `/login`), there's **no RFID tab**, only a hint: "Signing in with an RFID card? Open your shop's terminal link (…/s/your-shop)".
+- **Sign-out** goes back to the remembered terminal, or `/login` on other devices (`AdminLayout`, `StaffLayout`, `App.tsx` redirects use `signedOutHome()`).
+- No emoji; lucide icons only (`AlertTriangle`, `Store`, `CreditCard`).
+- Shop branding on the terminal (logo, background, theme) comes in Phase B.
+

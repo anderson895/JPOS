@@ -658,3 +658,24 @@ The public landing page used to download the whole app in one 1.7 MB file: every
 | `src/contexts/AuthContext.tsx` | RFID re-link failure toast |
 | `tests/unit/*`, `tests/tsconfig.json`, `scripts/test-unit.mjs`, `package.json` (`test:unit`) | **New** unit tests and runner |
 | `docs/techlead/firestore-rules.test.mjs` | Emulator host from `FIRESTORE_EMULATOR_HOST`; 41 store-QR cases (edited with the Tech Lead's permission) |
+
+---
+
+## 23. Phase 1: multi-store foundation (branch `p1-multistore`, not live until the cutover)
+
+- **Data:** everything per shop lives under `tenants/{T}/…`. `users/{uid}.tenantId` is the membership (one shop per login), and `slugs/{slug}` gives the terminal lookup.
+- **Code:** `src/lib/tenant.ts` (path helpers) and a tenant-aware `AuthContext`. Every page and lib uses `tenantCol`/`tenantDoc` (POS, Products, Reports, both dashboards, Staff, store QR, saveOrder).
+- **RFID:** only on `/s/:slug`, and a card from another shop is refused.
+- **Rules:** `firestore.rules` (multi-store) and `firestore.transition.rules` (old + new, for the switch only). See `SAAS_V2_CONTRACT.md` §16.
+- **Tests:**
+  - `npm run test:rules`: 84/84
+  - `npm run test:rules:transition`: 105/105
+  - E2E on the emulators: 17/17 (final + transition rules)
+- **Migration:**
+  - `npm run migrate -- …` (dry run → `--apply` → `--verify`, resumable, delta-safe)
+  - `scripts/load-backup-into-emulator.mjs`
+  - runbook in `docs/backend/CUTOVER.md`
+- **New dev dependencies:** `firebase-admin` (migration) and `@firebase/rules-unit-testing` (rules suites).
+- **Known follow-up:** the demo recorder mocks (`scripts/demo/mocks/firestore.ts`) still use root collections. Update them before the final tutorial is recorded.
+- **Windows note:** `firebase emulators:exec` can leave the Java emulator running after the tests. If a port stays busy, end the `java.exe` whose command line contains `cloud-firestore-emulator`.
+

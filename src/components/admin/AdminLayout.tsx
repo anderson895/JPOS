@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { signedOutHome } from '@/lib/terminal';
 import { useAuth } from '@/contexts/AuthContext';
 import { Coffee, LayoutDashboard, BarChart3, ShoppingCart, Users, Wallet } from 'lucide-react';
 import { useState } from 'react';
@@ -23,7 +24,7 @@ export default function AdminLayout() {
   const handleLogout = async () => {
     try {
       await logout();
-      navigate('/login');
+      navigate(signedOutHome());
       toast.success('Logged out successfully');
     } catch {
       toast.error('Failed to logout');

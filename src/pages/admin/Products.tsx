@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  collection, getDocs, addDoc, updateDoc, deleteDoc, doc
+  getDocs, addDoc, updateDoc, deleteDoc
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { tenantCol, tenantDoc } from '@/lib/tenant';
 import { uploadImage } from '@/lib/cloudinary';
 import { formatCurrency } from '@/lib/utils';
 import Portal from '@/components/shared/Portal';
@@ -44,8 +44,8 @@ export default function AdminProducts() {
     setLoading(true);
     try {
       const [prodSnap, catSnap] = await Promise.all([
-        getDocs(collection(db, 'products')),
-        getDocs(collection(db, 'categories')),
+        getDocs(tenantCol('products')),
+        getDocs(tenantCol('categories')),
       ]);
       setProducts(prodSnap.docs.map(d => ({ id: d.id, ...d.data() } as Product)));
       setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() } as Category)));
@@ -83,10 +83,10 @@ export default function AdminProducts() {
         updatedAt: new Date().toISOString(),
       };
       if (editId) {
-        await updateDoc(doc(db, 'products', editId), data);
+        await updateDoc(tenantDoc('products', editId), data);
         toast.success('Product updated');
       } else {
-        await addDoc(collection(db, 'products'), { ...data, createdAt: new Date().toISOString() });
+        await addDoc(tenantCol('products'), { ...data, createdAt: new Date().toISOString() });
         toast.success('Product added');
       }
       setModalOpen(false);
@@ -103,7 +103,7 @@ export default function AdminProducts() {
   async function handleDelete(id: string) {
     if (!confirm('Delete this product?')) return;
     try {
-      await deleteDoc(doc(db, 'products', id));
+      await deleteDoc(tenantDoc('products', id));
       setProducts(prev => prev.filter(p => p.id !== id));
       toast.success('Product deleted');
     } catch {
@@ -113,7 +113,7 @@ export default function AdminProducts() {
 
   async function handleToggleAvail(p: Product) {
     try {
-      await updateDoc(doc(db, 'products', p.id), { isAvailable: !p.isAvailable });
+      await updateDoc(tenantDoc('products', p.id), { isAvailable: !p.isAvailable });
       setProducts(prev => prev.map(x => x.id === p.id ? { ...x, isAvailable: !x.isAvailable } : x));
     } catch {
       toast.error('Failed to update');
@@ -136,7 +136,7 @@ export default function AdminProducts() {
   async function addCategory() {
     if (!newCatName.trim()) return;
     try {
-      const docRef = await addDoc(collection(db, 'categories'), {
+      const docRef = await addDoc(tenantCol('categories'), {
         name: newCatName.trim(), color: '#c46820', icon: 'coffee',
         createdAt: new Date().toISOString(),
       });
@@ -166,12 +166,12 @@ export default function AdminProducts() {
     if (!editCatName.trim()) return;
     setSavingCat(true);
     try {
-      await updateDoc(doc(db, 'categories', id), { name: editCatName.trim() });
+      await updateDoc(tenantDoc('categories', id), { name: editCatName.trim() });
       setCategories(prev => prev.map(c => c.id === id ? { ...c, name: editCatName.trim() } : c));
       // Also update categoryName on products that use this category
       const affected = products.filter(p => p.categoryId === id);
       await Promise.all(affected.map(p =>
-        updateDoc(doc(db, 'products', p.id), { categoryName: editCatName.trim() })
+        updateDoc(tenantDoc('products', p.id), { categoryName: editCatName.trim() })
       ));
       setProducts(prev => prev.map(p =>
         p.categoryId === id ? { ...p, categoryName: editCatName.trim() } : p
@@ -192,7 +192,7 @@ export default function AdminProducts() {
     }
     if (!confirm('Delete this category?')) return;
     try {
-      await deleteDoc(doc(db, 'categories', id));
+      await deleteDoc(tenantDoc('categories', id));
       setCategories(prev => prev.filter(c => c.id !== id));
       toast.success('Category deleted');
     } catch {

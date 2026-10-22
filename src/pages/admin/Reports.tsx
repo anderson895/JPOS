@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { getDocs, query, where, orderBy } from 'firebase/firestore';
+import { tenantCol } from '@/lib/tenant';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import type { Order } from '@/types';
 import {
@@ -60,7 +60,7 @@ export default function AdminReports() {
     // Fetch only the selected period. Reading the whole collection on every
     // visit gets slower and eats the daily Firestore read quota as orders pile up.
     getDocs(query(
-      collection(db, 'orders'),
+      tenantCol('orders'),
       where('createdAt', '>=', dateRange.start.toISOString()),
       where('createdAt', '<=', dateRange.end.toISOString()),
       orderBy('createdAt', 'desc'),

@@ -502,3 +502,42 @@ Firestore's limits are **10 access calls per write** and **20 per batch, summed 
 | **P2-b** | frontend | `/subscribe`, onboarding checklist, `/admin/billing`, banners, `useEntitlements` gating, `/platform` | P2-a |
 
 **Deploy order for every phase:** app first, then rules. Where a rule would break the live app, use the **expand → contract** pattern already used for the store QR: stage A accepts both the old and new shapes; stage B goes in after the new app is live.
+
+---
+
+## 16. Tech Lead review changes (C1–C9) and owner decisions of 2026-10-23
+
+These override the sections above where they differ.
+
+| # | Change | Where it is now |
+|---|---|---|
+| C1 | **Cutover order:** migrate → **transition rules** (old + new) → deploy app → delta migrate → reload devices → final rules → smoke test. Deploying the app or the rules first would lock everyone out | `docs/backend/CUTOVER.md`, `firestore.transition.rules`, `firebase.transition.json` |
+| C2 | Approving a payment never changes `suspended` | P2 rules |
+| C3 | Self-created owner profile: field whitelist, `rfidTag == ''`, https photo, name 1..60 | P2 rules |
+| C4 | Landing prices come from `platform/settings` (public `get`), with the static copy as fallback | P2 |
+| C5 | The shop admin can cancel their own pending request (`cancelled`; the reference stays used) | P2 |
+| C6 | Audit action `tenant.adjust` (Super Admin correction, reason required) | P2 |
+| C7 | Payment request pre-flight (price / channel / pending / reference) for precise errors | P2 `subscriptions.ts` |
+| C8 | Owner deploys rules **and** indexes (`--only firestore:rules,firestore:indexes`) once P2 adds composite indexes | P2 |
+| C9 | Store-QR stage B deployed on its own (done 2026-10-23) | `firestore.rules` on main |
+| — | **No self-serve trial at signup.** Signup creates the shop in **setup mode** (prepare everything, POS locked). The shop presses **"Start 7-day free trial"** once, or pays by QR + receipt. See `SUBSCRIPTION-PLAN.md` §10.1 (`canSetup` / `canSell`) | P1 rules already implement `canSetup`/`canSell` for `setup`/`trial`/`active` |
+| — | **Phase order:** P1 multi-store → **P2 subscriptions** → B multi-business + branding | — |
+
+### What Phase 1 built (branch `p1-multistore`)
+- `src/lib/tenant.ts`: `tenantCol`, `tenantDoc`, `tenantRef`, `currentTenantId`, `setCurrentTenant`. It is the only place that builds `tenants/{T}/…` paths.
+- AuthContext:
+  - every account needs a `tenantId`
+  - a live `tenant` snapshot
+  - `loginWithRFID(tag, terminalSlug)`, which resolves `slugs/{slug}`, looks up `tenants/{T}/rfidCards/{tag}`, and refuses a card from another shop
+- RFID only on the terminal page `/s/:slug` (`TerminalPage.tsx`). The device remembers its terminal (`src/lib/terminal.ts`), and sign-out returns there.
+- Staff page: the list is pinned to `where('tenantId', '==', T)`, and new people get the admin's `tenantId`.
+- `firestore.rules`: multi-store only; `memberOf`/`adminOf`; `canSetup`/`canSell`; owner protection; RFID entitlement on `get` + write; the old root collections are denied.
+- Tests:
+  - `tests/rules/tenant.rules.test.mjs`: 84 cases, isolation first (`npm run test:rules`)
+  - `tests/rules/legacy.rules.test.mjs`: 105 legacy cases, which must pass on the transition rules (`npm run test:rules:transition`)
+  - a Playwright E2E on the emulators, 17/17, with both the final and the transition rules
+- Migration:
+  - `scripts/migrate-to-tenant.mjs`: dry-run/backup, `--apply` (copy only when missing or different, so it resumes and syncs deltas), `--verify`
+  - `scripts/load-backup-into-emulator.mjs` for rehearsals
+  - rehearsed end-to-end on the emulator, delta and idempotency included
+

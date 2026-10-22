@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { collection, getDocs, getDoc, updateDoc, doc, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, getDoc, updateDoc, doc, writeBatch, query, where } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
 import { db, createUserWithoutSignIn, verifyCredentials } from '@/lib/firebase';
+import { currentTenantId, tenantDoc } from '@/lib/tenant';
 import { getAuthErrorMessage } from '@/lib/authErrors';
 import { uploadImage } from '@/lib/cloudinary';
 import { useAuth } from '@/contexts/AuthContext';
@@ -38,7 +39,8 @@ export default function AdminStaff() {
   async function fetchStaff() {
     setLoading(true);
     try {
-      const snap = await getDocs(collection(db, 'users'));
+      // Only this shop's people (the rules also refuse any other list)
+      const snap = await getDocs(query(collection(db, 'users'), where('tenantId', '==', currentTenantId())));
       setStaff(snap.docs.map(d => ({ id: d.id, ...d.data() } as Staff)));
     } catch (err) {
       console.error(err);
@@ -103,7 +105,7 @@ export default function AdminStaff() {
         // The card stored under the old tag — only reuse/revoke it if it's really this staff's.
         let oldCard: { password?: string } | null = null;
         if (oldTag && tagChanged) {
-          const snap = await getDoc(doc(db, 'rfidCards', oldTag));
+          const snap = await getDoc(tenantDoc('rfidCards', oldTag));
           if (snap.exists() && snap.data().userId === editId) oldCard = snap.data();
         }
 
@@ -135,7 +137,7 @@ export default function AdminStaff() {
         const batch = writeBatch(db);
         batch.update(doc(db, 'users', editId), data);
         if (newTag && cardPassword) {
-          batch.set(doc(db, 'rfidCards', newTag), {
+          batch.set(tenantDoc('rfidCards', newTag), {
             email,
             password: cardPassword,
             userId: editId,
@@ -143,7 +145,7 @@ export default function AdminStaff() {
             updatedAt: now,
           });
         }
-        if (oldCard) batch.delete(doc(db, 'rfidCards', oldTag));
+        if (oldCard) batch.delete(tenantDoc('rfidCards', oldTag));
         await batch.commit();
         toast.success(
           newTag && cardPassword ? 'Staff updated & RFID credentials saved'
@@ -155,9 +157,9 @@ export default function AdminStaff() {
         // If saving the profile fails, the new login is rolled back.
         await createUserWithoutSignIn(email, editStaff.password!, async (newUid) => {
           const batch = writeBatch(db);
-          batch.set(doc(db, 'users', newUid), { ...data, createdAt: now });
+          batch.set(doc(db, 'users', newUid), { ...data, tenantId: currentTenantId(), createdAt: now });
           if (newTag) {
-            batch.set(doc(db, 'rfidCards', newTag), {
+            batch.set(tenantDoc('rfidCards', newTag), {
               email,
               password: editStaff.password,
               userId: newUid,
@@ -191,7 +193,7 @@ export default function AdminStaff() {
       // if the card is really theirs (an old duplicate tag may point elsewhere).
       const tag = member?.rfidTag?.trim();
       if (tag) {
-        const card = await getDoc(doc(db, 'rfidCards', tag));
+        const card = await getDoc(tenantDoc('rfidCards', tag));
         if (card.exists() && card.data().userId === id) batch.delete(card.ref);
       }
       await batch.commit();

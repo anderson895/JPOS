@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { query, where, orderBy, getDocs } from 'firebase/firestore';
+import { tenantCol } from '@/lib/tenant';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import type { Order } from '@/types';
@@ -26,7 +26,7 @@ export default function StaffDashboard() {
       // Cashier is filtered in JS to avoid a composite index requirement.
       const now = new Date();
       const q = query(
-        collection(db, 'orders'),
+        tenantCol('orders'),
         where('createdAt', '>=', startOfDay(now).toISOString()),
         where('createdAt', '<=', endOfDay(now).toISOString()),
         orderBy('createdAt', 'desc'),

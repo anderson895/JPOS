@@ -5,16 +5,19 @@ import {
 } from 'firebase/firestore';
 
 // `firebase emulators:exec` sets FIRESTORE_EMULATOR_HOST; default to the QA port 8085
+// Legacy (single-store) cases. During the multi-store cutover the TRANSITION rules must
+// still pass all of them, so the old app keeps working until every device is updated.
+const RULES = process.env.RULES_FILE ?? 'firestore.transition.rules';
 const [emuHost, emuPort] = (process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8085').split(':');
 const env = await initializeTestEnvironment({
   projectId: 'demo-jpos',
-  firestore: { rules: readFileSync('firestore.rules', 'utf8'), host: emuHost, port: Number(emuPort) },
+  firestore: { rules: readFileSync(RULES, 'utf8'), host: emuHost, port: Number(emuPort) },
 });
 
 const now = new Date().toISOString();
 // Store-QR rollout: stage A still accepts GCash/Maya orders with no reference (old live app);
 // stage B (after the new app is live) requires it. Detected from the rules text.
-const STAGE_A = readFileSync('firestore.rules', 'utf8').includes('// STAGE A only');
+const STAGE_A = readFileSync(RULES, 'utf8').includes('// STAGE A only');
 const noRef = STAGE_A ? 'allow' : 'deny';
 const user = (role, isActive = true) => ({ email: `${role}@x.com`, displayName: role, role, isActive, rfidTag: '', photoURL: '', createdAt: now, updatedAt: now });
 const order = (cashierId) => ({ orderNumber: 'ORD-1', items: [], subtotal: 100, discount: 0, tax: 0, total: 100, paymentMethod: 'cash', status: 'completed', cashierId, cashierName: 'x', createdAt: now, updatedAt: now });

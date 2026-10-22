@@ -2,7 +2,9 @@ import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import LoginPage from './pages/LoginPage';
+import TerminalPage from './pages/TerminalPage';
 import LoadingScreen from './components/shared/LoadingScreen';
+import { signedOutHome } from './lib/terminal';
 
 // The signed-in areas load on demand, so the public landing page doesn't
 // download recharts, jspdf, the POS and every admin page up front.
@@ -35,7 +37,8 @@ function Page({ children }: { children: React.ReactNode }) {
 function ProtectedRoute({ children, role }: { children: React.ReactNode; role?: 'admin' | 'staff' }) {
   const { currentUser, loading } = useAuth();
   if (loading) return <LoadingScreen />;
-  if (!currentUser) return <Navigate to="/login" replace />;
+  // A counter device goes back to its shop terminal; anyone else to the public page
+  if (!currentUser) return <Navigate to={signedOutHome()} replace />;
   if (role && currentUser.role !== role) {
     return <Navigate to={currentUser.role === 'admin' ? '/admin' : '/staff'} replace />;
   }
@@ -57,6 +60,16 @@ export default function App() {
             currentUser
               ? <Navigate to={currentUser.role === 'admin' ? '/admin' : '/staff'} replace />
               : <LoginPage />
+          }
+        />
+
+        {/* A shop's counter terminal (RFID + password), bookmarked on the POS device */}
+        <Route
+          path="/s/:slug"
+          element={
+            currentUser
+              ? <Navigate to={currentUser.role === 'admin' ? '/admin' : '/staff'} replace />
+              : <TerminalPage />
           }
         />
 
@@ -84,7 +97,7 @@ export default function App() {
         <Route path="/" element={
           currentUser
             ? <Navigate to={currentUser.role === 'admin' ? '/admin' : '/staff'} replace />
-            : <Navigate to="/login" replace />
+            : <Navigate to={signedOutHome()} replace />
         } />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

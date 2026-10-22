@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { query, where, getDocs, orderBy, limit } from 'firebase/firestore';
+import { tenantCol } from '@/lib/tenant';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import { TrendingUp, ShoppingBag, Coffee, Receipt, CalendarDays, Award } from 'lucide-react';
 import {
@@ -41,7 +41,7 @@ export default function AdminDashboard() {
       // One query for the last 7 days (today included), bucketed per day below.
       // Status is filtered in JS to avoid a composite index requirement.
       const weekQ = query(
-        collection(db, 'orders'),
+        tenantCol('orders'),
         where('createdAt', '>=', startOfDay(subDays(today, 6)).toISOString()),
         where('createdAt', '<=', endOfDay(today).toISOString()),
       );
@@ -80,7 +80,7 @@ export default function AdminDashboard() {
       setTopItems(Object.values(qtyByProduct).sort((a, b) => b.qty - a.qty).slice(0, 5));
 
       // Recent orders
-      const recentQ = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(5));
+      const recentQ = query(tenantCol('orders'), orderBy('createdAt', 'desc'), limit(5));
       const recentSnap = await getDocs(recentQ);
       setRecentOrders(recentSnap.docs.map(d => ({ id: d.id, ...d.data() } as Order)));
 

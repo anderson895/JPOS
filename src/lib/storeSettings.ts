@@ -1,5 +1,6 @@
-import { doc, getDoc, onSnapshot, setDoc, type Unsubscribe } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase';
+import { getDoc, onSnapshot, setDoc, type Unsubscribe } from 'firebase/firestore';
+import { auth } from '@/lib/firebase';
+import { tenantDoc } from '@/lib/tenant';
 import { withPaymentDefaults } from '@/lib/eWallet';
 import type { PaymentSettings } from '@/types';
 
@@ -9,7 +10,7 @@ import type { PaymentSettings } from '@/types';
  * else has to change.
  */
 export function paymentSettingsRef() {
-  return doc(db, 'settings', 'payments');
+  return tenantDoc('settings', 'payments');
 }
 
 export async function getPaymentSettings(): Promise<PaymentSettings> {

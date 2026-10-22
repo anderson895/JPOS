@@ -20,11 +20,13 @@
     "uuid": "^9.0.0"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@types/uuid": "^9.0.0",
     "@vitejs/plugin-react": "^4.2.0",
     "autoprefixer": "^10.4.16",
+    "firebase-admin": "^12.7.0",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.3.6",
     "typescript": "^5.3.2",
@@ -34,6 +36,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test:unit": "node scripts/test-unit.mjs"
+    "test:unit": "node scripts/test-unit.mjs",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-jpos \"node tests/rules/tenant.rules.test.mjs\"",
+    "test:rules:transition": "firebase emulators:exec --only firestore --project demo-jpos \"node tests/rules/legacy.rules.test.mjs\"",
+    "migrate": "node scripts/migrate-to-tenant.mjs"
   }
 }

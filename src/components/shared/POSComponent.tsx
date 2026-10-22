@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, doc, getDocs, query, where } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { doc, getDocs, query, where } from 'firebase/firestore';
+import { tenantCol } from '@/lib/tenant';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCart } from '@/contexts/CartContext';
 import { formatCurrency, generateOrderNumber, roundMoney } from '@/lib/utils';
@@ -58,8 +58,8 @@ export default function POSComponent() {
     setLoading(true);
     try {
       const [prodSnap, catSnap] = await Promise.all([
-        getDocs(query(collection(db, 'products'), where('isAvailable', '==', true))),
-        getDocs(collection(db, 'categories')),
+        getDocs(query(tenantCol('products'), where('isAvailable', '==', true))),
+        getDocs(tenantCol('categories')),
       ]);
       setProducts(prodSnap.docs.map(d => ({ id: d.id, ...d.data() } as Product)));
       setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() } as Category)));
@@ -133,7 +133,7 @@ export default function POSComponent() {
     if (walletMethod && !eReceived) { toast.error(`Confirm the payment arrived in the store's ${WALLET_LABEL[walletMethod]}.`); return; }
     setPlacing(true);
     try {
-      const orderRef = doc(collection(db, 'orders'));
+      const orderRef = doc(tenantCol('orders'));
       const payment = paymentMethod === 'cash' ? undefined
         : { verification: 'manual' as const, reference: eRef, verifiedBy: currentUser?.id || '' };
       await saveOrder(orderRef, buildOrder(takeSnapshot(), generateOrderNumber(orderRef.id), payment));
