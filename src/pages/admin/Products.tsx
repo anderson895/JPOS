@@ -6,6 +6,7 @@ import { db } from '@/lib/firebase';
 import { uploadImage } from '@/lib/cloudinary';
 import { formatCurrency } from '@/lib/utils';
 import Portal from '@/components/shared/Portal';
+import PageHeader from '@/components/shared/PageHeader';
 import type { Product, Category } from '@/types';
 import {
   Plus, Search, Edit2, Trash2, X, Upload, Coffee,
@@ -48,23 +49,32 @@ export default function AdminProducts() {
       ]);
       setProducts(prodSnap.docs.map(d => ({ id: d.id, ...d.data() } as Product)));
       setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() } as Category)));
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to load products');
     } finally {
       setLoading(false);
     }
   }
 
   async function handleSave() {
-    if (!editProduct.name || !editProduct.price) {
-      toast.error('Name and price are required'); return;
+    const name  = editProduct.name?.trim() || '';
+    const price = Number(editProduct.price);
+    const cost  = Number(editProduct.cost || 0);
+    if (!name || !(price > 0)) {
+      toast.error('Name and a price above ₱0 are required'); return;
+    }
+    if (!(cost >= 0)) {
+      toast.error('Cost cannot be negative'); return;
     }
     setSaving(true);
     try {
       const cat = categories.find(c => c.id === editProduct.categoryId);
       const data = {
-        name: editProduct.name || '',
+        name,
         description: editProduct.description || '',
-        price: Number(editProduct.price),
-        cost: Number(editProduct.cost || 0),
+        price,
+        cost,
         categoryId: editProduct.categoryId || '',
         categoryName: cat?.name || '',
         imageUrl: editProduct.imageUrl || '',
@@ -200,27 +210,28 @@ export default function AdminProducts() {
   function openNew()             { setEditProduct(defaultProduct); setEditId(null); setModalOpen(true); }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 animate-fade-in">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="font-display text-2xl sm:text-3xl text-espresso-900">Products</h1>
-          <p className="text-bark-500 text-sm mt-0.5">{products.length} items in menu</p>
-        </div>
-        <div className="flex gap-3">
-          <button onClick={() => setCatModalOpen(true)} className="btn-secondary flex items-center gap-2 flex-1 sm:flex-none justify-center">
-            <Tag className="w-4 h-4" /> Categories
-          </button>
-          <button onClick={openNew} className="btn-primary flex items-center gap-2 flex-1 sm:flex-none justify-center">
-            <Plus className="w-4 h-4" /> Add Product
-          </button>
-        </div>
-      </div>
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 animate-fade-in max-w-[1400px] mx-auto">
+      <PageHeader
+        eyebrow="Our Menu"
+        title="Products"
+        subtitle={`${products.length} items in menu`}
+        actions={
+          <>
+            <button onClick={() => setCatModalOpen(true)} className="btn-secondary flex-1 sm:flex-none">
+              <Tag className="w-4 h-4" /> Categories
+            </button>
+            <button onClick={openNew} className="btn-primary flex-1 sm:flex-none">
+              <Plus className="w-4 h-4" /> Add Product
+            </button>
+          </>
+        }
+      />
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1 sm:max-w-xs">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-bark-400" />
-          <input className="input pl-9" placeholder="Search products..." value={search} onChange={e => setSearch(e.target.value)} />
+      <div className="card p-3 flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-bark-400" />
+          <input className="input pl-11" placeholder="Search products..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <select className="input sm:max-w-xs" value={filterCat} onChange={e => setFilterCat(e.target.value)}>
           <option value="">All Categories</option>
@@ -232,51 +243,58 @@ export default function AdminProducts() {
       {loading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
           {[...Array(8)].map((_, i) => (
-            <div key={i} className="card p-4 animate-pulse">
-              <div className="w-full h-36 bg-cream-200 rounded-xl mb-3" />
-              <div className="h-4 bg-cream-200 rounded w-3/4 mb-2" />
-              <div className="h-3 bg-cream-100 rounded w-1/2" />
+            <div key={i} className="card p-2 animate-pulse">
+              <div className="w-full h-36 bg-cream-300/60 rounded-2xl mb-3" />
+              <div className="h-4 bg-cream-300/60 rounded-full w-3/4 mb-2 mx-1.5" />
+              <div className="h-3 bg-cream-200 rounded-full w-1/2 mx-1.5 mb-2" />
             </div>
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-16 text-bark-400">
-          <Coffee className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p className="font-medium">No products found</p>
+        <div className="card text-center py-16 text-bark-400">
+          <span className="w-16 h-16 mx-auto mb-3 rounded-full bg-cream-200 flex items-center justify-center">
+            <Coffee className="w-7 h-7 text-caramel-500/70" />
+          </span>
+          <p className="font-medium text-bark-600">No products found</p>
           <p className="text-sm mt-1">Try adjusting your search or add new products</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {filtered.map(p => (
-            <div key={p.id} className={`card overflow-hidden group hover:shadow-md transition-all duration-200 ${!p.isAvailable ? 'opacity-60' : ''}`}>
-              <div className="relative h-36 bg-cream-100">
+            <div key={p.id} className={`card p-2 group hover:shadow-lift transition-all duration-200 ${!p.isAvailable ? 'opacity-60' : ''}`}>
+              <div className="relative h-36 rounded-2xl overflow-hidden bg-gradient-to-br from-cream-200 to-cream-300">
                 {p.imageUrl
                   ? <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
-                  : <div className="w-full h-full flex items-center justify-center"><Coffee className="w-10 h-10 text-cream-400" /></div>
+                  : <div className="w-full h-full flex items-center justify-center"><Coffee className="w-10 h-10 text-caramel-500/60" /></div>
                 }
-                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => openEdit(p)} className="w-7 h-7 bg-white/90 rounded-lg flex items-center justify-center shadow-sm hover:bg-white">
+                {/* Hover-to-reveal only where hover exists; always visible on touch screens */}
+                <div className="absolute top-2 right-2 flex gap-1 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                  <button onClick={() => openEdit(p)} className="w-8 h-8 bg-cream-50/95 rounded-full flex items-center justify-center shadow-md hover:bg-white" title="Edit product">
                     <Edit2 className="w-3.5 h-3.5 text-espresso-700" />
                   </button>
-                  <button onClick={() => handleDelete(p.id)} className="w-7 h-7 bg-white/90 rounded-lg flex items-center justify-center shadow-sm hover:bg-red-50">
+                  <button onClick={() => handleDelete(p.id)} className="w-8 h-8 bg-cream-50/95 rounded-full flex items-center justify-center shadow-md hover:bg-red-50" title="Delete product">
                     <Trash2 className="w-3.5 h-3.5 text-red-500" />
                   </button>
                 </div>
                 {!p.isAvailable && (
-                  <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                    <span className="bg-black/50 text-white text-xs px-2 py-1 rounded-lg">Unavailable</span>
+                  <div className="absolute inset-0 bg-espresso-950/30 flex items-center justify-center">
+                    <span className="badge bg-espresso-900/80 text-cream-50 normal-case">Unavailable</span>
                   </div>
                 )}
               </div>
-              <div className="p-3">
-                <p className="font-medium text-espresso-800 text-sm truncate">{p.name}</p>
-                <p className="text-xs text-bark-400 mb-2">{p.categoryName}</p>
+              <div className="px-1.5 pt-2.5 pb-1">
+                <p className="font-semibold text-espresso-900 text-sm truncate">{p.name}</p>
+                <p className="text-[11px] text-bark-400 mb-1.5 truncate">{p.categoryName || 'Uncategorized'}</p>
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold text-espresso-700">{formatCurrency(p.price)}</span>
-                  <button onClick={() => handleToggleAvail(p)}>
+                  <span className="font-display font-semibold text-lg text-espresso-800">{formatCurrency(p.price)}</span>
+                  <button
+                    onClick={() => handleToggleAvail(p)}
+                    title={p.isAvailable ? 'Available — click to hide from POS' : 'Unavailable — click to show in POS'}
+                    className="flex items-center"
+                  >
                     {p.isAvailable
-                      ? <ToggleRight className="w-5 h-5 text-emerald-500" />
-                      : <ToggleLeft  className="w-5 h-5 text-bark-400" />}
+                      ? <ToggleRight className="w-7 h-7 text-emerald-600" />
+                      : <ToggleLeft  className="w-7 h-7 text-bark-400" />}
                   </button>
                 </div>
               </div>
@@ -289,28 +307,35 @@ export default function AdminProducts() {
       {modalOpen && (
         <Portal>
         <div className="modal-backdrop">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-cream-100">
-              <h2 className="font-display text-xl text-espresso-900">{editId ? 'Edit Product' : 'Add Product'}</h2>
-              <button onClick={() => setModalOpen(false)} className="text-bark-400 hover:text-bark-700"><X className="w-5 h-5" /></button>
+          <div className="modal-panel max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow text-2xl -mb-1">{editId ? 'Update' : 'New on the menu'}</p>
+                <h2 className="font-display text-2xl text-espresso-900">{editId ? 'Edit Product' : 'Add Product'}</h2>
+              </div>
+              <button onClick={() => setModalOpen(false)} className="icon-btn"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
               {/* Image Upload */}
               <div>
                 <label className="label">Product Image</label>
                 <div
-                  className="w-full h-36 bg-cream-50 border-2 border-dashed border-cream-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-cream-100 transition-colors relative overflow-hidden"
+                  className="w-full h-40 bg-cream-100 border-2 border-dashed border-caramel-300 rounded-3xl flex flex-col items-center justify-center cursor-pointer hover:bg-cream-200 hover:border-caramel-400 transition-colors relative overflow-hidden"
                   onClick={() => fileRef.current?.click()}
                 >
                   {editProduct.imageUrl
                     ? <img src={editProduct.imageUrl} alt="Preview" className="w-full h-full object-cover" />
                     : imgUploading
-                      ? <Loader2 className="w-8 h-8 text-bark-400 animate-spin" />
-                      : <><Upload className="w-6 h-6 text-bark-400 mb-1" /><p className="text-xs text-bark-400">Click to upload image</p></>
+                      ? <Loader2 className="w-8 h-8 text-caramel-600 animate-spin" />
+                      : <><Upload className="w-6 h-6 text-caramel-600 mb-1" /><p className="text-xs text-bark-500">Click to upload image</p></>
                   }
                 </div>
                 <input ref={fileRef} type="file" accept="image/*" className="hidden"
-                  onChange={e => e.target.files?.[0] && handleImageUpload(e.target.files[0])} />
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    e.target.value = ''; // so picking the same file again (e.g. after a failed upload) still fires
+                    if (file) handleImageUpload(file);
+                  }} />
               </div>
               <div>
                 <label className="label">Product Name *</label>
@@ -346,17 +371,17 @@ export default function AdminProducts() {
                   {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
-              <div className="flex items-center gap-3">
+              <label htmlFor="available" className="flex items-center gap-3 px-4 py-3 rounded-full bg-cream-200/60 border border-cream-300 cursor-pointer">
                 <input type="checkbox" id="available"
                   checked={editProduct.isAvailable ?? true}
                   onChange={e => setEditProduct(p => ({ ...p, isAvailable: e.target.checked }))}
-                  className="w-4 h-4 accent-espresso-600" />
-                <label htmlFor="available" className="text-sm text-espresso-700 cursor-pointer">Available for sale</label>
-              </div>
+                  className="w-4 h-4 accent-espresso-700" />
+                <span className="text-sm text-espresso-800">Available for sale</span>
+              </label>
             </div>
-            <div className="flex gap-3 p-6 border-t border-cream-100">
+            <div className="modal-footer">
               <button onClick={() => setModalOpen(false)} className="btn-secondary flex-1">Cancel</button>
-              <button onClick={handleSave} disabled={saving} className="btn-primary flex-1 flex items-center justify-center gap-2">
+              <button onClick={handleSave} disabled={saving || imgUploading} className="btn-primary flex-1">
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                 {saving ? 'Saving...' : 'Save Product'}
               </button>
@@ -370,11 +395,11 @@ export default function AdminProducts() {
       {catModalOpen && (
         <Portal>
         <div className="modal-backdrop">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6">
+          <div className="modal-panel max-w-sm p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-display text-xl text-espresso-900">Categories</h2>
-              <button onClick={() => { setCatModalOpen(false); cancelEditCat(); }}>
-                <X className="w-5 h-5 text-bark-400" />
+              <h2 className="font-display text-2xl text-espresso-900">Categories</h2>
+              <button onClick={() => { setCatModalOpen(false); cancelEditCat(); }} className="icon-btn">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -384,7 +409,7 @@ export default function AdminProducts() {
                 <p className="text-sm text-bark-400 text-center py-4">No categories yet</p>
               )}
               {categories.map(c => (
-                <div key={c.id} className="flex items-center gap-2 px-3 py-2 bg-cream-50 rounded-xl group">
+                <div key={c.id} className="flex items-center gap-2 px-3 py-2 bg-cream-100 border border-cream-300/60 rounded-full group">
                   {editCatId === c.id ? (
                     /* ── Inline edit row ── */
                     <>
@@ -401,7 +426,7 @@ export default function AdminProducts() {
                       <button
                         onClick={() => saveEditCat(c.id)}
                         disabled={savingCat}
-                        className="text-xs px-2 py-1 bg-espresso-600 text-white rounded-lg hover:bg-espresso-700 disabled:opacity-50"
+                        className="text-xs px-3 py-1.5 bg-espresso-800 text-cream-50 rounded-full hover:bg-espresso-700 disabled:opacity-50"
                       >
                         {savingCat ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Save'}
                       </button>
@@ -412,19 +437,19 @@ export default function AdminProducts() {
                   ) : (
                     /* ── Normal row ── */
                     <>
-                      <div className="w-2.5 h-2.5 rounded-full bg-espresso-400 shrink-0" />
+                      <div className="w-2.5 h-2.5 rounded-full bg-caramel-500 shrink-0 ml-1" />
                       <span className="text-sm text-espresso-800 flex-1 truncate">{c.name}</span>
-                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex gap-1 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                         <button
                           onClick={() => startEditCat(c)}
-                          className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-cream-200"
+                          className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-cream-300"
                           title="Edit category"
                         >
                           <Pencil className="w-3.5 h-3.5 text-espresso-600" />
                         </button>
                         <button
                           onClick={() => deleteCategory(c.id)}
-                          className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-red-50"
+                          className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-red-50"
                           title="Delete category"
                         >
                           <Trash2 className="w-3.5 h-3.5 text-red-500" />
@@ -437,7 +462,7 @@ export default function AdminProducts() {
             </div>
 
             {/* Add new category */}
-            <div className="flex gap-2 pt-3 border-t border-cream-100">
+            <div className="flex gap-2 pt-4 border-t border-cream-300/70">
               <input
                 className="input flex-1"
                 placeholder="New category name..."
@@ -445,7 +470,7 @@ export default function AdminProducts() {
                 onChange={e => setNewCatName(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && addCategory()}
               />
-              <button onClick={addCategory} className="btn-primary px-3">
+              <button onClick={addCategory} className="btn-primary !px-3.5" title="Add category">
                 <Plus className="w-4 h-4" />
               </button>
             </div>

@@ -1,6 +1,12 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
   signInWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
+  EmailAuthProvider,
+  linkWithCredential,
+  getAdditionalUserInfo,
+  deleteUser,
   signOut,
   onAuthStateChanged,
   type User as FirebaseUser,
@@ -8,10 +14,7 @@ import {
 import {
   doc,
   getDoc,
-  setDoc,
   onSnapshot,
-  collection,
-  getDocs,
 } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
 import { auth, db } from '@/lib/firebase';
@@ -23,6 +26,7 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   loginWithRFID: (rfidTag: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -38,44 +42,36 @@ export function useAuth() {
 /**
  * Resolves the Firestore profile for an authenticated Firebase user.
  *
- * Returns `null` when the user has NO profile and is not the first-ever account.
+ * Returns `null` when the user has NO profile, and callers then deny access.
  * This is the key security guard: deleting a staff removes their Firestore doc,
- * but their Firebase Auth credentials still exist. Without this check, logging
- * back in would silently re-create their profile (and even grant admin if the
- * collection were empty). Returning null lets callers deny access instead.
- *
- * The only time a missing profile is auto-created is to bootstrap the very first
- * admin on a brand-new project (empty `users` collection).
+ * but their Firebase Auth credentials still exist, and anyone can create a
+ * Google login. A missing profile is never created here — accounts only come
+ * from an admin (Manage Staff), and the first admin is set up by hand in the
+ * Firebase Console (README §4).
  */
 async function fetchUserProfile(fbUser: FirebaseUser): Promise<User | null> {
-  const ref = doc(db, 'users', fbUser.uid);
-  const snap = await getDoc(ref);
+  const snap = await getDoc(doc(db, 'users', fbUser.uid));
+  return snap.exists() ? ({ id: fbUser.uid, ...snap.data() } as User) : null;
+}
 
-  if (snap.exists()) {
-    return { id: fbUser.uid, ...snap.data() } as User;
+/**
+ * The first Google sign-in to an account whose email was never verified makes
+ * Firebase drop that account's password (it keeps the same uid). RFID login
+ * signs in with the password saved on the card, so put that password back —
+ * otherwise the card would stop working with no way to fix it from the app.
+ */
+async function restoreRfidPassword(fbUser: FirebaseUser, profile: User) {
+  const tag = profile.rfidTag?.trim();
+  if (!tag || !fbUser.email || fbUser.providerData.some(p => p.providerId === 'password')) return;
+  try {
+    const card = await getDoc(doc(db, 'rfidCards', tag));
+    const { userId, password } = (card.data() ?? {}) as { userId?: string; password?: string };
+    if (userId === fbUser.uid && password) {
+      await linkWithCredential(fbUser, EmailAuthProvider.credential(fbUser.email, password));
+    }
+  } catch (err) {
+    console.warn('Could not restore the RFID password after Google sign-in:', err);
   }
-
-  // No profile. Only bootstrap when there are zero users at all (first admin).
-  const allUsersSnap = await getDocs(collection(db, 'users'));
-  if (!allUsersSnap.empty) {
-    // This account was removed (or never provisioned) → no access.
-    return null;
-  }
-
-  const newUser: Omit<User, 'id'> = {
-    email: fbUser.email ?? '',
-    displayName: fbUser.displayName ?? fbUser.email?.split('@')[0] ?? 'User',
-    role: 'admin',
-    isActive: true,
-    rfidTag: '',
-    photoURL: fbUser.photoURL ?? '',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-
-  await setDoc(ref, newUser);
-  console.info(`Bootstrapped first admin profile for ${fbUser.email}`);
-  return { id: fbUser.uid, ...newUser };
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -85,68 +81,74 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let unsubSnapshot: (() => void) | null = null;
+    // Bumped on every auth change (and on unmount). Async work started for an
+    // older auth state checks it before touching anything, so a slow profile
+    // fetch for a user who has since signed out can't attach a listener that
+    // would later "log them back in" (e.g. when an admin re-activates them).
+    let authVersion = 0;
+
+    // Clears the session AND signs out of Firebase. Leaving Firebase signed in
+    // with no profile would strand the user: onAuthStateChanged only fires when
+    // the uid changes, so retrying the same login would never load the profile.
+    const resetSession = () => {
+      setCurrentUser(null);
+      setFirebaseUser(null);
+      setLoading(false);
+      signOut(auth).catch(() => { /* already signed out */ });
+    };
 
     const unsubAuth = onAuthStateChanged(auth, async (fbUser) => {
+      const version = ++authVersion;
       // Clean up any previous Firestore listener when auth state changes
       if (unsubSnapshot) { unsubSnapshot(); unsubSnapshot = null; }
 
       setFirebaseUser(fbUser);
 
-      if (fbUser) {
-        try {
-          // Deny access if this account has no profile (e.g. it was deleted but
-          // still has Firebase Auth credentials).
-          const profile = await fetchUserProfile(fbUser);
-          if (!profile) {
-            await signOut(auth);
-            setCurrentUser(null);
-            setFirebaseUser(null);
-            setLoading(false);
-            return;
-          }
-
-          // ── Real-time listener on the user's Firestore doc ──────────────
-          // Any write to this doc (profile update, admin editing staff, etc.)
-          // will instantly push the new data into context without a page reload.
-          unsubSnapshot = onSnapshot(
-            doc(db, 'users', fbUser.uid),
-            (snap) => {
-              if (snap.exists()) {
-                const userData = { id: fbUser.uid, ...snap.data() } as User;
-                if (!userData.isActive) {
-                  // Deactivated mid-session — force logout
-                  signOut(auth);
-                  setCurrentUser(null);
-                  setFirebaseUser(null);
-                } else {
-                  setCurrentUser(userData);
-                }
-              } else {
-                // Profile deleted mid-session — force logout
-                signOut(auth);
-                setCurrentUser(null);
-                setFirebaseUser(null);
-              }
-              setLoading(false);
-            },
-            (err) => {
-              console.error('User snapshot error:', err);
-              setCurrentUser(null);
-              setLoading(false);
-            }
-          );
-        } catch (err) {
-          console.error('Error loading user profile:', err);
-          setCurrentUser(null);
-          setLoading(false);
-        }
-      } else {
+      if (!fbUser) {
         setCurrentUser(null);
         setLoading(false);
+        return;
+      }
+
+      try {
+        // Deny access if this account has no profile (e.g. it was deleted but
+        // still has Firebase Auth credentials).
+        const profile = await fetchUserProfile(fbUser);
+        if (version !== authVersion) return;
+        if (!profile) {
+          resetSession();
+          return;
+        }
+
+        // ── Real-time listener on the user's Firestore doc ──────────────
+        // Any write to this doc (profile update, admin editing staff, etc.)
+        // will instantly push the new data into context without a page reload.
+        unsubSnapshot = onSnapshot(
+          doc(db, 'users', fbUser.uid),
+          (snap) => {
+            if (version !== authVersion) return;
+            const userData = snap.exists() ? ({ id: fbUser.uid, ...snap.data() } as User) : null;
+            if (userData?.isActive) {
+              setCurrentUser(userData);
+              setLoading(false);
+            } else {
+              // Deactivated or deleted mid-session — force logout
+              resetSession();
+            }
+          },
+          (err) => {
+            console.error('User snapshot error:', err);
+            if (version === authVersion) resetSession();
+          }
+        );
+      } catch (err) {
+        console.error('Error loading user profile:', err);
+        if (version === authVersion) resetSession();
       }
     });
 
     return () => {
+      authVersion++;
       unsubAuth();
       if (unsubSnapshot) unsubSnapshot();
     };
@@ -169,6 +171,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginWithRFID = async (rfidTag: string) => {
     const trimmed = rfidTag.trim().replace(/[\r\n]/g, '');
     if (!trimmed) throw new Error('No RFID tag detected. Please scan again.');
+    // A "/" would be read as a sub-path and make the lookup itself throw.
+    if (trimmed.includes('/')) throw new Error('RFID card not registered. Contact your administrator.');
 
     const cardDoc = await getDoc(doc(db, 'rfidCards', trimmed));
     if (!cardDoc.exists()) throw new Error('RFID card not registered. Contact your administrator.');
@@ -214,6 +218,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // onSnapshot will handle setting currentUser automatically
   };
 
+  /**
+   * Only for accounts an admin has already added: a Gmail address signs in to
+   * the existing JPOS account with the same email. Unknown Google accounts are
+   * turned away.
+   */
+  const loginWithGoogle = async () => {
+    const provider = new GoogleAuthProvider();
+    // Always show the account picker — POS terminals are shared
+    provider.setCustomParameters({ prompt: 'select_account' });
+    const cred = await signInWithPopup(auth, provider);
+
+    const userData = await fetchUserProfile(cred.user);
+    if (!userData) {
+      // Firebase has just created a login for this stranger; remove it again so
+      // it doesn't linger in the Authentication user list.
+      if (getAdditionalUserInfo(cred)?.isNewUser) {
+        await deleteUser(cred.user).catch(() => { /* best effort */ });
+      }
+      await signOut(auth).catch(() => { /* already signed out */ });
+      throw new Error("This Google account isn't registered in JPOS. Ask your administrator to add your email first.");
+    }
+    if (!userData.isActive) {
+      await signOut(auth);
+      throw new Error('This account has been deactivated. Contact your administrator.');
+    }
+    await restoreRfidPassword(cred.user, userData);
+    // onSnapshot will handle setting currentUser automatically
+  };
+
   const logout = async () => {
     try { await signOut(auth); } catch { /* already signed out */ }
     setCurrentUser(null);
@@ -233,7 +266,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider value={{
       currentUser, firebaseUser, loading,
-      login, loginWithRFID, logout, refreshUser,
+      login, loginWithRFID, loginWithGoogle, logout, refreshUser,
     }}>
       {children}
     </AuthContext.Provider>

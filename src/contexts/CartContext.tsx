@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { roundMoney } from '@/lib/utils';
 import type { CartItem, Product } from '@/types';
 
 interface CartContextType {
@@ -14,6 +16,8 @@ interface CartContextType {
   setDiscount: (d: number) => void;
   discountType: 'percent' | 'fixed';
   setDiscountType: (t: 'percent' | 'fixed') => void;
+  /** Peso amount actually taken off: never negative, never more than the subtotal. */
+  discountAmount: number;
 }
 
 const CartContext = createContext<CartContextType | null>(null);
@@ -25,9 +29,19 @@ export function useCart() {
 }
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
+  const { currentUser } = useAuth();
   const [items, setItems] = useState<CartItem[]>([]);
   const [discount, setDiscount] = useState(0);
   const [discountType, setDiscountType] = useState<'percent' | 'fixed'>('percent');
+
+  // The cart belongs to whoever is signed in. Without this, the next cashier
+  // on a shared terminal would inherit the previous cashier's items/discount.
+  const userId = currentUser?.id;
+  useEffect(() => {
+    setItems([]);
+    setDiscount(0);
+    setDiscountType('percent');
+  }, [userId]);
 
   const addItem = useCallback((product: Product, variantId?: string, variantName?: string, notes?: string) => {
     const variant = product.variants?.find(v => v.id === variantId);
@@ -77,16 +91,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setDiscount(0);
   }, []);
 
-  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const discountAmount = discountType === 'percent' ? (subtotal * discount) / 100 : discount;
-  const total = Math.max(0, subtotal - discountAmount);
+  const subtotal = roundMoney(items.reduce((sum, item) => sum + item.price * item.quantity, 0));
+  const rawDiscount = (discountType === 'percent' ? (subtotal * discount) / 100 : discount) || 0;
+  const discountAmount = roundMoney(Math.min(Math.max(rawDiscount, 0), subtotal));
+  const total = roundMoney(subtotal - discountAmount);
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
     <CartContext.Provider value={{
       items, addItem, removeItem, updateQuantity, clearCart,
       total, subtotal, itemCount, discount, setDiscount,
-      discountType, setDiscountType
+      discountType, setDiscountType, discountAmount
     }}>
       {children}
     </CartContext.Provider>

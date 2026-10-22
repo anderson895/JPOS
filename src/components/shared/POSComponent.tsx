@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
-import { collection, getDocs, addDoc, query, where } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCart } from '@/contexts/CartContext';
-import { formatCurrency, generateOrderNumber } from '@/lib/utils';
+import { formatCurrency, generateOrderNumber, roundMoney } from '@/lib/utils';
 import Portal from '@/components/shared/Portal';
-import type { Product, Category, Order, PaymentMethod, CartItem } from '@/types';
+import type { Product, Category, Order, PaymentMethod } from '@/types';
 import {
   Search, ShoppingCart, Plus, Minus, Trash2, X, CreditCard,
-  Banknote, Smartphone, CheckCircle, Printer, Coffee, Tag, Percent, Loader2
+  Banknote, Smartphone, CheckCircle, Printer, Coffee, Tag, Loader2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -21,7 +21,7 @@ const PAYMENT_METHODS: { value: PaymentMethod; label: string; icon: any }[] = [
 
 export default function POSComponent() {
   const { currentUser } = useAuth();
-  const { items: cartItems, addItem, removeItem, updateQuantity, clearCart, subtotal, total, discount, setDiscount, discountType, setDiscountType, itemCount } = useCart();
+  const { items: cartItems, addItem, removeItem, updateQuantity, clearCart, subtotal, total, discount, setDiscount, discountType, setDiscountType, discountAmount, itemCount } = useCart();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [search, setSearch] = useState('');
@@ -49,13 +49,19 @@ export default function POSComponent() {
       ]);
       setProducts(prodSnap.docs.map(d => ({ id: d.id, ...d.data() } as Product)));
       setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() } as Category)));
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to load menu');
     } finally {
       setLoading(false);
     }
   }
 
-  const discountAmount = discountType === 'percent' ? (subtotal * discount) / 100 : discount;
-  const change = paymentMethod === 'cash' && amountTendered ? Math.max(0, Number(amountTendered) - total) : 0;
+  // Only cash uses the typed amount; a value left over from before switching
+  // to card/e-wallet must not end up on the order or the receipt.
+  const isCash = paymentMethod === 'cash';
+  const tendered = Number(amountTendered);
+  const change = isCash && amountTendered ? roundMoney(Math.max(0, tendered - total)) : 0;
 
   const filteredProducts = products.filter(p => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
@@ -65,22 +71,24 @@ export default function POSComponent() {
 
   async function placeOrder() {
     if (cartItems.length === 0) { toast.error('Cart is empty'); return; }
-    if (paymentMethod === 'cash' && amountTendered && Number(amountTendered) < total) {
+    if (isCash && amountTendered && !(tendered >= total)) {
       toast.error('Insufficient payment amount');
       return;
     }
 
     setPlacing(true);
     try {
+      // Reserve the document id first so it can make the order number unique.
+      const orderRef = doc(collection(db, 'orders'));
       // Firestore rejects undefined — strip every optional field
       const order: Omit<Order, 'id'> = {
-        orderNumber: generateOrderNumber(),
+        orderNumber: generateOrderNumber(orderRef.id),
         items: cartItems.map(i => ({
           productId: i.productId,
           productName: i.productName,
           price: i.price,
           quantity: i.quantity,
-          subtotal: i.price * i.quantity,
+          subtotal: roundMoney(i.price * i.quantity),
           ...(i.variantId   ? { variantId: i.variantId }     : {}),
           ...(i.variantName ? { variantName: i.variantName } : {}),
           ...(i.notes       ? { notes: i.notes }             : {}),
@@ -91,8 +99,8 @@ export default function POSComponent() {
         tax: 0,
         total,
         paymentMethod,
-        amountTendered: Number(amountTendered) || total,
-        change: change || 0,
+        amountTendered: isCash && amountTendered ? roundMoney(tendered) : total,
+        change,
         status: 'completed',
         cashierId: currentUser?.id || '',
         cashierName: currentUser?.displayName || '',
@@ -103,8 +111,8 @@ export default function POSComponent() {
         updatedAt: new Date().toISOString(),
       };
 
-      const docRef = await addDoc(collection(db, 'orders'), order);
-      const savedOrder = { id: docRef.id, ...order };
+      await setDoc(orderRef, order);
+      const savedOrder = { id: orderRef.id, ...order };
       setReceipt(savedOrder);
       clearCart();
       setCheckoutOpen(false);
@@ -126,20 +134,31 @@ export default function POSComponent() {
     window.print();
   }
 
+  const cashierInitials = currentUser?.displayName
+    ?.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) || '?';
+
   return (
-    <div className="relative flex h-full bg-espresso-50">
+    <div className="relative flex h-full">
       {/* Left: Product Menu */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Search & Header */}
-        <div className="p-4 sm:p-6 sm:pb-4 border-b border-cream-200 bg-white">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="font-display text-xl sm:text-2xl text-espresso-900">Point of Sale</h1>
-            <div className="text-sm text-bark-500 truncate ml-3">{currentUser?.displayName}</div>
+        <div className="px-4 sm:px-6 pt-5 sm:pt-6 pb-3 space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="eyebrow text-2xl sm:text-3xl -mb-1">Fresh Brews</p>
+              <h1 className="font-display text-2xl sm:text-3xl text-espresso-900">Point of Sale</h1>
+            </div>
+            <div className="flex items-center gap-2 rounded-full border border-cream-400/70 bg-cream-50 pl-1.5 pr-4 py-1.5 shadow-sm min-w-0">
+              <span className="w-7 h-7 rounded-full bg-espresso-800 text-caramel-200 text-[11px] font-semibold flex items-center justify-center flex-shrink-0">
+                {cashierInitials}
+              </span>
+              <span className="text-sm text-espresso-800 truncate max-w-[9rem]">{currentUser?.displayName}</span>
+            </div>
           </div>
           <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-bark-400" />
+            <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-bark-400" />
             <input
-              className="input pl-9"
+              className="input pl-11 py-3 bg-cream-50"
               placeholder="Search menu..."
               value={search}
               onChange={e => setSearch(e.target.value)}
@@ -148,18 +167,18 @@ export default function POSComponent() {
         </div>
 
         {/* Category Pills */}
-        <div className="flex gap-2 px-4 sm:px-6 py-3 overflow-x-auto border-b border-cream-100 bg-white flex-shrink-0">
+        <div className="flex gap-2 px-4 sm:px-6 pb-4 overflow-x-auto scrollbar-none flex-shrink-0">
           <button
             onClick={() => setActiveCat('')}
-            className={`flex-shrink-0 px-4 py-1.5 rounded-xl text-sm font-medium transition-all ${!activeCat ? 'bg-espresso-600 text-white' : 'bg-cream-100 text-bark-600 hover:bg-cream-200'}`}
+            className={`pill ${!activeCat ? 'active' : ''}`}
           >
-            All
+            <Coffee className="w-3.5 h-3.5" /> All
           </button>
           {categories.map(c => (
             <button
               key={c.id}
               onClick={() => setActiveCat(c.id)}
-              className={`flex-shrink-0 px-4 py-1.5 rounded-xl text-sm font-medium transition-all ${activeCat === c.id ? 'bg-espresso-600 text-white' : 'bg-cream-100 text-bark-600 hover:bg-cream-200'}`}
+              className={`pill ${activeCat === c.id ? 'active' : ''}`}
             >
               {c.name}
             </button>
@@ -167,14 +186,14 @@ export default function POSComponent() {
         </div>
 
         {/* Product Grid */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-24 lg:pb-6">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 pb-24 lg:pb-6">
           {loading ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
               {[...Array(8)].map((_, i) => (
-                <div key={i} className="card p-4 animate-pulse">
-                  <div className="w-full h-28 bg-cream-200 rounded-xl mb-3" />
-                  <div className="h-4 bg-cream-200 rounded w-3/4 mb-2" />
-                  <div className="h-3 bg-cream-100 rounded w-1/2" />
+                <div key={i} className="card p-3 animate-pulse">
+                  <div className="w-full h-28 bg-cream-300/60 rounded-2xl mb-3" />
+                  <div className="h-4 bg-cream-300/60 rounded-full w-3/4 mb-2" />
+                  <div className="h-3 bg-cream-200 rounded-full w-1/2" />
                 </div>
               ))}
             </div>
@@ -189,26 +208,27 @@ export default function POSComponent() {
                 <button
                   key={p.id}
                   onClick={() => addItem(p)}
-                  className="card overflow-hidden text-left hover:shadow-md hover:scale-[1.02] transition-all duration-150 active:scale-[0.98] group"
+                  className="card p-2 text-left hover:shadow-lift hover:-translate-y-0.5 transition-all duration-200 active:scale-[0.98] group"
                 >
-                  <div className="h-28 bg-cream-100 relative">
+                  <div className="h-28 sm:h-32 rounded-2xl overflow-hidden bg-gradient-to-br from-cream-200 to-cream-300 relative">
                     {p.imageUrl ? (
-                      <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
+                      <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
-                        <Coffee className="w-8 h-8 text-cream-400" />
+                        <Coffee className="w-9 h-9 text-caramel-500/60" />
                       </div>
                     )}
-                    <div className="absolute inset-0 bg-espresso-900/0 group-hover:bg-espresso-900/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                      <div className="w-8 h-8 bg-white/90 rounded-full flex items-center justify-center shadow-md">
-                        <Plus className="w-4 h-4 text-espresso-700" />
-                      </div>
-                    </div>
+                    <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-espresso-950/40 to-transparent" />
                   </div>
-                  <div className="p-3">
-                    <p className="font-medium text-espresso-800 text-sm truncate">{p.name}</p>
-                    <p className="text-xs text-bark-400 mb-1">{p.categoryName}</p>
-                    <p className="font-semibold text-espresso-700">{formatCurrency(p.price)}</p>
+                  <div className="px-1.5 pt-2.5 pb-1 flex items-end gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-espresso-900 text-sm truncate">{p.name}</p>
+                      <p className="text-[11px] text-bark-400 truncate">{p.categoryName}</p>
+                      <p className="font-display font-semibold text-lg text-espresso-800 leading-tight mt-0.5">{formatCurrency(p.price)}</p>
+                    </div>
+                    <span className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-espresso-900 shadow-glow bg-gradient-to-b from-caramel-200 to-caramel-400 group-hover:scale-110 transition-transform">
+                      <Plus className="w-4 h-4" />
+                    </span>
                   </div>
                 </button>
               ))}
@@ -222,35 +242,35 @@ export default function POSComponent() {
         className={`
           fixed inset-y-0 right-0 z-40 w-full lg:static lg:z-auto lg:w-80 xl:w-96
           ${cartOpen ? 'translate-x-0' : 'translate-x-full'} lg:translate-x-0
-          transition-transform duration-300 flex flex-col bg-white border-l border-cream-200 shadow-sm
+          transition-transform duration-300 flex flex-col bg-cream-50 border-l border-cream-300 shadow-[-12px_0_30px_-18px_rgba(63,38,22,0.35)]
         `}
       >
-        <div className="p-5 border-b border-cream-100">
-          <h2 className="font-display text-lg text-espresso-900 flex items-center gap-2">
-            <ShoppingCart className="w-5 h-5" />
-            Order
+        <div className="p-5 border-b border-cream-300/70">
+          <h2 className="font-display text-xl text-espresso-900 flex items-center gap-2">
+            <ShoppingCart className="w-5 h-5 text-caramel-600" />
+            Current Order
             {itemCount > 0 && (
-              <span className="bg-espresso-600 text-white text-xs font-medium px-2 py-0.5 rounded-full">{itemCount}</span>
+              <span className="badge-dark">{itemCount}</span>
             )}
             {/* Mobile: close the cart and go back to the menu */}
             <button
               onClick={() => setCartOpen(false)}
-              className="lg:hidden ml-auto text-bark-400 hover:text-espresso-600 transition-colors"
+              className="lg:hidden ml-auto icon-btn"
               title="Back to menu"
             >
               <X className="w-5 h-5" />
             </button>
           </h2>
           {/* Table/Customer info */}
-          <div className="flex gap-2 mt-3">
+          <div className="flex gap-2 mt-4">
             <input
-              className="input flex-1 py-1.5 text-sm"
+              className="input flex-1 py-2 text-sm"
               placeholder="Table #"
               value={tableNumber}
               onChange={e => setTableNumber(e.target.value)}
             />
             <input
-              className="input flex-1 py-1.5 text-sm"
+              className="input flex-1 py-2 text-sm"
               placeholder="Customer"
               value={customerName}
               onChange={e => setCustomerName(e.target.value)}
@@ -259,37 +279,49 @@ export default function POSComponent() {
         </div>
 
         {/* Cart Items */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
           {cartItems.length === 0 ? (
             <div className="text-center py-16 text-bark-400">
-              <ShoppingCart className="w-10 h-10 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">Cart is empty</p>
+              <span className="w-16 h-16 mx-auto mb-3 rounded-full bg-cream-200 flex items-center justify-center">
+                <Coffee className="w-7 h-7 text-caramel-500/70" />
+              </span>
+              <p className="text-sm font-medium text-bark-500">Cart is empty</p>
               <p className="text-xs mt-1">Select items from the menu</p>
             </div>
           ) : cartItems.map(item => (
-            <div key={`${item.productId}-${item.variantId || ''}`} className="flex items-start gap-3 p-3 bg-cream-50 rounded-xl">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-espresso-800 truncate">{item.productName}</p>
-                {item.variantName && <p className="text-xs text-bark-400">{item.variantName}</p>}
-                <p className="text-sm text-espresso-600 font-semibold mt-0.5">{formatCurrency(item.price * item.quantity)}</p>
+            <div key={`${item.productId}-${item.variantId || ''}`} className="flex items-center gap-3 p-2.5 bg-cream-100 border border-cream-300/60 rounded-2xl">
+              <div className="w-11 h-11 rounded-xl overflow-hidden bg-cream-200 flex-shrink-0 flex items-center justify-center">
+                {item.imageUrl
+                  ? <img src={item.imageUrl} alt="" className="w-full h-full object-cover" />
+                  : <Coffee className="w-4 h-4 text-caramel-500/70" />}
               </div>
-              <div className="flex items-center gap-1.5 flex-shrink-0">
-                <button
-                  onClick={() => updateQuantity(item.productId, item.quantity - 1, item.variantId)}
-                  className="w-6 h-6 bg-white border border-cream-200 rounded-lg flex items-center justify-center hover:bg-cream-100 transition-colors"
-                >
-                  <Minus className="w-3 h-3 text-bark-600" />
-                </button>
-                <span className="w-7 text-center text-sm font-medium text-espresso-800">{item.quantity}</span>
-                <button
-                  onClick={() => updateQuantity(item.productId, item.quantity + 1, item.variantId)}
-                  className="w-6 h-6 bg-espresso-600 rounded-lg flex items-center justify-center hover:bg-espresso-700 transition-colors"
-                >
-                  <Plus className="w-3 h-3 text-white" />
-                </button>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-espresso-800 truncate">{item.productName}</p>
+                {item.variantName && <p className="text-xs text-bark-400">{item.variantName}</p>}
+                <p className="text-sm text-caramel-700 font-semibold">{formatCurrency(item.price * item.quantity)}</p>
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <div className="flex items-center rounded-full bg-cream-50 border border-cream-400/70 p-0.5">
+                  <button
+                    onClick={() => updateQuantity(item.productId, item.quantity - 1, item.variantId)}
+                    className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-cream-200 transition-colors"
+                    aria-label="Decrease quantity"
+                  >
+                    <Minus className="w-3 h-3 text-bark-600" />
+                  </button>
+                  <span className="w-7 text-center text-sm font-semibold text-espresso-800">{item.quantity}</span>
+                  <button
+                    onClick={() => updateQuantity(item.productId, item.quantity + 1, item.variantId)}
+                    className="w-6 h-6 rounded-full flex items-center justify-center bg-espresso-800 hover:bg-espresso-700 transition-colors"
+                    aria-label="Increase quantity"
+                  >
+                    <Plus className="w-3 h-3 text-cream-50" />
+                  </button>
+                </div>
                 <button
                   onClick={() => removeItem(item.productId, item.variantId)}
-                  className="w-6 h-6 ml-1 text-bark-300 hover:text-red-400 transition-colors"
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-bark-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                  aria-label="Remove item"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -300,34 +332,39 @@ export default function POSComponent() {
 
         {/* Discount */}
         {cartItems.length > 0 && (
-          <div className="px-4 py-3 border-t border-cream-100">
+          <div className="px-4 py-3 border-t border-cream-300/70">
             <div className="flex items-center gap-2">
-              <Tag className="w-4 h-4 text-bark-400" />
-              <span className="text-sm text-bark-500 flex-1">Discount</span>
-              <div className="flex items-center gap-1 bg-cream-100 rounded-lg p-0.5">
+              <Tag className="w-4 h-4 text-caramel-600" />
+              <span className="text-sm text-bark-600 flex-1">Discount</span>
+              <div className="flex items-center gap-0.5 bg-cream-200 rounded-full p-0.5 border border-cream-400/60">
                 <button onClick={() => setDiscountType('percent')}
-                  className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${discountType === 'percent' ? 'bg-white text-espresso-800 shadow-sm' : 'text-bark-500'}`}>
+                  className={`w-7 h-6 rounded-full text-xs font-semibold transition-all ${discountType === 'percent' ? 'bg-espresso-800 text-cream-50 shadow-sm' : 'text-bark-500'}`}>
                   %
                 </button>
                 <button onClick={() => setDiscountType('fixed')}
-                  className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${discountType === 'fixed' ? 'bg-white text-espresso-800 shadow-sm' : 'text-bark-500'}`}>
+                  className={`w-7 h-6 rounded-full text-xs font-semibold transition-all ${discountType === 'fixed' ? 'bg-espresso-800 text-cream-50 shadow-sm' : 'text-bark-500'}`}>
                   ₱
                 </button>
               </div>
               <input
                 type="number"
                 min="0"
-                className="w-20 px-2 py-1 text-sm text-right border border-cream-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-espresso-400"
+                max={discountType === 'percent' ? 100 : undefined}
+                className="w-20 px-3 py-1 text-sm text-right border border-cream-400/70 rounded-full bg-white focus:outline-none focus:ring-2 focus:ring-caramel-300"
                 value={discount || ''}
-                onChange={e => setDiscount(Number(e.target.value))}
+                onChange={e => {
+                  // A negative discount would raise the total; over 100% makes no sense.
+                  const value = Math.max(0, Number(e.target.value) || 0);
+                  setDiscount(discountType === 'percent' ? Math.min(value, 100) : value);
+                }}
               />
             </div>
           </div>
         )}
 
         {/* Totals & Actions */}
-        <div className="p-4 border-t border-cream-100 space-y-2">
-          <div className="flex justify-between text-sm text-bark-500">
+        <div className="p-4 border-t border-cream-300/70 space-y-2 bg-cream-100/70">
+          <div className="flex justify-between text-sm text-bark-600">
             <span>Subtotal</span>
             <span>{formatCurrency(subtotal)}</span>
           </div>
@@ -337,14 +374,14 @@ export default function POSComponent() {
               <span>-{formatCurrency(discountAmount)}</span>
             </div>
           )}
-          <div className="flex justify-between font-display text-lg text-espresso-900 pt-1 border-t border-cream-100">
-            <span>Total</span>
-            <span>{formatCurrency(total)}</span>
+          <div className="flex justify-between items-baseline font-display text-espresso-900 pt-2 border-t border-dashed border-cream-400">
+            <span className="text-lg">Total</span>
+            <span className="text-2xl font-semibold">{formatCurrency(total)}</span>
           </div>
           <button
             onClick={() => setCheckoutOpen(true)}
             disabled={cartItems.length === 0}
-            className="w-full btn-primary py-3 text-base flex items-center justify-center gap-2 mt-2"
+            className="w-full btn-primary py-3.5 text-base !mt-3"
           >
             <CreditCard className="w-4 h-4" />
             Checkout
@@ -361,11 +398,11 @@ export default function POSComponent() {
       {itemCount > 0 && !cartOpen && (
         <button
           onClick={() => setCartOpen(true)}
-          className="lg:hidden fixed bottom-0 left-0 right-0 z-30 flex items-center gap-3 px-4 py-3 bg-espresso-600 text-white shadow-lg active:bg-espresso-700"
+          className="lg:hidden fixed bottom-3 left-3 right-3 z-30 flex items-center gap-3 px-5 py-3.5 rounded-full espresso-surface text-cream-50 shadow-lift active:brightness-110"
         >
           <span className="relative">
-            <ShoppingCart className="w-6 h-6" />
-            <span className="absolute -top-2 -right-2 bg-white text-espresso-700 text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">{itemCount}</span>
+            <ShoppingCart className="w-6 h-6 text-caramel-300" />
+            <span className="absolute -top-2 -right-2 bg-caramel-300 text-espresso-900 text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">{itemCount}</span>
           </span>
           <span className="font-medium">View Order</span>
           <span className="ml-auto font-display text-lg">{formatCurrency(total)}</span>
@@ -376,14 +413,17 @@ export default function POSComponent() {
       {checkoutOpen && (
         <Portal>
         <div className="modal-backdrop">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md">
-            <div className="flex items-center justify-between p-6 border-b border-cream-100">
-              <h2 className="font-display text-xl text-espresso-900">Checkout</h2>
-              <button onClick={() => setCheckoutOpen(false)}><X className="w-5 h-5 text-bark-400" /></button>
+          <div className="modal-panel max-w-md max-h-[92vh] overflow-y-auto">
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow text-2xl -mb-1">Almost there</p>
+                <h2 className="font-display text-2xl text-espresso-900">Checkout</h2>
+              </div>
+              <button onClick={() => setCheckoutOpen(false)} className="icon-btn"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-5">
               {/* Order Summary */}
-              <div className="bg-cream-50 rounded-xl p-4 space-y-1.5">
+              <div className="bg-cream-200/60 border border-cream-300 rounded-2xl p-4 space-y-1.5">
                 {cartItems.map(i => (
                   <div key={`${i.productId}-${i.variantId}`} className="flex justify-between text-sm">
                     <span className="text-bark-700">{i.productName} × {i.quantity}</span>
@@ -391,14 +431,14 @@ export default function POSComponent() {
                   </div>
                 ))}
                 {discountAmount > 0 && (
-                  <div className="flex justify-between text-sm text-emerald-600 pt-1 border-t border-cream-200">
+                  <div className="flex justify-between text-sm text-emerald-600 pt-1 border-t border-cream-400/70">
                     <span>Discount</span>
                     <span>-{formatCurrency(discountAmount)}</span>
                   </div>
                 )}
-                <div className="flex justify-between font-semibold text-base pt-1.5 border-t border-cream-200">
-                  <span>Total</span>
-                  <span className="text-espresso-900">{formatCurrency(total)}</span>
+                <div className="flex justify-between items-baseline pt-2 border-t border-dashed border-cream-500">
+                  <span className="font-semibold text-espresso-900">Total</span>
+                  <span className="font-display text-2xl font-semibold text-espresso-900">{formatCurrency(total)}</span>
                 </div>
               </div>
 
@@ -410,14 +450,14 @@ export default function POSComponent() {
                     <button
                       key={value}
                       onClick={() => setPaymentMethod(value)}
-                      className={`flex flex-col items-center gap-1 py-3 rounded-xl border-2 transition-all ${
+                      className={`flex flex-col items-center gap-1 py-3 rounded-2xl border-2 transition-all ${
                         paymentMethod === value
-                          ? 'border-espresso-600 bg-espresso-50 text-espresso-700'
-                          : 'border-cream-200 text-bark-400 hover:border-bark-300'
+                          ? 'border-espresso-800 bg-espresso-800 text-cream-50 shadow-[0_8px_18px_-8px_rgb(44_26_15/0.8)]'
+                          : 'border-cream-400/70 bg-cream-50 text-bark-500 hover:border-caramel-400 hover:text-espresso-800'
                       }`}
                     >
                       <Icon className="w-5 h-5" />
-                      <span className="text-xs font-medium">{label}</span>
+                      <span className="text-xs font-semibold">{label}</span>
                     </button>
                   ))}
                 </div>
@@ -436,7 +476,7 @@ export default function POSComponent() {
                     onChange={e => setAmountTendered(e.target.value)}
                   />
                   {amountTendered && Number(amountTendered) >= total && (
-                    <div className="flex justify-between text-sm mt-2 p-3 bg-emerald-50 rounded-xl">
+                    <div className="flex justify-between text-sm mt-2 px-4 py-3 bg-emerald-50 border border-emerald-100 rounded-full">
                       <span className="text-emerald-700">Change</span>
                       <span className="font-semibold text-emerald-700">{formatCurrency(change)}</span>
                     </div>
@@ -449,9 +489,9 @@ export default function POSComponent() {
                 <input className="input" placeholder="Special instructions..." value={notes} onChange={e => setNotes(e.target.value)} />
               </div>
             </div>
-            <div className="flex gap-3 p-6 border-t border-cream-100">
+            <div className="modal-footer">
               <button onClick={() => setCheckoutOpen(false)} className="btn-secondary flex-1">Cancel</button>
-              <button onClick={placeOrder} disabled={placing} className="btn-primary flex-1 flex items-center justify-center gap-2">
+              <button onClick={placeOrder} disabled={placing} className="btn-primary flex-1">
                 {placing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                 {placing ? 'Processing...' : 'Confirm Order'}
               </button>
@@ -465,17 +505,17 @@ export default function POSComponent() {
       {receipt && (
         <Portal>
         <div className="modal-backdrop">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm">
-            <div className="p-6 text-center border-b border-cream-100">
-              <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                <CheckCircle className="w-6 h-6 text-emerald-600" />
+          <div className="modal-panel max-w-sm">
+            <div className="p-6 text-center border-b border-cream-300/70">
+              <div className="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3 ring-8 ring-emerald-50">
+                <CheckCircle className="w-7 h-7 text-emerald-600" />
               </div>
-              <h2 className="font-display text-xl text-espresso-900">Order Placed!</h2>
-              <p className="text-bark-500 text-sm mt-1">{receipt.orderNumber}</p>
+              <h2 className="font-display text-2xl text-espresso-900">Order Placed!</h2>
+              <p className="text-bark-500 text-sm mt-1 font-mono">{receipt.orderNumber}</p>
             </div>
 
-            {/* Receipt Content */}
-            <div ref={receiptRef} id="receipt" className="p-6 font-mono text-xs space-y-1">
+            {/* Receipt Content — id="receipt" is what the @media print rules print */}
+            <div ref={receiptRef} id="receipt" className="mx-6 my-5 p-5 bg-white rounded-2xl border border-dashed border-cream-500 font-mono text-xs space-y-1 text-espresso-900 print:m-0 print:p-0 print:border-0 print:rounded-none">
               <p className="text-center font-bold text-base font-body mb-2">JPOS COFFEE SHOP</p>
               <p className="text-center text-bark-500 mb-3">{new Date(receipt.createdAt).toLocaleString()}</p>
               <div className="border-t border-dashed border-bark-300 pt-2 space-y-1">
@@ -497,8 +537,8 @@ export default function POSComponent() {
               <p className="text-center text-bark-400">Cashier: {receipt.cashierName}</p>
             </div>
 
-            <div className="flex gap-3 p-6 border-t border-cream-100">
-              <button onClick={printReceipt} className="btn-secondary flex-1 flex items-center justify-center gap-2">
+            <div className="modal-footer">
+              <button onClick={printReceipt} className="btn-secondary flex-1">
                 <Printer className="w-4 h-4" /> Print
               </button>
               <button onClick={() => setReceipt(null)} className="btn-primary flex-1">Done</button>

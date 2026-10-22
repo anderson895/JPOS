@@ -61,7 +61,12 @@ export interface Order {
   orderNumber: string;
   items: OrderItem[];
   subtotal: number;
+  /**
+   * Peso amount actually deducted — already converted when `discountType` is
+   * 'percent', and never more than `subtotal`. `total = subtotal - discount`.
+   */
   discount: number;
+  /** How the cashier entered the discount; `discount` is always in pesos. */
   discountType?: 'percent' | 'fixed';
   tax: number;
   total: number;

@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import type { Order } from '@/types';
 import {
   format, startOfDay, endOfDay,
   startOfWeek, endOfWeek,
-  startOfMonth, endOfMonth, subDays
+  startOfMonth, endOfMonth, subDays,
+  parseISO, isValid
 } from 'date-fns';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -15,9 +16,13 @@ import {
 import { TrendingUp, ShoppingBag, CreditCard, Download, Calendar, Loader2 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import toast from 'react-hot-toast';
+import PageHeader from '@/components/shared/PageHeader';
+import StatCard from '@/components/shared/StatCard';
+import { CHART, CHART_SERIES, TOOLTIP_STYLE } from '@/components/shared/chartTheme';
 
 type Range = 'today' | 'week' | 'month' | 'custom';
-const COLORS = ['#c46820', '#e09d4d', '#f5c07a', '#a73c12', '#6a3714', '#3c1209'];
+const COLORS = CHART_SERIES;
 
 // Brand colours
 const ESPRESSO  = [74,  41,  18]  as [number, number, number];
@@ -26,7 +31,8 @@ const CREAM     = [253, 246, 238] as [number, number, number];
 const LIGHT_ROW = [245, 238, 228] as [number, number, number];
 const WHITE     = [255, 255, 255] as [number, number, number];
 
-function peso(v: number) { return `\u20b1${v.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`; }
+// jsPDF's built-in fonts have no \u20b1 glyph (it prints as "\u00b1"), so spell the currency out.
+function peso(v: number) { return `PHP ${v.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 
 function toIso(v: any): string {
   return typeof v === 'string' ? v : v?.toDate?.().toISOString() ?? '';
@@ -40,7 +46,35 @@ export default function AdminReports() {
   const [customStart, setCustomStart] = useState(format(subDays(new Date(), 7), 'yyyy-MM-dd'));
   const [customEnd,   setCustomEnd]   = useState(format(new Date(), 'yyyy-MM-dd'));
 
-  useEffect(() => { fetchOrders(); }, [range, customStart, customEnd]);
+  useEffect(() => {
+    const dateRange = getDateRange();
+    if (!dateRange) { setOrders([]); setLoading(false); return; }
+
+    // Ignore a slow response for a range the user has already switched away from.
+    let cancelled = false;
+    setLoading(true);
+    // Fetch only the selected period. Reading the whole collection on every
+    // visit gets slower and eats the daily Firestore read quota as orders pile up.
+    getDocs(query(
+      collection(db, 'orders'),
+      where('createdAt', '>=', dateRange.start.toISOString()),
+      where('createdAt', '<=', dateRange.end.toISOString()),
+      orderBy('createdAt', 'desc'),
+    ))
+      .then(snap => {
+        if (!cancelled) setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() } as Order)));
+      })
+      .catch(err => {
+        console.error('[Reports]', err);
+        if (!cancelled) {
+          setOrders([]);
+          // An empty report would read as "no sales"; say it failed instead
+          toast.error('Failed to load report');
+        }
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [range, customStart, customEnd]);
 
   function getDateRange() {
     const now = new Date();
@@ -48,28 +82,12 @@ export default function AdminReports() {
       case 'today':  return { start: startOfDay(now),              end: endOfDay(now) };
       case 'week':   return { start: startOfWeek(now),             end: endOfWeek(now) };
       case 'month':  return { start: startOfMonth(now),            end: endOfMonth(now) };
-      case 'custom': return {
-        start: startOfDay(new Date(customStart)),
-        end:   endOfDay(new Date(customEnd)),
-      };
-    }
-  }
-
-  async function fetchOrders() {
-    setLoading(true);
-    try {
-      const snap = await getDocs(collection(db, 'orders'));
-      const all  = snap.docs.map(d => ({ id: d.id, ...d.data() } as Order));
-      const { start, end } = getDateRange();
-      const s = start.toISOString(), e = end.toISOString();
-      const filtered = all
-        .filter(o => { const iso = toIso(o.createdAt); return iso >= s && iso <= e; })
-        .sort((a, b) => (toIso(b.createdAt) > toIso(a.createdAt) ? 1 : -1));
-      setOrders(filtered);
-    } catch (err) {
-      console.error('[Reports]', err);
-    } finally {
-      setLoading(false);
+      case 'custom': {
+        // parseISO reads 'yyyy-MM-dd' as local midnight; new Date() would read it as UTC.
+        const start = parseISO(customStart), end = parseISO(customEnd);
+        if (!isValid(start) || !isValid(end)) return null; // a date field was cleared
+        return { start: startOfDay(start), end: endOfDay(end) };
+      }
     }
   }
 
@@ -81,14 +99,15 @@ export default function AdminReports() {
 
   const dailyMap: Record<string, { sales: number; orders: number }> = {};
   completed.forEach(o => {
-    const day = format(new Date(toIso(o.createdAt)), 'MM/dd');
+    // Key by the full date so a range crossing New Year still sorts in order
+    const day = format(new Date(toIso(o.createdAt)), 'yyyy-MM-dd');
     if (!dailyMap[day]) dailyMap[day] = { sales: 0, orders: 0 };
     dailyMap[day].sales  += o.total;
     dailyMap[day].orders += 1;
   });
   const dailyData = Object.entries(dailyMap)
-    .map(([date, d]) => ({ date, ...d }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([day, d]) => ({ date: format(parseISO(day), 'MM/dd'), ...d }));
 
   const paymentMap: Record<string, number> = {};
   completed.forEach(o => { paymentMap[o.paymentMethod] = (paymentMap[o.paymentMethod] || 0) + o.total; });
@@ -103,6 +122,10 @@ export default function AdminReports() {
     });
   });
   const topProducts = Object.values(productMap).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+  // Share of item sales. Item revenue is before discounts, so dividing by the
+  // discounted total sales could go past 100% (or divide by zero).
+  const itemRevenue = Object.values(productMap).reduce((s, p) => s + p.revenue, 0);
+  const sharePct = (revenue: number) => (itemRevenue ? (revenue / itemRevenue) * 100 : 0);
 
   const rangeLabel = range === 'custom'
     ? `${customStart} to ${customEnd}`
@@ -209,12 +232,13 @@ export default function AdminReports() {
           2: { halign: 'right' },
         },
         didDrawCell: (data) => {
-          if (data.section === 'head' && data.column.index === 0) {
-            // Amber underline on header
-            const { x, y: cy, width, height } = data.cell;
+          // Amber underline on header — drawn after the last header cell so it
+          // isn't painted over, and across the full table width
+          if (data.section === 'head' && data.column.index === data.table.columns.length - 1) {
+            const { y: cy, height } = data.cell;
             doc.setDrawColor(...AMBER);
             doc.setLineWidth(0.5);
-            doc.line(x, cy + height, x + width * 3, cy + height); // spans all cols
+            doc.line(ML, cy + height, W - MR, cy + height);
           }
         },
       });
@@ -264,7 +288,7 @@ export default function AdminReports() {
           p.name,
           String(p.qty),
           peso(p.revenue),
-          `${((p.revenue / (totalSales || 1)) * 100).toFixed(1)}%`,
+          `${sharePct(p.revenue).toFixed(1)}%`,
         ]),
         styles:     { fontSize: 8, cellPadding: 3 },
         headStyles: { fillColor: ESPRESSO, textColor: WHITE, fontStyle: 'bold' },
@@ -302,7 +326,8 @@ export default function AdminReports() {
         head: [['Order #', 'Date & Time', 'Cashier', 'Items', 'Total', 'Payment']],
         body: orders.slice(0, 300).map(o => [
           o.orderNumber,
-          toIso(o.createdAt).slice(0, 16).replace('T', ' '),
+          // Local time — the stored ISO string is UTC (8 hours behind in PH)
+          format(new Date(toIso(o.createdAt)), 'yyyy-MM-dd HH:mm'),
           o.cashierName,
           String(o.items.reduce((s, i) => s + i.quantity, 0)),
           peso(o.total),
@@ -311,14 +336,13 @@ export default function AdminReports() {
         styles:     { fontSize: 7.5, cellPadding: 2.5, overflow: 'ellipsize' },
         headStyles: { fillColor: ESPRESSO, textColor: WHITE, fontStyle: 'bold', fontSize: 8 },
         alternateRowStyles: { fillColor: LIGHT_ROW },
+        // Order # wide enough for the full number (22mm cut it off); Cashier takes the rest
         columnStyles: {
-          0: { cellWidth: 22, fontStyle: 'bold' },
-          1: { cellWidth: 32 },
-          2: { cellWidth: 30 },
-          3: { cellWidth: 12, halign: 'center' },
-          4: { cellWidth: 26, halign: 'right' },
+          0: { cellWidth: 40, fontStyle: 'bold' },
+          1: { cellWidth: 30 },
+          3: { cellWidth: 14, halign: 'center' },
+          4: { cellWidth: 28, halign: 'right' },
           5: { cellWidth: 20, halign: 'center' },
-          6: { cellWidth: 22, halign: 'center' },
         },
       });
 
@@ -335,105 +359,115 @@ export default function AdminReports() {
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 animate-fade-in">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="font-display text-2xl sm:text-3xl text-espresso-900">Reports</h1>
-          <p className="text-bark-500 text-sm mt-0.5">Sales analytics & insights</p>
-        </div>
-        <button
-          onClick={downloadPDF}
-          disabled={pdfLoading || loading}
-          className="btn-primary flex items-center justify-center gap-2 disabled:opacity-60"
-        >
-          {pdfLoading
-            ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</>
-            : <><Download className="w-4 h-4" /> Download PDF Report</>}
-        </button>
-      </div>
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 animate-fade-in max-w-[1400px] mx-auto">
+      <PageHeader
+        eyebrow="Insights"
+        title="Reports"
+        subtitle="Sales analytics & insights"
+        actions={
+          <button
+            onClick={downloadPDF}
+            disabled={pdfLoading || loading}
+            className="btn-primary"
+          >
+            {pdfLoading
+              ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</>
+              : <><Download className="w-4 h-4" /> Download PDF Report</>}
+          </button>
+        }
+      />
 
       {/* Date Range Selector */}
-      <div className="card p-4 flex flex-wrap items-center gap-3">
-        <Calendar className="w-4 h-4 text-bark-500" />
-        <div className="flex gap-1 bg-cream-100 p-1 rounded-xl">
+      <div className="card p-3 flex flex-wrap items-center gap-3">
+        <span className="hidden sm:flex w-10 h-10 rounded-full bg-cream-200 text-caramel-700 items-center justify-center">
+          <Calendar className="w-4 h-4" />
+        </span>
+        <div className="segmented w-full sm:w-auto overflow-x-auto scrollbar-none">
           {(['today', 'week', 'month', 'custom'] as Range[]).map(r => (
             <button key={r} onClick={() => setRange(r)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium capitalize transition-all ${range === r ? 'bg-white text-espresso-800 shadow-sm' : 'text-bark-500 hover:text-bark-700'}`}>
+              className={`segmented-item capitalize ${range === r ? 'active' : ''}`}>
               {r}
             </button>
           ))}
         </div>
         {range === 'custom' && (
-          <div className="flex items-center gap-2">
-            <input type="date" className="input py-1.5 text-sm" value={customStart} onChange={e => setCustomStart(e.target.value)} />
-            <span className="text-bark-400">→</span>
-            <input type="date" className="input py-1.5 text-sm" value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <input type="date" className="input py-2 text-sm" value={customStart} onChange={e => setCustomStart(e.target.value)} />
+            <span className="text-caramel-500">→</span>
+            <input type="date" className="input py-2 text-sm" value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
           </div>
         )}
+        <span className="sm:ml-auto badge-info">{rangeLabel}</span>
       </div>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
-          { label: 'Total Revenue',  value: formatCurrency(totalSales), icon: TrendingUp, color: 'bg-espresso-600' },
-          { label: 'Total Orders',   value: totalOrders.toString(),     icon: ShoppingBag, color: 'bg-amber-500' },
-          { label: 'Average Order',  value: formatCurrency(avgOrder),   icon: CreditCard,  color: 'bg-bark-600' },
+          { label: 'Total Revenue',  value: formatCurrency(totalSales), icon: TrendingUp,  tone: 'espresso' as const },
+          { label: 'Total Orders',   value: totalOrders.toString(),     icon: ShoppingBag, tone: 'caramel' as const },
+          { label: 'Average Order',  value: formatCurrency(avgOrder),   icon: CreditCard,  tone: 'cream' as const },
         ].map(s => (
-          <div key={s.label} className="card p-5">
-            <div className={`${s.color} w-10 h-10 rounded-xl flex items-center justify-center mb-3`}>
-              <s.icon className="w-5 h-5 text-white" />
-            </div>
-            <p className="text-2xl font-display font-semibold text-espresso-900">{loading ? '—' : s.value}</p>
-            <p className="text-sm text-bark-500 mt-0.5">{s.label}</p>
-          </div>
+          <StatCard key={s.label} icon={s.icon} label={s.label} value={s.value} tone={s.tone} loading={loading} />
         ))}
       </div>
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 card p-6">
-          <h2 className="font-display text-lg text-espresso-800 mb-6">Sales Over Time</h2>
+          <h2 className="font-display text-xl text-espresso-900 mb-6">Sales Over Time</h2>
           {dailyData.length === 0 ? (
             <div className="h-48 flex items-center justify-center text-bark-400 text-sm">No data available</div>
           ) : (
-            <ResponsiveContainer width="100%" height={240}>
+            <ResponsiveContainer width="100%" height={260}>
               <AreaChart data={dailyData}>
                 <defs>
                   <linearGradient id="reportGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#c46820" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#c46820" stopOpacity={0} />
+                    <stop offset="5%"  stopColor={CHART.accent} stopOpacity={0.35} />
+                    <stop offset="95%" stopColor={CHART.accent} stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f3d9be" />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#8f5e4b' }} />
-                <YAxis tick={{ fontSize: 11, fill: '#8f5e4b' }} tickFormatter={v => `₱${v}`} />
-                <Tooltip formatter={(v: number) => [formatCurrency(v)]} contentStyle={{ borderRadius: 12, border: '1px solid #f3d9be' }} />
-                <Area type="monotone" dataKey="sales" stroke="#c46820" strokeWidth={2.5} fill="url(#reportGrad)" />
+                <CartesianGrid strokeDasharray="3 4" stroke={CHART.grid} vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: CHART.tick }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: CHART.tick }} tickFormatter={v => `₱${v}`} axisLine={false} tickLine={false} width={60} />
+                <Tooltip formatter={(v: number) => [formatCurrency(v)]} contentStyle={TOOLTIP_STYLE} />
+                <Area type="monotone" dataKey="sales" stroke={CHART.line} strokeWidth={2.5} fill="url(#reportGrad)" />
               </AreaChart>
             </ResponsiveContainer>
           )}
         </div>
         <div className="card p-6">
-          <h2 className="font-display text-lg text-espresso-800 mb-6">Payment Methods</h2>
+          <h2 className="font-display text-xl text-espresso-900 mb-4">Payment Methods</h2>
           {paymentData.length === 0 ? (
             <div className="h-48 flex items-center justify-center text-bark-400 text-sm">No data</div>
           ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <PieChart>
-                <Pie data={paymentData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
-                  {paymentData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                </Pie>
-                <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ borderRadius: 12, border: '1px solid #f3d9be' }} />
-              </PieChart>
-            </ResponsiveContainer>
+            <>
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie data={paymentData} dataKey="value" nameKey="name" cx="50%" cy="50%"
+                    innerRadius={52} outerRadius={84} paddingAngle={2} stroke="#fffcf7" strokeWidth={2}>
+                    {paymentData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={TOOLTIP_STYLE} />
+                </PieChart>
+              </ResponsiveContainer>
+              <ul className="mt-3 space-y-2">
+                {paymentData.map((p, i) => (
+                  <li key={p.name} className="flex items-center gap-2 text-sm">
+                    <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
+                    <span className="flex-1 text-espresso-800">{p.name}</span>
+                    <span className="text-bark-500 text-xs">{((p.value / (totalSales || 1)) * 100).toFixed(0)}%</span>
+                    <span className="font-semibold text-espresso-800">{formatCurrency(p.value)}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </div>
       </div>
 
       {/* Top Products */}
       <div className="card p-6">
-        <h2 className="font-display text-lg text-espresso-800 mb-4">Top Products</h2>
+        <h2 className="font-display text-xl text-espresso-900 mb-4">Top Products</h2>
         {topProducts.length === 0 ? (
           <p className="text-center py-8 text-bark-400 text-sm">No product data available</p>
         ) : (
@@ -449,16 +483,16 @@ export default function AdminReports() {
             <tbody>
               {topProducts.map((p, i) => (
                 <tr key={i} className="table-row">
-                  <td className="table-cell text-bark-400">{i + 1}</td>
-                  <td className="table-cell font-medium text-espresso-800">{p.name}</td>
+                  <td className="table-cell">
+                    <span className={`w-7 h-7 rounded-full inline-flex items-center justify-center text-xs font-semibold ${i < 3 ? 'bg-espresso-800 text-caramel-200' : 'bg-cream-200 text-bark-500'}`}>{i + 1}</span>
+                  </td>
+                  <td className="table-cell font-semibold text-espresso-800">{p.name}</td>
                   <td className="table-cell font-mono">{p.qty}</td>
-                  <td className="table-cell font-semibold text-espresso-700">{formatCurrency(p.revenue)}</td>
-                  <td className="table-cell w-40">
+                  <td className="table-cell font-semibold text-espresso-800">{formatCurrency(p.revenue)}</td>
+                  <td className="table-cell w-44">
                     <div className="flex items-center gap-2">
-                      <div className="flex-1 h-2 bg-cream-200 rounded-full">
-                        <div className="h-2 bg-espresso-500 rounded-full" style={{ width: `${(p.revenue / totalSales) * 100}%` }} />
-                      </div>
-                      <span className="text-xs text-bark-400">{((p.revenue / totalSales) * 100).toFixed(1)}%</span>
+                      <div className="meter flex-1"><span style={{ width: `${sharePct(p.revenue)}%` }} /></div>
+                      <span className="text-xs text-bark-500 w-10 text-right">{sharePct(p.revenue).toFixed(1)}%</span>
                     </div>
                   </td>
                 </tr>
@@ -471,7 +505,7 @@ export default function AdminReports() {
 
       {/* Orders Table */}
       <div className="card p-6">
-        <h2 className="font-display text-lg text-espresso-800 mb-4">Order Details</h2>
+        <h2 className="font-display text-xl text-espresso-900 mb-4">Order Details</h2>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px]">
             <thead><tr>
@@ -490,7 +524,7 @@ export default function AdminReports() {
                   <td className="table-cell">{o.cashierName}</td>
                   <td className="table-cell">{o.items.reduce((s, i) => s + i.quantity, 0)} items</td>
                   <td className="table-cell font-semibold">{formatCurrency(o.total)}</td>
-                  <td className="table-cell uppercase text-xs">{o.paymentMethod}</td>
+                  <td className="table-cell"><span className="badge-info uppercase text-[10px]">{o.paymentMethod}</span></td>
                 </tr>
               ))}
               {orders.length === 0 && (

@@ -1,11 +1,13 @@
 import { useState, useRef } from 'react';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import {
   updatePassword, updateProfile,
   EmailAuthProvider, reauthenticateWithCredential, reload
 } from 'firebase/auth';
+import { FirebaseError } from 'firebase/app';
 import { db, auth } from '@/lib/firebase';
 import { uploadImage } from '@/lib/cloudinary';
+import { getAuthErrorMessage } from '@/lib/authErrors';
 import { useAuth } from '@/contexts/AuthContext';
 import Portal from '@/components/shared/Portal';
 import { X, User, Lock, Camera, Loader2, Eye, EyeOff } from 'lucide-react';
@@ -96,16 +98,43 @@ export default function AccountSettingsModal({ onClose }: Props) {
     try {
       const fbUser = auth.currentUser;
       if (!fbUser?.email) throw new Error('No user');
+      if (!fbUser.providerData.some(p => p.providerId === 'password')) {
+        // Otherwise this would just report "Current password is incorrect"
+        toast.error('This account signs in with Google, so it has no password to change here.');
+        return;
+      }
       // Re-authenticate before changing password (Firebase requirement)
       const credential = EmailAuthProvider.credential(fbUser.email, currentPw);
       await reauthenticateWithCredential(fbUser, credential);
       await updatePassword(fbUser, newPw);
       toast.success('Password changed successfully');
+
+      // The RFID card logs in with a saved copy of the password — keep it in
+      // sync, or tapping the card would fail from now on.
+      const tag = currentUser?.rfidTag?.trim();
+      if (tag) {
+        try {
+          const cardRef = doc(db, 'rfidCards', tag);
+          const card = await getDoc(cardRef);
+          if (card.exists() && card.data().userId === currentUser?.id) {
+            await updateDoc(cardRef, { password: newPw, updatedAt: new Date().toISOString() });
+          }
+        } catch (err) {
+          console.error('RFID card password sync failed:', err);
+          toast.error('Your RFID card still has the old password. Re-enter it in Manage Staff.');
+        }
+      }
+
       setCurrentPw(''); setNewPw(''); setConfirmPw('');
       onClose();
-    } catch (err: any) {
-      if (err.code === 'auth/wrong-password') toast.error('Current password is incorrect');
-      else toast.error('Failed to change password');
+    } catch (err) {
+      // Newer Firebase projects report a wrong password as auth/invalid-credential.
+      const code = err instanceof FirebaseError ? err.code : '';
+      if (['auth/wrong-password', 'auth/invalid-credential', 'auth/invalid-login-credentials'].includes(code)) {
+        toast.error('Current password is incorrect');
+      } else {
+        toast.error(getAuthErrorMessage(err, 'Failed to change password'));
+      }
     } finally {
       setSavingPw(false);
     }
@@ -114,32 +143,33 @@ export default function AccountSettingsModal({ onClose }: Props) {
   return (
     <Portal>
     <div className="modal-backdrop">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+      <div className="modal-panel max-w-md overflow-hidden">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-cream-100">
-          <h2 className="font-display text-xl text-espresso-900">Account Settings</h2>
-          <button onClick={onClose} className="text-bark-400 hover:text-bark-700">
+        <div className="modal-header">
+          <div>
+            <p className="eyebrow text-2xl -mb-1">Your profile</p>
+            <h2 className="font-display text-2xl text-espresso-900">Account Settings</h2>
+          </div>
+          <button onClick={onClose} className="icon-btn">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-cream-100">
-          {(['profile', 'password'] as const).map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors border-b-2 ${
-                activeTab === tab
-                  ? 'border-espresso-600 text-espresso-700'
-                  : 'border-transparent text-bark-400 hover:text-bark-700'
-              }`}
-            >
-              {tab === 'profile' ? <User className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </button>
-          ))}
+        <div className="px-6 pt-5">
+          <div className="segmented">
+            {(['profile', 'password'] as const).map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`segmented-item ${activeTab === tab ? 'active' : ''}`}
+              >
+                {tab === 'profile' ? <User className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* ── Profile Tab ── */}
@@ -148,16 +178,16 @@ export default function AccountSettingsModal({ onClose }: Props) {
             {/* Avatar */}
             <div className="flex flex-col items-center gap-3">
               <div className="relative">
-                <div className="w-20 h-20 rounded-full overflow-hidden bg-espresso-100 flex items-center justify-center">
+                <div className="w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-caramel-200 to-cream-300 ring-4 ring-cream-50 shadow-md flex items-center justify-center">
                   {photoURL
                     ? <img src={photoURL} alt="" className="w-full h-full object-cover" />
-                    : <span className="text-espresso-600 font-bold text-2xl">{initials}</span>
+                    : <span className="text-espresso-700 font-display font-semibold text-3xl">{initials}</span>
                   }
                 </div>
                 <button
                   onClick={() => photoRef.current?.click()}
                   disabled={uploadingPhoto}
-                  className="absolute -bottom-1 -right-1 w-7 h-7 bg-espresso-600 hover:bg-espresso-700 text-white rounded-full flex items-center justify-center shadow-md transition-colors"
+                  className="absolute bottom-0 right-0 w-8 h-8 bg-espresso-800 hover:bg-espresso-700 text-cream-50 rounded-full flex items-center justify-center shadow-md ring-2 ring-cream-50 transition-colors"
                 >
                   {uploadingPhoto
                     ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -166,7 +196,11 @@ export default function AccountSettingsModal({ onClose }: Props) {
                 </button>
                 <input
                   ref={photoRef} type="file" accept="image/*" className="hidden"
-                  onChange={e => e.target.files?.[0] && handlePhotoUpload(e.target.files[0])}
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    e.target.value = ''; // so picking the same file again (e.g. after a failed upload) still fires
+                    if (file) handlePhotoUpload(file);
+                  }}
                 />
               </div>
               <p className="text-xs text-bark-400">Click the camera icon to change photo</p>
@@ -181,12 +215,12 @@ export default function AccountSettingsModal({ onClose }: Props) {
             </div>
             <div>
               <label className="label">Email</label>
-              <input className="input bg-cream-50 text-bark-500 cursor-not-allowed"
+              <input className="input bg-cream-200/60 text-bark-500 cursor-not-allowed"
                 value={currentUser?.email || ''} readOnly />
             </div>
             <div>
               <label className="label">Role</label>
-              <input className="input bg-cream-50 text-bark-500 cursor-not-allowed capitalize"
+              <input className="input bg-cream-200/60 text-bark-500 cursor-not-allowed capitalize"
                 value={currentUser?.role || ''} readOnly />
             </div>
           </div>
@@ -199,12 +233,12 @@ export default function AccountSettingsModal({ onClose }: Props) {
               <label className="label">Current Password</label>
               <div className="relative">
                 <input
-                  className="input pr-10" type={showCurrentPw ? 'text' : 'password'}
+                  className="input pr-11" type={showCurrentPw ? 'text' : 'password'}
                   placeholder="Enter current password"
                   value={currentPw} onChange={e => setCurrentPw(e.target.value)}
                 />
                 <button type="button" onClick={() => setShowCurrentPw(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-bark-400 hover:text-bark-700">
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-bark-400 hover:text-espresso-800">
                   {showCurrentPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
@@ -213,12 +247,12 @@ export default function AccountSettingsModal({ onClose }: Props) {
               <label className="label">New Password</label>
               <div className="relative">
                 <input
-                  className="input pr-10" type={showNewPw ? 'text' : 'password'}
+                  className="input pr-11" type={showNewPw ? 'text' : 'password'}
                   placeholder="At least 6 characters"
                   value={newPw} onChange={e => setNewPw(e.target.value)}
                 />
                 <button type="button" onClick={() => setShowNewPw(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-bark-400 hover:text-bark-700">
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-bark-400 hover:text-espresso-800">
                   {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
@@ -231,20 +265,20 @@ export default function AccountSettingsModal({ onClose }: Props) {
                 onKeyDown={e => e.key === 'Enter' && handleChangePassword()}
               />
               {confirmPw && newPw !== confirmPw && (
-                <p className="text-xs text-red-500 mt-1">Passwords do not match</p>
+                <p className="text-xs text-red-500 mt-1.5 px-1">Passwords do not match</p>
               )}
             </div>
           </div>
         )}
 
         {/* Footer */}
-        <div className="flex gap-3 px-6 py-4 border-t border-cream-100">
+        <div className="modal-footer">
           <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
           {activeTab === 'profile' ? (
             <button
               onClick={handleSaveProfile}
               disabled={savingProfile || uploadingPhoto}
-              className="btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-60"
+              className="btn-primary flex-1"
             >
               {savingProfile && <Loader2 className="w-4 h-4 animate-spin" />}
               {savingProfile ? 'Saving…' : 'Save Profile'}
@@ -253,7 +287,7 @@ export default function AccountSettingsModal({ onClose }: Props) {
             <button
               onClick={handleChangePassword}
               disabled={savingPw || !currentPw || !newPw || newPw !== confirmPw}
-              className="btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-60"
+              className="btn-primary flex-1"
             >
               {savingPw && <Loader2 className="w-4 h-4 animate-spin" />}
               {savingPw ? 'Updating…' : 'Change Password'}

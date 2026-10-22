@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import type { Order } from '@/types';
-import { format } from 'date-fns';
-import { ShoppingBag, TrendingUp, Coffee, Clock } from 'lucide-react';
+import { format, startOfDay, endOfDay } from 'date-fns';
+import { ShoppingBag, TrendingUp, Clock, ArrowRight, Receipt } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import StatCard from '@/components/shared/StatCard';
+import { CoffeeBean, CoffeeBranch } from '@/components/shared/Decor';
 
 export default function StaffDashboard() {
   const { currentUser } = useAuth();
@@ -20,24 +22,20 @@ export default function StaffDashboard() {
     if (!currentUser) return;
     setLoading(true);
     try {
+      // Today's orders by LOCAL day. (createdAt is a UTC ISO string, so matching
+      // it against today's local date string missed everything before 8 AM in PH.)
+      // Cashier is filtered in JS to avoid a composite index requirement.
+      const now = new Date();
       const q = query(
         collection(db, 'orders'),
-        where('cashierId', '==', currentUser.id),
+        where('createdAt', '>=', startOfDay(now).toISOString()),
+        where('createdAt', '<=', endOfDay(now).toISOString()),
+        orderBy('createdAt', 'desc'),
       );
       const snap = await getDocs(q);
-      const allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() } as Order));
-
-      const todayStr = format(new Date(), 'yyyy-MM-dd');
-      const todayOrders = allOrders.filter(o => {
-        const raw = o.createdAt as any;
-        const iso = typeof raw === 'string' ? raw : raw?.toDate?.().toISOString() ?? '';
-        return iso.startsWith(todayStr);
-      });
-
-      const sorted = todayOrders.sort((a, b) => {
-        const toIso = (v: any) => typeof v === 'string' ? v : v?.toDate?.().toISOString() ?? '';
-        return toIso(b.createdAt) > toIso(a.createdAt) ? 1 : -1;
-      });
+      const sorted = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as Order))
+        .filter(o => o.cashierId === currentUser.id);
 
       setMyOrders(sorted);
 
@@ -58,74 +56,64 @@ export default function StaffDashboard() {
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 animate-fade-in">
-      {/* Greeting */}
-      <div className="bg-gradient-to-r from-espresso-700 to-espresso-600 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden">
-        <div className="absolute right-6 top-6 opacity-20">
-          <Coffee className="w-20 h-20 sm:w-24 sm:h-24" />
-        </div>
-        <p className="text-espresso-200 text-sm font-body">{format(now, 'EEEE, MMMM d, yyyy')}</p>
-        <h1 className="font-display text-2xl sm:text-3xl mt-1">{greeting}, {currentUser?.displayName?.split(' ')[0]}!</h1>
-        <p className="text-espresso-200 mt-2 text-sm">Ready to serve some great coffee today?</p>
-        <Link
-          to="/staff/pos"
-          className="mt-4 inline-flex items-center gap-2 bg-white text-espresso-700 px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-cream-50 transition-colors"
-        >
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 animate-fade-in max-w-[1400px] mx-auto">
+      {/* Greeting banner — hero photo on espresso, like the landing hero */}
+      <div className="relative overflow-hidden rounded-4xl espresso-surface text-cream-50 p-6 sm:p-8 lg:p-10 shadow-lift isolate">
+        <img
+          src="/images/about.jpg" alt="" aria-hidden="true"
+          className="absolute inset-y-0 right-0 -z-10 h-full w-2/3 object-cover opacity-60 [mask-image:linear-gradient(to_left,black_30%,transparent)]"
+        />
+        <CoffeeBranch className="absolute -bottom-10 left-1/3 w-64 opacity-20 -z-10" />
+        <CoffeeBean className="hidden sm:block absolute right-10 top-8 w-6 animate-float" />
+
+        <p className="text-caramel-200/90 text-sm">{format(now, 'EEEE, MMMM d, yyyy')}</p>
+        <p className="font-script text-4xl sm:text-5xl text-caramel-300 mt-2 leading-none">{greeting},</p>
+        <h1 className="font-display text-3xl sm:text-4xl font-semibold mt-1">{currentUser?.displayName?.split(' ')[0]}!</h1>
+        <p className="text-cream-100/80 mt-3 text-sm sm:text-base max-w-md">Ready to serve some great coffee today?</p>
+        <Link to="/staff/pos" className="btn-caramel mt-6 px-6 py-3">
           <ShoppingBag className="w-4 h-4" />
           Start Taking Orders
+          <ArrowRight className="w-4 h-4" />
         </Link>
       </div>
 
       {/* Today's Stats */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="card p-5">
-          <div className="w-10 h-10 bg-espresso-100 rounded-xl flex items-center justify-center mb-3">
-            <TrendingUp className="w-5 h-5 text-espresso-600" />
-          </div>
-          <p className="text-2xl font-display font-semibold text-espresso-900">
-            {loading ? '—' : formatCurrency(todayStats.sales)}
-          </p>
-          <p className="text-sm text-bark-500 mt-0.5">My Sales Today</p>
-        </div>
-        <div className="card p-5">
-          <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center mb-3">
-            <ShoppingBag className="w-5 h-5 text-amber-600" />
-          </div>
-          <p className="text-2xl font-display font-semibold text-espresso-900">
-            {loading ? '—' : todayStats.orders}
-          </p>
-          <p className="text-sm text-bark-500 mt-0.5">Orders Processed</p>
-        </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <StatCard icon={TrendingUp} label="My Sales Today" value={formatCurrency(todayStats.sales)} loading={loading} tone="espresso" />
+        <StatCard icon={ShoppingBag} label="Orders Processed" value={String(todayStats.orders)} loading={loading} tone="caramel" />
       </div>
 
       {/* Recent Orders */}
       <div className="card p-6">
-        <h2 className="font-display text-lg text-espresso-800 mb-4 flex items-center gap-2">
-          <Clock className="w-5 h-5" /> My Recent Orders
+        <h2 className="font-display text-xl text-espresso-900 mb-4 flex items-center gap-2">
+          <Clock className="w-5 h-5 text-caramel-600" /> My Recent Orders
         </h2>
         {loading ? (
           <div className="space-y-3">
             {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-14 bg-cream-100 rounded-xl animate-pulse" />
+              <div key={i} className="h-14 bg-cream-200 rounded-2xl animate-pulse" />
             ))}
           </div>
         ) : myOrders.length === 0 ? (
           <div className="text-center py-12 text-bark-400">
             <ShoppingBag className="w-8 h-8 mx-auto mb-2 opacity-30" />
             <p className="text-sm">No orders yet today</p>
-            <Link to="/staff/pos" className="text-espresso-600 hover:underline text-sm mt-1 inline-block">
+            <Link to="/staff/pos" className="text-caramel-700 font-semibold hover:underline text-sm mt-1 inline-block">
               Start taking orders →
             </Link>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {myOrders.slice(0, 10).map(order => (
-              <div key={order.id} className="flex items-center justify-between py-2.5 px-3 bg-cream-50 rounded-xl">
-                <div>
-                  <p className="text-sm font-medium text-espresso-800">{order.orderNumber}</p>
+              <div key={order.id} className="flex items-center gap-3 py-2.5 px-3 bg-cream-100 border border-cream-300/60 rounded-2xl">
+                <span className="w-9 h-9 rounded-2xl bg-cream-200 text-caramel-700 flex items-center justify-center flex-shrink-0">
+                  <Receipt className="w-4 h-4" />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-espresso-800 truncate">{order.orderNumber}</p>
                   <p className="text-xs text-bark-400">{formatDateTime(order.createdAt)}</p>
                 </div>
-                <p className="text-sm font-semibold text-espresso-700">{formatCurrency(order.total)}</p>
+                <p className="text-sm font-semibold text-espresso-800">{formatCurrency(order.total)}</p>
               </div>
             ))}
           </div>

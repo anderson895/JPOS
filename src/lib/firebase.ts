@@ -1,9 +1,12 @@
 import { initializeApp, deleteApp } from "firebase/app";
 import {
   getAuth,
+  initializeAuth,
+  inMemoryPersistence,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
+  deleteUser,
 } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
@@ -25,6 +28,16 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 
 /**
+ * A throwaway app whose auth session lives only in memory, so nothing it signs
+ * in is ever written to IndexedDB or mixed up with the admin's own session.
+ */
+function createSecondaryAuth(prefix: string) {
+  const secondaryApp = initializeApp(firebaseConfig, `${prefix}-${Date.now()}`);
+  const secondaryAuth = initializeAuth(secondaryApp, { persistence: inMemoryPersistence });
+  return { secondaryApp, secondaryAuth };
+}
+
+/**
  * Creates a new Firebase Auth user WITHOUT touching the current session.
  *
  * `createUserWithEmailAndPassword` automatically signs the new user in on the
@@ -32,16 +45,28 @@ export const storage = getStorage(app);
  * on a throwaway secondary app, then tear that app down. The primary `auth`
  * (the admin's session) is never affected.
  *
+ * `onCreated` runs while the new account still exists in isolation (e.g. to
+ * write its Firestore profile). If it throws, the new login is deleted again,
+ * so a failed save never leaves an orphan account whose email can't be reused.
+ *
  * @returns the new user's uid
  */
 export async function createUserWithoutSignIn(
   email: string,
-  password: string
+  password: string,
+  onCreated?: (uid: string) => Promise<void>
 ): Promise<string> {
-  const secondaryApp = initializeApp(firebaseConfig, `secondary-${Date.now()}`);
+  const { secondaryApp, secondaryAuth } = createSecondaryAuth('secondary');
   try {
-    const secondaryAuth = getAuth(secondaryApp);
     const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+    if (onCreated) {
+      try {
+        await onCreated(cred.user.uid);
+      } catch (err) {
+        await deleteUser(cred.user).catch(() => { /* best effort */ });
+        throw err;
+      }
+    }
     await signOut(secondaryAuth);
     return cred.user.uid;
   } finally {
@@ -57,9 +82,8 @@ export async function createUserWithoutSignIn(
  * Throws a FirebaseError (e.g. auth/invalid-credential) if the password is wrong.
  */
 export async function verifyCredentials(email: string, password: string): Promise<void> {
-  const secondaryApp = initializeApp(firebaseConfig, `verify-${Date.now()}`);
+  const { secondaryApp, secondaryAuth } = createSecondaryAuth('verify');
   try {
-    const secondaryAuth = getAuth(secondaryApp);
     await signInWithEmailAndPassword(secondaryAuth, email, password);
     await signOut(secondaryAuth);
   } finally {

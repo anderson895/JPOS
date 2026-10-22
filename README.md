@@ -2,6 +2,8 @@
 
 A full-featured POS and inventory management system built with **React + TypeScript + Tailwind CSS + Firebase**.
 
+📄 **Backend change log:** see [`docs/BACKEND_CHANGES.md`](docs/BACKEND_CHANGES.md) for every bug fix, the new Google sign-in, and the Firebase steps still to do.
+
 ---
 
 ## 🚀 Getting Started
@@ -31,6 +33,17 @@ npm run build
 ### 1. Authentication
 In Firebase Console → Authentication → Sign-in methods:
 - Enable **Email/Password**
+- Enable **Google** (for "Continue with Google")
+
+For Google sign-in on the live site, also add its domain (e.g. `your-app.vercel.app`) under
+Authentication → Settings → **Authorized domains** (`localhost` is allowed by default).
+
+How Google sign-in works in JPOS:
+- Only emails already in JPOS can use it (added in **Manage Staff**, or the first admin). Unknown Google accounts are turned away.
+- For a **Gmail** address, Firebase signs in to the existing JPOS account (same user). If that email was never verified,
+  Firebase removes the account's password at that moment. JPOS puts it back automatically when the person has an RFID card;
+  otherwise that person keeps using Google sign-in from then on.
+- A non-Gmail email that already has a password login can't use Google; keep using email/password or RFID.
 
 ### 2. Firestore Database
 Create the following collections:
@@ -97,6 +110,10 @@ Create the following collections:
 
 ### 3. Firestore Security Rules
 
+> ⚠️ These rules only take effect once published in **Firebase Console → Firestore Database → Rules**.
+> The previous version let anyone list every RFID card (with its saved password) and let any
+> signed-in user give themselves the `admin` role — publish this version to close both holes.
+
 ```javascript
 rules_version = '2';
 service cloud.firestore {
@@ -112,10 +129,16 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if true;
-      allow create: if request.auth.uid == userId || isAdmin();
-      allow update: if request.auth.uid == userId || isAdmin();
-      allow delete: if isAdmin();
+      // Own profile only; admins can see everyone (Staff Management)
+      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      // Only admins create/delete accounts (create the very first admin in the console)
+      allow create, delete: if isAdmin();
+      // Users may change their own name/photo — never their role or active status
+      allow update: if isAdmin() || (
+        request.auth != null && request.auth.uid == userId &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['displayName', 'photoURL', 'updatedAt'])
+      );
     }
     match /products/{id} {
       allow read: if isActiveUser();
@@ -127,15 +150,19 @@ service cloud.firestore {
     }
     match /orders/{id} {
       allow read: if isActiveUser();
-      allow create: if isActiveUser();
+      // Cashiers can only record orders under their own account
+      allow create: if isActiveUser() && request.resource.data.cashierId == request.auth.uid;
       allow update, delete: if isAdmin();
     }
 
-    // ✅ any authenticated user pwede mag-write
-    // kailangan dahil nag-switch ng session pagka-create ng staff
+    // RFID login looks up a single card BEFORE signing in, so `get` stays public,
+    // but listing all cards (and their saved passwords) is blocked.
+    // Staff accounts are created on a secondary app, so the admin's session
+    // stays signed in and admin-only writes work.
     match /rfidCards/{tag} {
-      allow read: if true;
-      allow write: if request.auth != null;
+      allow get: if true;
+      allow list: if false;
+      allow write: if isAdmin();
     }
   }
 }
@@ -143,7 +170,7 @@ service cloud.firestore {
 
 ### 4. Creating First Admin
 
-Since RFID login bypasses Firebase Auth, create the first admin manually:
+JPOS never creates an admin automatically, and with the rules above only an admin can create accounts, so create the first admin manually:
 
 1. Go to Firebase Console → Authentication → Users → Add User
 2. Add email/password
@@ -169,6 +196,7 @@ Since RFID login bypasses Firebase Auth, create the first admin manually:
 
 ### Authentication
 - Email/Password login
+- Google sign-in (registered accounts only)
 - RFID card scan (physical reader emulates keyboard)
 - Role-based access (admin vs staff)
 
