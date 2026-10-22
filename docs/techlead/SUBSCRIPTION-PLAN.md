@@ -368,3 +368,23 @@ JPOS stops being coffee-only. The owner's choices:
 | 1: Multi-store | tenancy core (as in §5) | **WO-6** theme tokens → CSS variables + 6 themes + remove the coffee decor from the tenant app (no Firestore; can run alongside the backend's tenancy work) |
 | **B: Multi-business POS + branding** | profile/branding/addOnGroups helpers + rules + tests; the product/order model; `CartContext` lineKey + pricing; `businessTemplates.ts` | Products editor (variants, add-on groups, unit, SKU/barcode, duration), POS pickers (variant/add-on sheet, decimal qty, barcode scan, order type/table, service staff), Settings → Business + Branding pages, branded shell/terminal/receipt |
 | 2: Subscriptions | as in §5, plus the registration business-type step + sample-menu seeding | `/subscribe` with the business-type + features step, as in §5 |
+
+---
+
+## 10. Owner decisions, 2026-10-23 (these supersede earlier sections where they differ)
+| Topic | Decision |
+|---|---|
+| **No free trial → SETUP MODE** | Anyone can create an account. Signup (`/subscribe`: shop name, link/slug, desired package, email + password, then email verification) creates the shop in **`status: 'setup'`**. In setup mode the shop can **prepare everything**: menu/products, staff accounts, logo/branding, its own GCash/Maya QR. **The POS is locked: no orders** until the Super Admin approves a payment. Entitlements during setup = the desired package's (staff limit, RFID), so setup isn't blocked; approval then snapshots the **paid** package. `trials/{uid}` and `trialDays` are dropped from the design |
+| Access after payment | Only the package they paid for (entitlements snapshot), until the exact `currentPeriodEnd`; then **read-only** (no sales, no edits) until a renewal is approved |
+| Payment flow | Account first → **"Get Started" / Billing**: pick a package → the Super Admin's QR(s) + price → pay → **attach the receipt screenshot + reference no.** → "Pending verification". Contact the owner on **Messenger** or by phone **09454454744** (`platform/settings.contactPhone`, editable, shown **behind login only**: Billing + pending pages, not the public landing) |
+| Phase order | **P1 multi-store → P2 subscriptions → B multi-business + branding** |
+| Interim (live on main) | Pricing buttons open Messenger with a ready-made message, until `/subscribe` exists |
+| UI rule | **No emoji icons**; lucide-react only |
+
+### 10.1 Rules impact (replaces the trial parts of contract v2 §4/§3)
+- `canSetup(t)` = `!suspended && (status == 'setup' || (status == 'active' && request.time < currentPeriodEnd))`. Required for products, categories, settings/*, addOnGroups, staff create/delete (with the counter), and rfidCards.
+- `canSell(t)` = `!suspended && status == 'active' && request.time < currentPeriodEnd`. Required for orders and paymentRefs.
+- Shop creation batch (self-serve, after `email_verified`): `tenants/{T}` (`status 'setup'`, `entitlements ==` the desired plan's from `platform/settings`, `staffCount 1`, `ownerUid == me`) + `slugs/{slug}` + `users/{me}` (admin). There's no trial marker; one shop per login is still enforced by `!exists(users/{me})`.
+- Payment request / approval / reject / cancel / suspend / audit: unchanged from contract v2 (with C1–C9). Approval moves `setup → active` and sets `currentPeriodEnd = max(now, end) + 1 month` (bounds-checked).
+- Housekeeping idea (later): the Super Admin can delete abandoned setup shops (no payment after N days).
+
