@@ -36,7 +36,11 @@ export interface Deps {
   now: () => Date;
 }
 
-export const notSetUp = () => new ApiError(503, 'not_configured', "Email isn't set up on the server yet. Please contact us.");
+/** The visitor sees a plain message; the Vercel logs say which setting is missing. */
+export const notSetUp = (missing?: string) => {
+  if (missing) console.error(`[api] not set up: ${missing}`);
+  return new ApiError(503, 'not_configured', "Email isn't set up on the server yet. Please contact us.");
+};
 
 /**
  * Local test mode only (npm run dev): the Firebase emulators, which need
@@ -70,7 +74,7 @@ function adminApp(env: Env): App {
   }
   // This computer, against production: a key file path in GOOGLE_APPLICATION_CREDENTIALS
   if (env.GOOGLE_APPLICATION_CREDENTIALS) return initializeApp({ credential: applicationDefault() });
-  throw notSetUp();
+  throw notSetUp('FIREBASE_SERVICE_ACCOUNT is missing (Vercel: Settings > Environment Variables, for Production, then Redeploy)');
 }
 
 // Module scope so a warm serverless instance reuses the open Gmail connection settings
@@ -79,7 +83,7 @@ let gmail: Transporter | undefined;
 function gmailMailer(env: Env): Mailer {
   const user = env.GMAIL_USER?.trim();
   const pass = env.GMAIL_APP_PASSWORD?.replace(/\s+/g, '');
-  if (!user || !pass) throw notSetUp();
+  if (!user || !pass) throw notSetUp('GMAIL_USER or GMAIL_APP_PASSWORD is missing (Vercel: Settings > Environment Variables, then Redeploy)');
   // Time limits well inside the function's own, so a stalled Gmail fails fast and cleanly
   gmail ??= nodemailer.createTransport({
     host: 'smtp.gmail.com', port: 465, secure: true, auth: { user, pass },

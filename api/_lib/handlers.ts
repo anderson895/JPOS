@@ -32,11 +32,11 @@ export function appUrl(deps: Deps, request: Request): string {
   const { env } = deps;
   const fixed = env.APP_URL?.trim() || (env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL.trim()}` : '');
   if (fixed) {
-    if (!/^https?:\/\/[^\s/]+/.test(fixed)) throw notSetUp();
+    if (!/^https?:\/\/[^\s/]+/.test(fixed)) throw notSetUp(`APP_URL is not a web address: ${fixed.slice(0, 60)}`);
     return fixed.replace(/\/+$/, '');
   }
   if (env.JPOS_DEV_API === '1' || isLocalTest(env)) return new URL(request.url).origin;
-  throw notSetUp();
+  throw notSetUp('the app address is unknown: set APP_URL (e.g. https://jpos-mu.vercel.app)');
 }
 
 /** Who gets the new-payment emails: NOTIFY_EMAIL (comma-separated), else the Gmail account itself. */
@@ -132,7 +132,7 @@ export function paymentNoticeHandler(getDeps: GetDeps = defaultDeps) {
     if (payment.status !== 'pending') return json({ sent: false, reason: 'not_pending' });
 
     const to = recipients(deps);
-    if (!to.length) throw notSetUp();
+    if (!to.length) throw notSetUp('no one to email: set NOTIFY_EMAIL or GMAIL_USER');
     const base = appUrl(deps, request);
     const mailer = deps.mailer();
     const reservedAt = deps.now();
