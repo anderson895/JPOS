@@ -60,6 +60,12 @@ export const TESTIMONIALS = [
   { quote: 'Our staff learned it in a day. Sales and staff in one app.', name: 'Ana Reyes', role: 'Salon owner' },
 ]
 
+/**
+ * Where interested shops reach the owner until self-serve sign-up exists (Phase 2).
+ * The pricing buttons open Messenger with a ready-made message.
+ */
+export const MESSENGER_URL = 'https://m.me/joshuapadilla895';
+
 // Packages from the approved plan (docs/techlead/SUBSCRIPTION-PLAN.md → "Packages").
 // Defaults only: the Super Admin will be able to edit prices, limits and features (Phase 2).
 export const PLANS = [
@@ -73,7 +79,7 @@ export const PLANS = [
       'Reports: Today / This Week',
       'Messenger support',
     ],
-    cta: 'Get Started', action: 'login' as const,
+    cta: 'Get Started',
   },
   {
     name: 'Business Plan', tagline: 'For growing businesses', price: '₱999',
@@ -85,7 +91,7 @@ export const PLANS = [
       'RFID card login for staff',
       'Messenger support',
     ],
-    cta: 'Get Started', action: 'login' as const, popular: true,
+    cta: 'Get Started', popular: true,
   },
   {
     name: 'Enterprise', tagline: 'For large teams', price: '₱1,999',
@@ -94,7 +100,7 @@ export const PLANS = [
       'Everything in Business',
       'Priority support (Messenger)',
     ],
-    cta: 'Contact Us', action: 'contact' as const,
+    cta: 'Contact Us', outline: true,
   },
 ];
 

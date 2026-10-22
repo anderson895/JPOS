@@ -19,3 +19,13 @@ export function openExternal(url: string, label: string) {
   if (url) window.open(url, url.startsWith('mailto:') ? '_self' : '_blank', 'noopener,noreferrer');
   else toast(`${label} is coming soon.`, { icon: '☕' });
 }
+
+/**
+ * Opens Messenger with a ready-made message. m.me doesn't always prefill the
+ * text, so it's also copied to the clipboard (best effort) to paste.
+ */
+export function openMessenger(url: string, message: string) {
+  navigator.clipboard?.writeText(message).catch(() => { /* clipboard blocked */ });
+  window.open(`${url}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+  toast('Opening Messenger. Your message is copied, so paste it if the chat is empty.', { icon: '💬', duration: 6000 });
+}

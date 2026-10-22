@@ -1,8 +1,8 @@
 import type { CSSProperties } from 'react';
 import { Check, Users } from 'lucide-react';
 import { CoffeeBean, CoffeeBranch, SectionTitle } from '@/components/shared/Decor';
-import { PLANS } from './content';
-import { focusLogin, scrollToSection } from './scroll';
+import { MESSENGER_URL, PLANS } from './content';
+import { openMessenger } from './scroll';
 import { cn } from '@/lib/utils';
 
 export default function PricingSection() {
@@ -54,8 +54,9 @@ export default function PricingSection() {
               </ul>
               <div className="mt-auto pt-7">
                 <button
-                  onClick={() => (plan.action === 'login' ? focusLogin() : scrollToSection('contact'))}
-                  className={cn(plan.action === 'contact' ? 'btn-outline' : 'btn-primary', plan.popular ? 'w-full' : 'px-8')}
+                  // Until self-serve sign-up exists (Phase 2), interested shops message the owner
+                  onClick={() => openMessenger(MESSENGER_URL, `Hi! Interested ako sa JPOS ${plan.name} (${plan.price}/month). Paano mag-subscribe?`)}
+                  className={cn(plan.outline ? 'btn-outline' : 'btn-primary', plan.popular ? 'w-full' : 'px-8')}
                 >
                   {plan.cta}
                 </button>

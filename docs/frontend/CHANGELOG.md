@@ -473,3 +473,9 @@ Checks: `tsc --strict --noUnusedLocals --noUnusedParameters` and `npm run build`
 - Until Phase B every shop uses the default (Espresso) theme. The landing page still forces the default.
 - Checks: `tsc --strict --noUnusedLocals --noUnusedParameters` passes.
 
+## 23. Pricing buttons open Messenger (interim, 2026-10-23)
+- Owner decision: until self-serve sign-up exists (Phase 2), interested shops contact the owner on Messenger.
+- All pricing buttons ("Get Started" ×2, "Contact Us") call `openMessenger()` (`landing/scroll.ts`). It opens `MESSENGER_URL` (`https://m.me/joshuapadilla895`, in `landing/content.ts`) with a ready-made message, e.g. "Hi! Interested ako sa JPOS Business Plan (₱999/month). Paano mag-subscribe?". It also copies that message to the clipboard, because m.me doesn't always prefill it.
+- `PLANS[].action` was replaced by an `outline` flag (Enterprise keeps the outline style).
+- Phase 2 replaces this with `/subscribe` (trial sign-up).
+
