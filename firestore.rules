@@ -35,13 +35,10 @@ service cloud.firestore {
     // the cashier vouches they saw the money arrive (verifiedBy), and the reference
     // is claimed in paymentRefs IN THE SAME BATCH, so it can never be used twice.
     //
-    // STAGE A (deploy now): an order WITHOUT a reference is still allowed, so the
-    // app that's live today (which never sends one) keeps taking GCash/Maya.
-    // STAGE B (only after the new app is live): delete the marked line so the
-    // reference becomes REQUIRED. See docs/backend/EWALLET_QR.md "Deploy in two stages".
+    // STAGE B (live since the new app shipped): the reference is REQUIRED for
+    // GCash/Maya. See docs/backend/EWALLET_QR.md "Deploy in two stages".
     function eWalletOk(id, o) {
       return !(o.paymentMethod in ['gcash', 'maya'])
-        || !('paymentReference' in o)   // STAGE A only — remove in stage B
         || (o.get('paymentReference', '') is string
             && o.get('paymentReference', '').matches('^[A-Z0-9]{6,30}$')
             && o.get('paymentVerification', '') == 'manual'

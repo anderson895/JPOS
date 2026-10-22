@@ -1,7 +1,9 @@
 # Store-QR e-wallet (GCash / Maya) + reconciliation
 
 > ## ⚠️ Deploy in two stages
-> **Stage A, safe to deploy now** (this is the current `firestore.rules`):
+> **Status (2026-10-23):** Stage A was deployed on 2026-10-22. The new app is live on https://jpos-mu.vercel.app (verified: its POS chunk sends `verifiedBy` + the reference). **`firestore.rules` in the repo is now Stage B** (the marked line is removed; rules suite 105/105 in stage B). It goes live when the owner runs `firebase deploy --only firestore:rules`.
+>
+> **Stage A** (deployed 2026-10-22):
 > - It adds `settings/payments` and `paymentRefs`.
 > - A GCash/Maya order **with** a reference must be valid and unique.
 > - An order **without** one is still allowed, so the app that's live today keeps taking GCash/Maya.

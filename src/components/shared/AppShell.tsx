@@ -3,8 +3,6 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import { LogOut, Menu, X, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import BrandMark from '@/components/shared/BrandMark';
-import DevThemeSwitcher from '@/components/shared/DevThemeSwitcher';
-import { applyTheme, DEFAULT_THEME, isThemeName, type ThemeName } from '@/components/shared/theme';
 import type { User } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -46,24 +44,8 @@ export default function AppShell({
   // Mobile drawer open/closed.
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Color theme for the tenant app. Until per-shop branding exists (Phase B) only the
-  // dev preview can change it: ?theme=… or the dev switcher (remembered per browser).
-  const [devTheme, setDevTheme] = useState<ThemeName>(() => {
-    if (!import.meta.env.DEV) return DEFAULT_THEME;
-    const fromUrl = new URLSearchParams(location.search).get('theme');
-    if (isThemeName(fromUrl)) return fromUrl;
-    try { const saved = localStorage.getItem('jpos-dev-theme'); if (isThemeName(saved)) return saved; } catch { /* storage blocked */ }
-    return DEFAULT_THEME;
-  });
-  const showDevSwitcher = import.meta.env.DEV && !new URLSearchParams(location.search).has('theme');
-  useEffect(() => {
-    applyTheme(devTheme);
-    return () => applyTheme(null); // leaving the app (e.g. sign out → landing) restores the default
-  }, [devTheme]);
-  const pickDevTheme = (t: ThemeName) => {
-    setDevTheme(t);
-    try { localStorage.setItem('jpos-dev-theme', t); } catch { /* storage blocked */ }
-  };
+  // The color theme comes from each store's Branding settings (Phase B, applyTheme in
+  // src/components/shared/theme.ts). Until then the app uses the default theme.
 
   // <main> is shared by every page, so its scroll position would carry over
   // (e.g. Reports opening half-way down after scrolling the Dashboard).
@@ -218,7 +200,6 @@ export default function AppShell({
       </div>
 
       {children}
-      {showDevSwitcher && <DevThemeSwitcher value={devTheme} onChange={pickDevTheme} />}
     </div>
   );
 }

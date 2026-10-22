@@ -466,3 +466,10 @@ Screenshots (dashboard + POS in all six themes): [`img/wo6-themes-dashboard.jpg`
 
 Checks: `tsc --strict --noUnusedLocals --noUnusedParameters` and `npm run build` pass.
 
+## 22. Dev theme switcher removed (2026-10-23)
+- The owner doesn't want a theme picker floating in the app: **each store will choose its theme in its own Branding settings** (Phase B, `settings/branding.theme`).
+- Removed `src/components/shared/DevThemeSwitcher.tsx` and the dev-theme state, `?theme=` handling and `localStorage` key in `AppShell.tsx`.
+- Kept: the 6 themes as CSS variables (`index.css`), `theme.ts` (`applyTheme`, `themeColor`) and the theme-aware charts/PDF. The Branding page will call `applyTheme(branding.theme)`.
+- Until Phase B every shop uses the default (Espresso) theme. The landing page still forces the default.
+- Checks: `tsc --strict --noUnusedLocals --noUnusedParameters` passes.
+
