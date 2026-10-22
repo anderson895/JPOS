@@ -320,7 +320,7 @@ export default function LoginCard({ terminalSlug }: {
         {!terminalSlug && (
           <p className="relative mt-5 flex items-start gap-2 text-left text-[11px] leading-relaxed text-bark-500">
             <CreditCard className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-caramel-600" aria-hidden="true" />
-            Signing in with an RFID card? Open your shop's terminal link (…/s/your-shop) on the counter device.
+            Have an RFID card? Tap it on your shop's POS device.
           </p>
         )}
 

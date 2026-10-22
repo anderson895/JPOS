@@ -37,7 +37,7 @@ export default function TerminalPage() {
 
   return (
     <div data-theme="espresso" className="min-h-dvh espresso-surface flex flex-col items-center justify-center gap-6 px-4 py-10">
-      <BrandMark tone="dark" subtitle="Shop terminal" />
+      <BrandMark tone="dark" subtitle="Staff sign-in" />
 
       {state === 'checking' && (
         <Loader2 className="w-8 h-8 animate-spin text-caramel-300" aria-label="Loading" />
@@ -46,9 +46,9 @@ export default function TerminalPage() {
       {state === 'invalid' && (
         <div className="max-w-sm rounded-3xl bg-cream-50 p-6 text-center text-espresso-900 shadow-lift">
           <AlertTriangle className="w-8 h-8 mx-auto text-amber-600" aria-hidden="true" />
-          <h1 className="mt-3 font-display text-xl">Terminal link not found</h1>
+          <h1 className="mt-3 font-display text-xl">Shop not found</h1>
           <p className="mt-2 text-sm text-bark-600">
-            Check the shop's link. It looks like <span className="font-mono">…/s/your-shop</span>.
+            This sign-in page doesn't belong to any shop. Ask the shop owner for the right link.
           </p>
           <a href="/login" className="btn-secondary mt-5 inline-flex">Go to sign in</a>
         </div>
@@ -58,7 +58,7 @@ export default function TerminalPage() {
         <>
           <p className="flex items-center gap-2 text-sm text-cream-200/80">
             <Store className="w-4 h-4" aria-hidden="true" />
-            <span className="font-mono">{slug.toLowerCase()}</span>
+            Tap your card to start your shift
           </p>
           <LoginCard terminalSlug={slug.toLowerCase()} />
         </>
