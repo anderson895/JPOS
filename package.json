@@ -37,8 +37,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test:unit": "node scripts/test-unit.mjs",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-jpos \"node tests/rules/tenant.rules.test.mjs\"",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-jpos \"node tests/rules/tenant.rules.test.mjs && node tests/rules/subscription.rules.test.mjs\"",
     "test:rules:transition": "firebase emulators:exec --only firestore --project demo-jpos \"node tests/rules/legacy.rules.test.mjs\"",
-    "migrate": "node scripts/migrate-to-tenant.mjs"
+    "migrate": "node scripts/migrate-to-tenant.mjs",
+    "dev:local": "node scripts/dev-local.mjs"
   }
 }

@@ -1,11 +1,15 @@
 import type { CSSProperties } from 'react';
 import { Check, Users } from 'lucide-react';
 import { CoffeeBean, CoffeeBranch, SectionTitle } from '@/components/shared/Decor';
-import { MESSENGER_URL, PLANS } from './content';
-import { openMessenger } from './scroll';
+import { useNavigate } from 'react-router-dom';
+import { PLANS } from './content';
+import ContactOwner, { usePlatformSettings } from '@/components/shared/ContactOwner';
 import { cn } from '@/lib/utils';
 
 export default function PricingSection() {
+  const navigate = useNavigate();
+  // Prices come from the Super Admin's settings (falls back to the defaults in content.ts)
+  const { settings } = usePlatformSettings();
   return (
     <section
       id="pricing"
@@ -37,7 +41,7 @@ export default function PricingSection() {
               <h3 className="font-body font-bold text-lg text-espresso-900">{plan.name}</h3>
               <p className="text-xs text-bark-500 mt-0.5">{plan.tagline}</p>
               <p className="mt-5 flex items-end justify-center gap-1">
-                <span className="font-display text-5xl font-bold text-espresso-900 leading-none">{plan.price}</span>
+                <span className="font-display text-5xl font-bold text-espresso-900 leading-none">{settings.plans[plan.id]?.price ? `₱${settings.plans[plan.id].price.toLocaleString('en-PH')}` : plan.price}</span>
                 <span className="text-sm text-bark-500 pb-1">/month</span>
               </p>
               {/* Account limit, highlighted */}
@@ -54,8 +58,7 @@ export default function PricingSection() {
               </ul>
               <div className="mt-auto pt-7">
                 <button
-                  // Until self-serve sign-up exists (Phase 2), interested shops message the owner
-                  onClick={() => openMessenger(MESSENGER_URL, `Hi! Interested ako sa JPOS ${plan.name} (${plan.price}/month). Paano mag-subscribe?`)}
+                  onClick={() => navigate(`/subscribe?plan=${plan.id}`)}
                   className={cn(plan.outline ? 'btn-outline' : 'btn-primary', plan.popular ? 'w-full' : 'px-8')}
                 >
                   {plan.cta}
@@ -63,6 +66,11 @@ export default function PricingSection() {
               </div>
             </div>
           ))}
+        </div>
+
+        <div className="mt-10 flex flex-col items-center gap-3 text-center">
+          <p className="text-sm text-bark-600">Questions before you start? Talk to us:</p>
+          <ContactOwner message="Hi! I'd like to know more about JPOS." />
         </div>
       </div>
     </section>

@@ -70,6 +70,7 @@ export const MESSENGER_URL = 'https://m.me/joshuapadilla895';
 // Defaults only: the Super Admin will be able to edit prices, limits and features (Phase 2).
 export const PLANS = [
   {
+    id: 'starter' as const,
     name: 'Starter Plan', tagline: 'Also included in the 7-day free trial', price: '₱499',
     accounts: 'Up to 3 accounts',
     features: [
@@ -82,6 +83,7 @@ export const PLANS = [
     cta: 'Get Started',
   },
   {
+    id: 'business' as const,
     name: 'Business Plan', tagline: 'For growing businesses', price: '₱999',
     accounts: 'Up to 10 accounts',
     features: [
@@ -94,13 +96,14 @@ export const PLANS = [
     cta: 'Get Started', popular: true,
   },
   {
+    id: 'enterprise' as const,
     name: 'Enterprise', tagline: 'For large teams', price: '₱1,999',
     accounts: 'Unlimited accounts',
     features: [
       'Everything in Business',
       'Priority support (Messenger)',
     ],
-    cta: 'Contact Us', outline: true,
+    cta: 'Get Started', outline: true,
   },
 ];
 

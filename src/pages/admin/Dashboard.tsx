@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react';
 import { query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { tenantCol } from '@/lib/tenant';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
-import { TrendingUp, ShoppingBag, Coffee, Receipt, CalendarDays, Award } from 'lucide-react';
+import { TrendingUp, ShoppingBag, Coffee, Receipt, CalendarDays, Award, Lock } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, BarChart, Bar
 } from 'recharts';
 import { format, subDays, startOfDay, endOfDay } from 'date-fns';
+import { useAuth } from '@/contexts/AuthContext';
 import PageHeader from '@/components/shared/PageHeader';
 import StatCard from '@/components/shared/StatCard';
 import { useChartTheme } from '@/components/shared/chartTheme';
@@ -22,7 +23,18 @@ function pctChange(current: number, previous: number): number | null {
   return previous ? ((current - previous) / previous) * 100 : null;
 }
 
+function TrendsLocked({ height }: { height: number }) {
+  return (
+    <div className="flex flex-col items-center justify-center text-center rounded-3xl bg-cream-100 border border-dashed border-cream-400 px-6" style={{ height }}>
+      <Lock className="w-6 h-6 text-caramel-600" aria-hidden="true" />
+      <p className="mt-2 text-sm text-bark-600">Sales trends are included in the Business and Enterprise packages.</p>
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
+  // 7-day trend charts are a package feature (Business and up)
+  const trends = !!useAuth().tenant?.entitlements?.trends;
   const { CHART, TOOLTIP_STYLE } = useChartTheme();
   const [weeklyData, setWeeklyData] = useState<DayStats[]>([]);
   const [recentOrders, setRecentOrders] = useState<Order[]>([]);
@@ -176,7 +188,7 @@ export default function AdminDashboard() {
             <h2 className="font-display text-xl text-espresso-900">Sales Overview</h2>
             <span className="badge-info">Last 7 days</span>
           </div>
-          <ResponsiveContainer width="100%" height={290}>
+          {trends ? <ResponsiveContainer width="100%" height={290}>
             <AreaChart data={weeklyData}>
               <defs>
                 <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
@@ -193,7 +205,7 @@ export default function AdminDashboard() {
               />
               <Area type="monotone" dataKey="sales" stroke={CHART.line} strokeWidth={2.5} fill="url(#salesGrad)" />
             </AreaChart>
-          </ResponsiveContainer>
+          </ResponsiveContainer> : <TrendsLocked height={290} />}
         </div>
 
         <div className="card p-6">
@@ -229,7 +241,7 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="card p-6">
           <h2 className="font-display text-xl text-espresso-900 mb-6">Daily Orders</h2>
-          <ResponsiveContainer width="100%" height={220}>
+          {trends ? <ResponsiveContainer width="100%" height={220}>
             <BarChart data={weeklyData}>
               <CartesianGrid strokeDasharray="3 4" stroke={CHART.grid} vertical={false} />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: CHART.tick }} axisLine={false} tickLine={false} />
@@ -237,7 +249,7 @@ export default function AdminDashboard() {
               <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: CHART.cursor }} />
               <Bar dataKey="orders" fill={CHART.accent} radius={[8, 8, 0, 0]} maxBarSize={36} />
             </BarChart>
-          </ResponsiveContainer>
+          </ResponsiveContainer> : <TrendsLocked height={220} />}
         </div>
 
         <div className="lg:col-span-2 card p-6">

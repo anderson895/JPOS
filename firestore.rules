@@ -1,9 +1,8 @@
 rules_version = '2';
-// JPOS multi-store rules (Phase 1). Every shop's data lives under tenants/{t}/…
-// and only that shop's active members can read it. See docs/backend/SAAS_V2_CONTRACT.md
-// and docs/techlead/SUBSCRIPTION-PLAN.md §10.1 (setup / trial / active).
-// The old single-store collections at the root are no longer matched, so they
-// are denied (deploy the app and run the migration FIRST: docs/backend/CUTOVER.md).
+// JPOS multi-store rules. Every shop's data lives under tenants/{t}/… and only
+// that shop's active members can read it. Subscriptions: a shop signs up in
+// SETUP mode (view-only), starts a one-time free TRIAL, or pays manually
+// (QR + receipt) and the Super Admin approves (ACTIVE until currentPeriodEnd).
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -14,24 +13,27 @@ service cloud.firestore {
     function memberOf(t)     { return hasProfile() && me().tenantId == t && me().isActive == true; }
     function adminOf(t)      { return memberOf(t) && me().role == 'admin'; }
     function isSuperAdmin()  { return signedIn() && exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)); }
+    function platform()      { return get(/databases/$(database)/documents/platform/settings).data; }
+    function d()             { return request.resource.data; }
+    function changed()       { return request.resource.data.diff(resource.data).affectedKeys(); }
 
     // ── The shop's subscription state (server clock, exact) ──────────────
     function shop(t)         { return get(/databases/$(database)/documents/tenants/$(t)).data; }
     function trialEnd(s)     { return s.trialStartedAt + duration.value(s.trialDays, 'd'); }
-    // Taking orders: a running trial, or a paid period that hasn't ended
-    function canSell(t) {
+    // Access (sell AND edit): a running free trial, or a paid period that hasn't
+    // ended. Before that (setup), after the trial, after expiry, or when
+    // suspended, the shop is VIEW-ONLY. Paying and starting the trial always work.
+    function hasAccess(t) {
       let s = shop(t);
       return s.suspended == false
         && ((s.status == 'trial' && request.time < trialEnd(s))
             || (s.status == 'active' && request.time < s.currentPeriodEnd));
     }
-    // Preparing the shop (menu, staff, settings): setup mode, any trial (even
-    // ended), or a paid period that hasn't ended. An expired paid shop is read-only.
-    function canSetup(t) {
-      let s = shop(t);
-      return s.suspended == false
-        && (s.status in ['setup', 'trial']
-            || (s.status == 'active' && request.time < s.currentPeriodEnd));
+
+    function validSlug(slug) {
+      return slug is string
+        && slug.matches('^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$')
+        && !(slug in ['admin', 'platform', 'login', 's', 'api', 'staff', 'subscribe', 'billing', 'help', 'www', 'app', 'jpos']);
     }
 
     // ── People: one shop per login (users/{uid}.tenantId) ────────────────
@@ -39,57 +41,259 @@ service cloud.firestore {
       allow get: if signedIn() && (request.auth.uid == uid || adminOf(resource.data.tenantId) || isSuperAdmin());
       // Lists must be pinned to the admin's own shop: where('tenantId', '==', T)
       allow list: if signedIn() && (adminOf(resource.data.tenantId) || isSuperAdmin());
-      // A shop admin adds people to their OWN shop only
-      allow create: if adminOf(request.resource.data.tenantId)
-        && canSetup(request.resource.data.tenantId)
-        && request.resource.data.keys().hasOnly(['tenantId', 'email', 'displayName', 'role', 'isActive', 'rfidTag', 'photoURL', 'createdAt', 'updatedAt'])
-        && request.resource.data.role in ['admin', 'staff']
-        && request.resource.data.isActive is bool;
+      allow create: if (
+          // A shop admin adds people to their OWN shop, counted against the package
+          adminOf(d().tenantId)
+          && hasAccess(d().tenantId)
+          && d().keys().hasOnly(['tenantId', 'email', 'displayName', 'role', 'isActive', 'rfidTag', 'photoURL', 'createdAt', 'updatedAt'])
+          && d().role in ['admin', 'staff']
+          && d().isActive is bool
+          && getAfter(/databases/$(database)/documents/tenants/$(d().tenantId)).data.staffCount == shop(d().tenantId).staffCount + 1
+          && getAfter(/databases/$(database)/documents/tenants/$(d().tenantId)).data.lastStaffChange == uid
+        ) || (
+          // A new owner's own profile, created together with their new shop
+          signedIn() && request.auth.uid == uid
+          && request.auth.token.email_verified == true
+          && d().keys().hasOnly(['tenantId', 'email', 'displayName', 'role', 'isActive', 'rfidTag', 'photoURL', 'createdAt', 'updatedAt'])
+          && d().role == 'admin' && d().isActive == true && d().rfidTag == ''
+          && d().photoURL == ''
+          && d().displayName is string && d().displayName.size() >= 1 && d().displayName.size() <= 60
+          && d().email == request.auth.token.email
+          && !exists(/databases/$(database)/documents/tenants/$(d().tenantId))
+          && getAfter(/databases/$(database)/documents/tenants/$(d().tenantId)).data.ownerUid == uid
+        );
       allow update: if (
           adminOf(resource.data.tenantId)
-          && canSetup(resource.data.tenantId)
+          && hasAccess(resource.data.tenantId)
           // nobody can be moved to another shop
-          && request.resource.data.tenantId == resource.data.tenantId
-          && request.resource.data.role in ['admin', 'staff']
+          && d().tenantId == resource.data.tenantId
+          && d().role in ['admin', 'staff']
           // the shop owner's role and active flag can only be changed by the owner
           && !(uid == shop(resource.data.tenantId).ownerUid && request.auth.uid != uid
-               && request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isActive']))
+               && changed().hasAny(['role', 'isActive']))
         ) || (
           // anyone may change their own name and photo, never their role or shop
           request.auth.uid == uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt'])
+          && changed().hasOnly(['displayName', 'photoURL', 'updatedAt'])
         );
       allow delete: if adminOf(resource.data.tenantId)
-        && canSetup(resource.data.tenantId)
+        && hasAccess(resource.data.tenantId)
         && uid != request.auth.uid
-        && uid != shop(resource.data.tenantId).ownerUid;
+        && uid != shop(resource.data.tenantId).ownerUid
+        && getAfter(/databases/$(database)/documents/tenants/$(resource.data.tenantId)).data.staffCount == shop(resource.data.tenantId).staffCount - 1
+        && getAfter(/databases/$(database)/documents/tenants/$(resource.data.tenantId)).data.lastStaffChange == uid;
     }
 
     // ── Public lookups ────────────────────────────────────────────────────
-    // A terminal (/s/:slug) finds its shop before anyone signs in
+    // The staff sign-in page (/s/:slug) finds its shop before anyone signs in
     match /slugs/{slug} {
       allow get: if true;
       allow list: if false;
-      allow write: if false;            // Phase 2: shop sign-up creates it
+      allow create: if signedIn()
+        && validSlug(slug)
+        && d().keys().hasOnly(['tenantId'])
+        && !exists(/databases/$(database)/documents/tenants/$(d().tenantId))
+        && getAfter(/databases/$(database)/documents/tenants/$(d().tenantId)).data.ownerUid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/tenants/$(d().tenantId)).data.slug == slug;
+      allow update, delete: if false;
     }
     match /platformAdmins/{uid} {
       allow get: if signedIn() && request.auth.uid == uid;
-      allow list, write: if false;      // created by hand in the Firebase Console
+      allow list, write: if false;      // created by hand / by the setup script only
+    }
+
+    // ── Platform settings (prices, packages, the Super Admin's payment QRs) ─
+    // Public: the landing page shows the prices and payers see the QR codes.
+    // Every change is paired with a NEW audit entry in the same batch.
+    function settingsOk() {
+      return d().updatedBy == request.auth.uid
+        && d().updatedAt == request.time
+        && d().lastAuditId is string
+        && !exists(/databases/$(database)/documents/platformAudit/$(d().lastAuditId))
+        && existsAfter(/databases/$(database)/documents/platformAudit/$(d().lastAuditId))
+        && d().trialDays is int && d().trialDays >= 1 && d().trialDays <= 30
+        && d().plans.keys().hasOnly(['starter', 'business', 'enterprise'])
+        && d().paymentChannels is map && d().paymentChannels.size() <= 10
+        && d().messengerUrl.matches('^https://(m[.]me|www[.]facebook[.]com)/.+')
+        && d().contactPhone is string && d().contactPhone.size() <= 30;
+    }
+    match /platform/settings {
+      allow get: if true;
+      allow list: if false;
+      allow create, update: if isSuperAdmin() && settingsOk();
+      allow delete: if false;
+    }
+    match /platformAudit/{id} {
+      allow get, list: if isSuperAdmin();
+      allow create: if isSuperAdmin()
+        && d().keys().hasOnly(['action', 'by', 'at', 'details'])
+        && d().by == request.auth.uid
+        && d().at == request.time
+        && d().action in ['settings.update', 'channel.update', 'plans.update', 'tenant.suspend', 'tenant.unsuspend', 'tenant.extend', 'tenant.adjust']
+        && d().details is map && d().details.size() <= 20;
+      allow update, delete: if false;
+    }
+
+    // ── Payment requests (manual: QR + receipt), reviewed by the Super Admin ─
+    match /subscriptionRequests/{id} {
+      allow get, list: if signedIn() && (isSuperAdmin() || adminOf(resource.data.tenantId));
+      // A shop admin sends a payment; allowed even when expired or suspended, so
+      // the shop can pay to reopen. Price and QR must match the current settings.
+      allow create: if adminOf(d().tenantId)
+        && d().keys().hasOnly(['tenantId', 'tenantName', 'uid', 'requesterName', 'plan', 'amount', 'months', 'channelId', 'channelLabel', 'channelAccountHint', 'reference', 'proofUrl', 'status', 'createdAt'])
+        && d().uid == request.auth.uid
+        && d().status == 'pending' && d().months == 1 && d().createdAt == request.time
+        && d().plan in ['starter', 'business', 'enterprise']
+        && d().amount == platform().plans[d().plan].price
+        && platform().paymentChannels[d().channelId].enabled == true
+        && d().channelLabel == platform().paymentChannels[d().channelId].label
+        && d().channelAccountHint == platform().paymentChannels[d().channelId].accountHint
+        && d().reference.matches('^[A-Z0-9]{6,30}$')
+        && d().proofUrl.matches('^https://.+') && d().proofUrl.size() <= 500
+        && d().tenantName == shop(d().tenantId).name
+        && d().requesterName is string && d().requesterName.size() <= 60
+        && getAfter(/databases/$(database)/documents/subscriptionRefs/$(d().channelId + '_' + d().reference)).data.requestId == id
+        && getAfter(/databases/$(database)/documents/tenants/$(d().tenantId)).data.pendingRequestId == id;
+      allow update: if (
+          // the shop takes back its own payment while it's still waiting
+          adminOf(resource.data.tenantId) && resource.data.status == 'pending'
+          && changed().hasOnly(['status']) && d().status == 'cancelled'
+          && getAfter(/databases/$(database)/documents/tenants/$(resource.data.tenantId)).data.pendingRequestId == null
+        ) || (
+          // the Super Admin approves or rejects (with a reason the shop sees)
+          isSuperAdmin() && resource.data.status == 'pending'
+          && d().status in ['approved', 'rejected']
+          && d().reviewedBy == request.auth.uid && d().reviewedAt == request.time
+          && changed().hasOnly(['status', 'reviewedBy', 'reviewedAt', 'reason'])
+          && (d().status == 'approved' || (d().reason is string && d().reason.size() >= 1 && d().reason.size() <= 300))
+          && getAfter(/databases/$(database)/documents/tenants/$(resource.data.tenantId)).data.pendingRequestId == null
+        );
+      allow delete: if false;
+    }
+    // One reference number = one payment, ever (created with its request)
+    match /subscriptionRefs/{key} {
+      allow get: if signedIn();
+      allow list: if isSuperAdmin();
+      allow create: if signedIn()
+        && d().keys().hasOnly(['requestId', 'uid', 'createdAt'])
+        && d().uid == request.auth.uid && d().createdAt == request.time
+        && getAfter(/databases/$(database)/documents/subscriptionRequests/$(d().requestId)).data.uid == request.auth.uid
+        && key == getAfter(/databases/$(database)/documents/subscriptionRequests/$(d().requestId)).data.channelId
+                  + '_' + getAfter(/databases/$(database)/documents/subscriptionRequests/$(d().requestId)).data.reference;
+      allow update: if false;
+      allow delete: if isSuperAdmin();
     }
 
     // ── A shop and everything in it ───────────────────────────────────────
     match /tenants/{t} {
       allow get: if memberOf(t) || isSuperAdmin();
       allow list: if isSuperAdmin();
-      allow write: if false;            // Phase 2: sign-up, trial start, Super Admin
+
+      // Sign-up: a verified new owner creates their shop in SETUP mode with the
+      // Starter package, together with its link and their profile (one batch).
+      allow create: if signedIn()
+        && request.auth.token.email_verified == true
+        && !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && d().keys().hasOnly(['name', 'slug', 'ownerUid', 'plan', 'desiredPlan', 'status', 'suspended', 'trialUsed', 'trialDays', 'entitlements', 'staffCount', 'lastStaffChange', 'pendingRequestId', 'createdAt', 'updatedAt'])
+        && d().ownerUid == request.auth.uid
+        && d().status == 'setup' && d().suspended == false && d().trialUsed == false
+        && d().trialDays == platform().trialDays
+        && d().plan == 'starter' && d().entitlements == platform().plans.starter.entitlements
+        && d().desiredPlan in ['starter', 'business', 'enterprise']
+        && d().staffCount == 1 && d().lastStaffChange == request.auth.uid
+        && d().pendingRequestId == null
+        && d().createdAt == request.time && d().updatedAt == request.time
+        && d().name is string && d().name.size() >= 2 && d().name.size() <= 60
+        && validSlug(d().slug)
+        && getAfter(/databases/$(database)/documents/slugs/$(d().slug)).data.tenantId == t
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId == t;
+
+      allow update: if startTrial() || counterUp() || counterDown() || openRequest() || cancelRequest()
+                    || superReview() || superAudited();
+      allow delete: if false;
+
+      // The one-time free trial, started by the shop's admin
+      function startTrial() {
+        return adminOf(t) && resource.data.suspended == false
+          && resource.data.status == 'setup' && resource.data.get('trialUsed', false) == false
+          && changed().hasOnly(['status', 'trialUsed', 'trialStartedAt', 'updatedAt'])
+          && d().status == 'trial' && d().trialUsed == true
+          && d().trialStartedAt == request.time && d().updatedAt == request.time;
+      }
+      // Account counter: +1 with a new person of this shop, within the package limit
+      function counterUp() {
+        return adminOf(t) && hasAccess(t)
+          && changed().hasOnly(['staffCount', 'lastStaffChange', 'updatedAt'])
+          && d().staffCount == resource.data.staffCount + 1
+          && (resource.data.entitlements.staffLimit == null || d().staffCount <= resource.data.entitlements.staffLimit)
+          && !exists(/databases/$(database)/documents/users/$(d().lastStaffChange))
+          && getAfter(/databases/$(database)/documents/users/$(d().lastStaffChange)).data.tenantId == t;
+      }
+      // -1 only with a person of this shop removed in the same batch (never the owner)
+      function counterDown() {
+        return adminOf(t) && hasAccess(t)
+          && changed().hasOnly(['staffCount', 'lastStaffChange', 'updatedAt'])
+          && d().staffCount == resource.data.staffCount - 1
+          && d().lastStaffChange != resource.data.ownerUid
+          && get(/databases/$(database)/documents/users/$(d().lastStaffChange)).data.tenantId == t
+          && !existsAfter(/databases/$(database)/documents/users/$(d().lastStaffChange));
+      }
+      // One open payment at a time; allowed while expired or suspended
+      function openRequest() {
+        return adminOf(t) && resource.data.get('pendingRequestId', null) == null
+          && changed().hasOnly(['pendingRequestId', 'updatedAt'])
+          && d().pendingRequestId is string
+          && !exists(/databases/$(database)/documents/subscriptionRequests/$(d().pendingRequestId))
+          && getAfter(/databases/$(database)/documents/subscriptionRequests/$(d().pendingRequestId)).data.tenantId == t
+          && getAfter(/databases/$(database)/documents/subscriptionRequests/$(d().pendingRequestId)).data.status == 'pending';
+      }
+      function cancelRequest() {
+        return adminOf(t) && resource.data.get('pendingRequestId', null) is string
+          && changed().hasOnly(['pendingRequestId', 'updatedAt'])
+          && d().pendingRequestId == null
+          && getAfter(/databases/$(database)/documents/subscriptionRequests/$(resource.data.pendingRequestId)).data.status == 'cancelled';
+      }
+      // The later of now and the end of the current trial / paid period
+      function periodBase() {
+        let s = resource.data;
+        let end = s.status == 'trial' ? trialEnd(s)
+                : (s.status == 'active' ? s.currentPeriodEnd : request.time);
+        return end > request.time ? end : request.time;
+      }
+      // Super Admin approves/rejects the shop's open payment (paired with the review).
+      // Approval never touches `suspended`; the new end must be about one month later.
+      function superReview() {
+        let reqId = resource.data.get('pendingRequestId', null);
+        let after = getAfter(/databases/$(database)/documents/subscriptionRequests/$(reqId)).data;
+        return isSuperAdmin() && reqId is string
+          && get(/databases/$(database)/documents/subscriptionRequests/$(reqId)).data.status == 'pending'
+          && after.reviewedBy == request.auth.uid
+          && d().pendingRequestId == null && d().updatedAt == request.time
+          && ((after.status == 'rejected' && changed().hasOnly(['pendingRequestId', 'updatedAt']))
+              || (after.status == 'approved'
+                  && changed().hasOnly(['status', 'plan', 'entitlements', 'currentPeriodEnd', 'pendingRequestId', 'updatedAt'])
+                  && d().status == 'active' && d().plan == after.plan
+                  && d().entitlements == platform().plans[after.plan].entitlements
+                  && d().currentPeriodEnd >= periodBase() + duration.value(28, 'd') - duration.value(10, 'm')
+                  && d().currentPeriodEnd <= periodBase() + duration.value(31, 'd') + duration.value(10, 'm')));
+      }
+      // Super Admin manual changes (suspend, extend, fix), each with an audit entry about this shop
+      function superAudited() {
+        return isSuperAdmin()
+          && changed().hasOnly(['suspended', 'currentPeriodEnd', 'staffCount', 'status', 'plan', 'entitlements', 'lastAuditId', 'updatedAt'])
+          && d().lastAuditId is string
+          && d().lastAuditId != resource.data.get('lastAuditId', '')
+          && !exists(/databases/$(database)/documents/platformAudit/$(d().lastAuditId))
+          && getAfter(/databases/$(database)/documents/platformAudit/$(d().lastAuditId)).data.details.tenantId == t;
+      }
 
       match /products/{id} {
         allow read: if memberOf(t);
-        allow write: if adminOf(t) && canSetup(t);
+        allow write: if adminOf(t) && hasAccess(t);
       }
       match /categories/{id} {
         allow read: if memberOf(t);
-        allow write: if adminOf(t) && canSetup(t);
+        allow write: if adminOf(t) && hasAccess(t);
       }
 
       // GCash/Maya through the shop's own QR: the e-wallet reference must be valid,
@@ -112,17 +316,17 @@ service cloud.firestore {
       match /orders/{id} {
         allow read: if memberOf(t);
         // Cashiers record sales under their own account, only while the shop may sell
-        allow create: if memberOf(t) && canSell(t)
+        allow create: if memberOf(t) && hasAccess(t)
           && request.resource.data.cashierId == request.auth.uid
           && eWalletOk(id, request.resource.data) && cardOk(request.resource.data);
-        allow update, delete: if adminOf(t) && canSetup(t);
+        allow update, delete: if adminOf(t) && hasAccess(t);
       }
 
       // One e-wallet reference = one order (created in the order's batch)
       match /paymentRefs/{key} {
         allow get: if memberOf(t);      // so the POS can say which order already used it
         allow list: if adminOf(t);
-        allow create: if memberOf(t) && canSell(t)
+        allow create: if memberOf(t) && hasAccess(t)
           && request.resource.data.keys().hasOnly(['orderId', 'orderNumber', 'cashierId', 'method', 'reference', 'createdAt'])
           && request.resource.data.cashierId == request.auth.uid
           && request.resource.data.method in ['gcash', 'maya']
@@ -152,7 +356,7 @@ service cloud.firestore {
       }
       match /settings/payments {
         allow read: if memberOf(t);
-        allow create, update: if adminOf(t) && canSetup(t)
+        allow create, update: if adminOf(t) && hasAccess(t)
           && request.resource.data.keys().hasOnly(['gcash', 'maya', 'card', 'updatedAt', 'updatedBy'])
           && validWallet(request.resource.data.gcash)
           && validWallet(request.resource.data.maya)
@@ -163,13 +367,13 @@ service cloud.firestore {
           && request.resource.data.updatedBy == request.auth.uid;
       }
 
-      // RFID: a terminal looks up ONE card before sign-in (public get, only when
-      // the shop's package includes RFID); listing cards is never allowed.
+      // RFID: the staff sign-in page looks up ONE card before sign-in (public get,
+      // only when the shop's package includes RFID); listing cards is never allowed.
       // Cards are never for admin accounts, and the card's owner must be in this shop.
       match /rfidCards/{tag} {
         allow get: if shop(t).entitlements.rfid == true;
         allow list: if false;
-        allow create, update: if adminOf(t) && canSetup(t)
+        allow create, update: if adminOf(t) && hasAccess(t)
           && shop(t).entitlements.rfid == true
           && getAfter(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.tenantId == t
           && getAfter(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.role != 'admin';

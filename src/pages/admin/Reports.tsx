@@ -13,7 +13,8 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
 } from 'recharts';
-import { TrendingUp, ShoppingBag, CreditCard, Download, Calendar, Loader2 } from 'lucide-react';
+import { TrendingUp, ShoppingBag, CreditCard, Download, Calendar, Loader2, Lock } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/shared/PageHeader';
 import StatCard from '@/components/shared/StatCard';
@@ -44,6 +45,11 @@ function toIso(v: any): string {
 export default function AdminReports() {
   const { CHART, CHART_SERIES: COLORS, TOOLTIP_STYLE, surface } = useChartTheme();
   const [range, setRange]           = useState<Range>('week');
+  // Package features: month/custom ranges and the PDF are Business and up
+  const { tenant } = useAuth();
+  const fullReports = !!tenant?.entitlements?.fullReports;
+  const pdfExport = !!tenant?.entitlements?.pdfExport;
+  const locked = (r: Range) => !fullReports && (r === 'month' || r === 'custom');
   const [orders, setOrders]         = useState<Order[]>([]);
   const [loading, setLoading]       = useState(true);
   const [pdfLoading, setPdfLoading] = useState(false);
@@ -377,9 +383,10 @@ export default function AdminReports() {
         subtitle="Sales analytics & insights"
         actions={
           <button
-            onClick={downloadPDF}
+            onClick={() => pdfExport ? downloadPDF() : toast('PDF reports are included in the Business and Enterprise packages.', { icon: <Lock className="w-4 h-4 text-caramel-600" aria-hidden="true" /> })}
             disabled={pdfLoading || loading}
             className="btn-primary"
+            title={pdfExport ? undefined : 'Business and Enterprise packages'}
           >
             {pdfLoading
               ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</>
@@ -395,9 +402,10 @@ export default function AdminReports() {
         </span>
         <div className="segmented w-full sm:w-auto overflow-x-auto scrollbar-none">
           {(['today', 'week', 'month', 'custom'] as Range[]).map(r => (
-            <button key={r} onClick={() => setRange(r)}
-              className={`segmented-item capitalize ${range === r ? 'active' : ''}`}>
-              {r}
+            <button key={r}
+              onClick={() => locked(r) ? toast('Monthly and custom reports are included in the Business and Enterprise packages.', { icon: <Lock className="w-4 h-4 text-caramel-600" aria-hidden="true" /> }) : setRange(r)}
+              className={`segmented-item capitalize ${range === r ? 'active' : ''} ${locked(r) ? 'opacity-60' : ''}`}>
+              {locked(r) && <Lock className="w-3 h-3" aria-hidden="true" />}{r}
             </button>
           ))}
         </div>

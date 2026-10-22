@@ -19,6 +19,8 @@ import {
   Banknote, Smartphone, CheckCircle, Printer, Coffee, Tag, Loader2, Maximize2, AlertTriangle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { Lock } from 'lucide-react';
+import { hasAccess, shopState } from '@/lib/entitlements';
 
 const PAYMENT_METHODS: { value: PaymentMethod; label: string; icon: any }[] = [
   { value: 'cash', label: 'Cash', icon: Banknote },
@@ -28,7 +30,7 @@ const PAYMENT_METHODS: { value: PaymentMethod; label: string; icon: any }[] = [
 ];
 
 export default function POSComponent() {
-  const { currentUser } = useAuth();
+  const { currentUser, tenant } = useAuth();
   const { items: cartItems, addItem, removeItem, updateQuantity, clearCart, subtotal, total, discount, setDiscount, discountType, setDiscountType, discountAmount, itemCount } = useCart();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -145,12 +147,37 @@ export default function POSComponent() {
     }
   }
 
+  // No sales until the free trial starts or a payment is approved (the rules enforce it too)
+  const locked = !!tenant && !hasAccess(tenant);
+
   function printReceipt() {
     window.print();
   }
 
   const cashierInitials = currentUser?.displayName
     ?.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) || '?';
+
+
+  if (locked && tenant) {
+    const st = shopState(tenant);
+    const isAdmin = currentUser?.role === 'admin';
+    return (
+      <div className="h-full flex items-center justify-center p-6">
+        <div className="card p-8 max-w-md text-center">
+          <Lock className="w-10 h-10 mx-auto text-caramel-600" aria-hidden="true" />
+          <h2 className="mt-3 font-display text-2xl text-espresso-900">Selling is locked</h2>
+          <p className="mt-2 text-sm text-bark-600">
+            {st === 'suspended' ? 'This shop is suspended. Please contact us.'
+              : st === 'setup' ? 'Start the free trial or subscribe to start taking orders.'
+              : 'Your free trial or subscription has ended. Renew to take orders again.'}
+          </p>
+          {isAdmin && st !== 'suspended'
+            ? <Link to="/admin/billing" className="btn-primary mt-5 inline-flex">Go to Subscription</Link>
+            : !isAdmin && <p className="mt-4 text-sm text-bark-500">Ask your shop owner.</p>}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex h-full">

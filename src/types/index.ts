@@ -27,10 +27,14 @@ export interface Entitlements {
 
 export type PlanId = 'starter' | 'business' | 'enterprise';
 
+/** Where a shop is in its subscription. */
+export type TenantStatus = 'setup' | 'trial' | 'active';
+
 /**
- * A subscribing shop: tenants/{id}. Written only by the platform (migration,
- * trial sign-up, Super Admin); shop admins can't change status/period/entitlements.
- * Firestore Timestamps are read as `{ toDate(): Date }`.
+ * A subscribing shop: tenants/{id}. Shop admins can only start the trial once and
+ * open/cancel a payment request; status, period and entitlements are written by
+ * the platform (sign-up, Super Admin approval). Firestore Timestamps are read as
+ * `{ toDate(): Date }`.
  */
 export interface Tenant {
   id: string;
@@ -38,13 +42,71 @@ export interface Tenant {
   slug: string;
   ownerUid: string;
   plan: PlanId;
-  status: 'trial' | 'active';
+  desiredPlan?: PlanId;
+  status: TenantStatus;
   suspended: boolean;
   createdAt: FirestoreTime;
   trialDays: number;
+  trialUsed?: boolean;
+  trialStartedAt?: FirestoreTime;
   currentPeriodEnd?: FirestoreTime;
   entitlements: Entitlements;
   staffCount: number;
+  pendingRequestId?: string | null;
+}
+
+/** A package as the Super Admin defines it (platform/settings.plans). */
+export interface PlanDef {
+  name: string;
+  /** Pesos per month */
+  price: number;
+  entitlements: Entitlements;
+}
+
+/** A QR the Super Admin receives subscription payments on. */
+export interface PaymentChannel {
+  label: string;
+  qrImageUrl: string;
+  accountName: string;
+  accountHint: string;
+  enabled: boolean;
+  order: number;
+}
+
+/** platform/settings: prices, packages, the Super Admin's payment QRs and contact. */
+export interface PlatformSettings {
+  plans: Record<PlanId, PlanDef>;
+  trialDays: number;
+  paymentChannels: Record<string, PaymentChannel>;
+  messengerUrl: string;
+  contactPhone: string;
+  lastAuditId: string;
+  updatedAt?: FirestoreTime;
+  updatedBy?: string;
+}
+
+export type RequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+
+/** subscriptionRequests/{id}: a shop's manual payment (QR + receipt) for a package. */
+export interface SubscriptionRequest {
+  id: string;
+  tenantId: string;
+  tenantName: string;
+  uid: string;
+  requesterName: string;
+  plan: PlanId;
+  amount: number;
+  months: number;
+  channelId: string;
+  channelLabel: string;
+  channelAccountHint: string;
+  reference: string;
+  proofUrl: string;
+  status: RequestStatus;
+  reason?: string;
+  reviewedBy?: string;
+  reviewedAt?: FirestoreTime;
+  createdAt: FirestoreTime;
 }
 
 /** A Firestore Timestamp as the client SDK returns it. */

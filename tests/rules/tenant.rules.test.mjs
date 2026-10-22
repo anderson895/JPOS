@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, collection, query, where, writeBatch, Timestamp,
+  increment, serverTimestamp,
 } from 'firebase/firestore';
 
 const [host, port] = (process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8085').split(':');
@@ -75,6 +76,20 @@ async function seed() {
   });
 }
 
+// Adding/removing a person must move the shop's account counter in the same batch
+const addPerson = (db, shopId, uid, data) => {
+  const b = writeBatch(db);
+  b.set(doc(db, `users/${uid}`), data);
+  b.update(doc(db, `tenants/${shopId}`), { staffCount: increment(1), lastStaffChange: uid, updatedAt: serverTimestamp() });
+  return b.commit();
+};
+const removePerson = (db, shopId, uid) => {
+  const b = writeBatch(db);
+  b.delete(doc(db, `users/${uid}`));
+  b.update(doc(db, `tenants/${shopId}`), { staffCount: increment(-1), lastStaffChange: uid, updatedAt: serverTimestamp() });
+  return b.commit();
+};
+
 const results = [];
 async function t(name, expect, fn) {
   await seed();
@@ -138,7 +153,8 @@ await t('inactive staff sells', 'deny', () => addDoc(collection(as('offA'), 'ten
 await t('staff lists people', 'deny', () => getDocs(query(collection(as('staffA'), 'users'), where('tenantId', '==', 'A'))));
 await t('admin lists own shop people', 'allow', () => getDocs(query(collection(as('ownerA'), 'users'), where('tenantId', '==', 'A'))));
 await t('staff reads own profile', 'allow', () => getDoc(doc(as('staffA'), 'users/staffA')));
-await t('admin adds staff to own shop', 'allow', () => setDoc(doc(as('ownerA'), 'users/new1'), user('A')));
+await t('admin adds staff to own shop', 'allow', () => addPerson(as('ownerA'), 'A', 'new1', user('A')));
+await t('admin adds staff WITHOUT moving the counter', 'deny', () => setDoc(doc(as('ownerA'), 'users/new1'), user('A')));
 await t('admin adds a person with extra fields', 'deny', () => setDoc(doc(as('ownerA'), 'users/new1'), { ...user('A'), superAdmin: true }));
 await t('staff adds a person', 'deny', () => setDoc(doc(as('staffA'), 'users/new1'), user('A')));
 await t('admin promotes staff', 'allow', () => updateDoc(doc(as('ownerA'), 'users/staffA'), { role: 'admin' }));
@@ -147,7 +163,8 @@ await t('second admin deactivates the OWNER', 'deny', () => updateDoc(doc(as('ad
 await t('second admin renames the owner', 'allow', () => updateDoc(doc(as('adminA2'), 'users/ownerA'), { displayName: 'Boss' }));
 await t('admin deletes the OWNER', 'deny', () => deleteDoc(doc(as('adminA2'), 'users/ownerA')));
 await t('admin deletes self', 'deny', () => deleteDoc(doc(as('adminA2'), 'users/adminA2')));
-await t('admin deletes a staff', 'allow', () => deleteDoc(doc(as('ownerA'), 'users/staffA')));
+await t('admin deletes a staff', 'allow', () => removePerson(as('ownerA'), 'A', 'staffA'));
+await t('admin deletes a staff WITHOUT moving the counter', 'deny', () => deleteDoc(doc(as('ownerA'), 'users/staffA')));
 await t('staff renames self', 'allow', () => updateDoc(doc(as('staffA'), 'users/staffA'), { displayName: 'New', updatedAt: iso }));
 await t('staff makes self admin', 'deny', () => updateDoc(doc(as('staffA'), 'users/staffA'), { role: 'admin' }));
 await t('staff moves self to shop B', 'deny', () => updateDoc(doc(as('staffA'), 'users/staffA'), { tenantId: 'B' }));
@@ -181,16 +198,18 @@ await t('card in a shop WITHOUT RFID', 'deny', () => setDoc(doc(as('adminN'), 't
 await t('admin deletes own card (cleanup)', 'allow', () => deleteDoc(doc(as('ownerA'), 'tenants/A/rfidCards/TAGA')));
 
 // ── Subscription state: setup / trial / expired / suspended ───────────────
-await t('SETUP: admin prepares the menu', 'allow', () => setDoc(doc(as('adminS'), 'tenants/S/products/p9'), { name: 'x' }));
-await t('SETUP: admin adds staff', 'allow', () => setDoc(doc(as('adminS'), 'users/new2'), user('S')));
+await t('SETUP (view-only): admin edits the menu', 'deny', () => setDoc(doc(as('adminS'), 'tenants/S/products/p9'), { name: 'x' }));
+await t('SETUP (view-only): admin adds staff', 'deny', () => addPerson(as('adminS'), 'S', 'new2', user('S')));
+await t('SETUP: reads still allowed', 'allow', () => getDocs(collection(as('adminS'), 'tenants/S/products')));
 await t('SETUP: POS is locked (no sale)', 'deny', () => addDoc(collection(as('staffS'), 'tenants/S/orders'), order('staffS')));
+await t('TRIAL running: admin edits the menu', 'allow', () => setDoc(doc(as('adminT'), 'tenants/T/products/p9'), { name: 'x' }));
 await t('TRIAL running: sale allowed', 'allow', () => addDoc(collection(as('staffT'), 'tenants/T/orders'), order('staffT')));
 await t('TRIAL ended: sale denied', 'deny', () => addDoc(collection(as('staffX'), 'tenants/X/orders'), order('staffX')));
-await t('TRIAL ended: setup still allowed', 'allow', () => setDoc(doc(as('adminX'), 'tenants/X/products/p9'), { name: 'x' }));
+await t('TRIAL ended (view-only): menu edit denied', 'deny', () => setDoc(doc(as('adminX'), 'tenants/X/products/p9'), { name: 'x' }));
 await t('EXPIRED: reports still readable', 'allow', () => getDocs(collection(as('adminE'), 'tenants/E/orders')));
 await t('EXPIRED: sale denied', 'deny', () => addDoc(collection(as('staffE'), 'tenants/E/orders'), order('staffE')));
 await t('EXPIRED: menu read-only', 'deny', () => setDoc(doc(as('adminE'), 'tenants/E/products/p9'), { name: 'x' }));
-await t('EXPIRED: no new staff', 'deny', () => setDoc(doc(as('adminE'), 'users/new3'), user('E')));
+await t('EXPIRED: no new staff', 'deny', () => addPerson(as('adminE'), 'E', 'new3', user('E')));
 await t('SUSPENDED: sale denied', 'deny', () => addDoc(collection(as('staffU'), 'tenants/U/orders'), order('staffU')));
 await t('SUSPENDED: menu read-only', 'deny', () => setDoc(doc(as('adminU'), 'tenants/U/products/p9'), { name: 'x' }));
 await t('SUSPENDED: data still readable', 'allow', () => getDocs(collection(as('adminU'), 'tenants/U/products')));

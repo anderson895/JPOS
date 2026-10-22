@@ -3,6 +3,7 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import { LogOut, Menu, X, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import BrandMark from '@/components/shared/BrandMark';
+import SubscriptionBanner from '@/components/shared/SubscriptionBanner';
 import type { User } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -195,6 +196,7 @@ export default function AppShell({
         </header>
 
         <main ref={mainRef} className="flex-1 overflow-y-auto">
+          <SubscriptionBanner />
           <Outlet />
         </main>
       </div>

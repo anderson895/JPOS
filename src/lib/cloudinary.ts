@@ -5,6 +5,12 @@ export const CLOUDINARY_CONFIG = {
 };
 
 export async function uploadImage(file: File): Promise<string> {
+  // Local test mode (npm run dev:local): nothing leaves this computer, so the
+  // picture is a placeholder instead of a real upload.
+  if (import.meta.env.VITE_USE_EMULATORS === 'true') {
+    return `https://placehold.co/600x800/png?text=${encodeURIComponent(`Local test image\n${file.name}`)}`;
+  }
+
   const formData = new FormData();
   formData.append('file', file);
   formData.append('upload_preset', CLOUDINARY_CONFIG.uploadPreset);

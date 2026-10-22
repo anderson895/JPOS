@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import LoginPage from './pages/LoginPage';
 import TerminalPage from './pages/TerminalPage';
+import SubscribePage from './pages/SubscribePage';
 import LoadingScreen from './components/shared/LoadingScreen';
 import { signedOutHome } from './lib/terminal';
 
@@ -16,6 +17,8 @@ const AdminReports   = lazy(() => import('./pages/admin/Reports'));
 const AdminPOS       = lazy(() => import('./pages/admin/POS'));
 const AdminStaff     = lazy(() => import('./pages/admin/Staff'));
 const AdminPayments  = lazy(() => import('./pages/admin/PaymentSettings'));
+const AdminBilling   = lazy(() => import('./pages/admin/Billing'));
+const SuperAdmin     = lazy(() => import('./pages/admin/SuperAdmin'));
 const StaffDashboard = lazy(() => import('./pages/staff/Dashboard'));
 const StaffPOS       = lazy(() => import('./pages/staff/POS'));
 
@@ -35,8 +38,10 @@ function Page({ children }: { children: React.ReactNode }) {
 }
 
 function ProtectedRoute({ children, role }: { children: React.ReactNode; role?: 'admin' | 'staff' }) {
-  const { currentUser, loading } = useAuth();
+  const { currentUser, loading, noShop } = useAuth();
   if (loading) return <LoadingScreen />;
+  // Signed in but no shop yet: finish signing up
+  if (noShop) return <Navigate to="/subscribe" replace />;
   // A counter device goes back to its shop terminal; anyone else to the public page
   if (!currentUser) return <Navigate to={signedOutHome()} replace />;
   if (role && currentUser.role !== role) {
@@ -46,7 +51,7 @@ function ProtectedRoute({ children, role }: { children: React.ReactNode; role?: 
 }
 
 export default function App() {
-  const { currentUser, loading } = useAuth();
+  const { currentUser, loading, noShop, isSuperAdmin } = useAuth();
 
   if (loading) return <LoadingScreen />;
 
@@ -59,9 +64,12 @@ export default function App() {
           element={
             currentUser
               ? <Navigate to={currentUser.role === 'admin' ? '/admin' : '/staff'} replace />
-              : <LoginPage />
+              : noShop ? <Navigate to="/subscribe" replace /> : <LoginPage />
           }
         />
+
+        {/* New shops: create an account, verify the email, create the shop */}
+        <Route path="/subscribe" element={<SubscribePage />} />
 
         {/* A shop's counter terminal (RFID + password), bookmarked on the POS device */}
         <Route
@@ -83,6 +91,8 @@ export default function App() {
           <Route path="pos" element={<Page><AdminPOS /></Page>} />
           <Route path="staff" element={<Page><AdminStaff /></Page>} />
           <Route path="payments" element={<Page><AdminPayments /></Page>} />
+          <Route path="billing" element={<Page><AdminBilling /></Page>} />
+          <Route path="platform" element={isSuperAdmin ? <Page><SuperAdmin /></Page> : <Navigate to="/admin" replace />} />
         </Route>
 
         {/* Staff Routes */}

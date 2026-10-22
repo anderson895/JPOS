@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { collection, getDocs, getDoc, updateDoc, doc, writeBatch, query, where } from 'firebase/firestore';
+import { collection, getDocs, getDoc, updateDoc, doc, writeBatch, query, where, increment, serverTimestamp } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
 import { db, createUserWithoutSignIn, verifyCredentials } from '@/lib/firebase';
-import { currentTenantId, tenantDoc } from '@/lib/tenant';
+import { currentTenantId, tenantDoc, tenantRef } from '@/lib/tenant';
+import { hasAccess } from '@/lib/entitlements';
 import { getAuthErrorMessage } from '@/lib/authErrors';
 import { uploadImage } from '@/lib/cloudinary';
 import { useAuth } from '@/contexts/AuthContext';
@@ -21,7 +22,11 @@ const defaultStaff = {
 };
 
 export default function AdminStaff() {
-  const { currentUser } = useAuth();
+  const { currentUser, tenant } = useAuth();
+  // The package decides the number of accounts and whether RFID login is included
+  const rfidAllowed = !!tenant?.entitlements?.rfid;
+  const staffLimit = tenant?.entitlements?.staffLimit ?? null;
+  const canEdit = hasAccess(tenant);
   const [staff, setStaff]       = useState<Staff[]>([]);
   const [search, setSearch]     = useState('');
   const [loading, setLoading]   = useState(true);
@@ -77,7 +82,7 @@ export default function AdminStaff() {
     // Admins never get an RFID card: a card holds its owner's password and anyone
     // who knows the tag can read it. Saving an admin also removes any card they had.
     const isAdminRole = editStaff.role === 'admin';
-    const newTag = isAdminRole ? '' : (editStaff.rfidTag || '').trim();
+    const newTag = isAdminRole || !rfidAllowed ? '' : (editStaff.rfidTag || '').trim();
     const oldTag = (staff.find(s => s.id === editId)?.rfidTag || '').trim();
     const tagChanged = newTag !== oldTag;
     if (newTag.includes('/')) {
@@ -158,6 +163,8 @@ export default function AdminStaff() {
         await createUserWithoutSignIn(email, editStaff.password!, async (newUid) => {
           const batch = writeBatch(db);
           batch.set(doc(db, 'users', newUid), { ...data, tenantId: currentTenantId(), createdAt: now });
+          // Every account counts against the package (the rules check the pairing and the limit)
+          batch.update(tenantRef(), { staffCount: increment(1), lastStaffChange: newUid, updatedAt: serverTimestamp() });
           if (newTag) {
             batch.set(tenantDoc('rfidCards', newTag), {
               email,
@@ -189,6 +196,7 @@ export default function AdminStaff() {
     try {
       const batch = writeBatch(db);
       batch.delete(doc(db, 'users', id));
+      batch.update(tenantRef(), { staffCount: increment(-1), lastStaffChange: id, updatedAt: serverTimestamp() });
       // Also remove their RFID card so a deleted staff can't tap in — but only
       // if the card is really theirs (an old duplicate tag may point elsewhere).
       const tag = member?.rfidTag?.trim();
@@ -210,7 +218,14 @@ export default function AdminStaff() {
     } catch { toast.error('Failed to update'); }
   }
 
-  function openAdd()     { setEditStaff(defaultStaff); setEditId(null); setModalOpen(true); }
+  function openAdd() {
+    if (!canEdit) { toast.error('Start your free trial or subscribe to add staff.'); return; }
+    if (staffLimit != null && (tenant?.staffCount ?? 0) >= staffLimit) {
+      toast.error(`Your package allows ${staffLimit} accounts. Upgrade in Subscription to add more.`);
+      return;
+    }
+    setEditStaff(defaultStaff); setEditId(null); setModalOpen(true);
+  }
   function openEdit(s: Staff) { setEditStaff({ ...s }); setEditId(s.id); setModalOpen(true); }
 
   const filtered     = staff.filter(s =>
@@ -229,7 +244,7 @@ export default function AdminStaff() {
       <PageHeader
         eyebrow="Our Team"
         title="Staff Management"
-        subtitle={`${staff.length} total accounts`}
+        subtitle={staffLimit != null ? `${tenant?.staffCount ?? staff.length} of ${staffLimit} accounts used (your package)` : `${staff.length} total accounts`}
         actions={
           <button onClick={openAdd} className="btn-primary">
             <Plus className="w-4 h-4" /> Add Staff
@@ -386,7 +401,12 @@ export default function AdminStaff() {
                   <span className="w-7 h-7 rounded-full bg-espresso-800 text-caramel-200 flex items-center justify-center"><CreditCard className="w-3.5 h-3.5" /></span>
                   RFID Login Setup
                 </p>
-                {editStaff.role === 'admin' ? (
+                {!rfidAllowed ? (
+                  <div className="flex items-start gap-2.5 px-4 py-3 rounded-2xl bg-cream-50 border border-cream-300 text-xs text-bark-600 leading-relaxed">
+                    <Shield className="w-4 h-4 text-caramel-600 flex-shrink-0 mt-0.5" />
+                    <p>RFID card login is included in the Business and Enterprise packages.</p>
+                  </div>
+                ) : editStaff.role === 'admin' ? (
                   /* Admins can't use RFID — fields hidden, typed tag kept in state for if the role flips back */
                   <div className="flex items-start gap-2.5 px-4 py-3 rounded-2xl bg-cream-50 border border-cream-300 text-xs text-bark-600 leading-relaxed">
                     <Shield className="w-4 h-4 text-caramel-600 flex-shrink-0 mt-0.5" />

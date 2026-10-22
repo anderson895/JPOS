@@ -7,8 +7,9 @@ import {
   signInWithEmailAndPassword,
   signOut,
   deleteUser,
+  connectAuthEmulator,
 } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
@@ -28,12 +29,24 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 
 /**
+ * Local test mode (`npm run dev:local`): everything runs against the Firebase
+ * emulators on this computer, with fake data. Production is never touched.
+ */
+export const USE_EMULATORS = import.meta.env.VITE_USE_EMULATORS === 'true';
+const AUTH_EMULATOR = 'http://127.0.0.1:9099';
+if (USE_EMULATORS) {
+  connectAuthEmulator(auth, AUTH_EMULATOR, { disableWarnings: true });
+  connectFirestoreEmulator(db, '127.0.0.1', 8085);
+}
+
+/**
  * A throwaway app whose auth session lives only in memory, so nothing it signs
  * in is ever written to IndexedDB or mixed up with the admin's own session.
  */
 function createSecondaryAuth(prefix: string) {
   const secondaryApp = initializeApp(firebaseConfig, `${prefix}-${Date.now()}`);
   const secondaryAuth = initializeAuth(secondaryApp, { persistence: inMemoryPersistence });
+  if (USE_EMULATORS) connectAuthEmulator(secondaryAuth, AUTH_EMULATOR, { disableWarnings: true });
   return { secondaryApp, secondaryAuth };
 }
 
