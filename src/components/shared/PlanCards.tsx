@@ -21,7 +21,7 @@ interface Feature { label: string; soon?: boolean }
 const FEATURES: Record<PlanId, Feature[]> = {
   starter: [
     { label: 'VAT receipts with QR' }, { label: 'Senior/PWD discount' },
-    { label: 'Barcode scan + product details' }, { label: 'Today & weekly reports' }, { label: 'Install on phone or computer' },
+    { label: 'Barcode scan + product details' }, { label: 'Today & weekly reports' }, { label: 'Available on mobile and desktop' },
   ],
   business: [
     { label: 'Everything in Starter' }, { label: 'Your logo and colors' }, { label: 'Saved + per-item discounts' },
