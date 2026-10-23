@@ -1,6 +1,6 @@
 import { Check, Clock, Sparkles } from 'lucide-react';
 import { usePlatformSettings } from '@/components/shared/ContactOwner';
-import { PLAN_IDS } from '@/lib/entitlements';
+import { PLAN_IDS, storageMB } from '@/lib/entitlements';
 import { cn } from '@/lib/utils';
 import type { PlanId } from '@/types';
 
@@ -20,7 +20,7 @@ const accounts = (limit: number | null | undefined) => (limit == null ? 'Unlimit
 interface Feature { label: string; soon?: boolean }
 const FEATURES: Record<PlanId, Feature[]> = {
   starter: [
-    { label: 'VAT receipts with QR' }, { label: 'Senior/PWD discount' },
+    { label: 'Point of sale' }, { label: 'VAT receipts with QR' }, { label: 'Senior/PWD discount' },
     { label: 'Barcode scan + product details' }, { label: 'Today & weekly reports' }, { label: 'Available on mobile and desktop' },
   ],
   business: [
@@ -52,7 +52,9 @@ export default function PlanCards({ onChoose, selected }: { onChoose: (choice: P
       {PLAN_IDS.map(id => {
         const plan = settings.plans[id];
         const name = plan?.name ?? id;
-        const list: Feature[] = [{ label: accounts(plan?.entitlements.staffLimit) }, ...FEATURES[id]];
+        const mb = storageMB(id, plan?.entitlements);
+        const storage = mb == null ? 'Unlimited storage' : `${mb >= 1024 ? `${Math.round(mb / 1024)} GB` : `${mb} MB`} storage`;
+        const list: Feature[] = [{ label: accounts(plan?.entitlements.staffLimit) }, { label: storage }, ...FEATURES[id]];
 
         // Starter is also the free trial: the highlighted card
         if (id === 'starter') {

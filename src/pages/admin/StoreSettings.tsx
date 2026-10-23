@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FirebaseError } from 'firebase/app';
 import { Link } from 'react-router-dom';
-import { Check, CheckCircle, Copy, Image as ImageIcon, Link2, Loader2, Lock, Palette, Receipt, Store, Trash2, Undo2, Upload } from 'lucide-react';
+import { Check, CheckCircle, Copy, Database, Image as ImageIcon, Link2, Loader2, Lock, Palette, Receipt, Store, Trash2, Undo2, Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth, useStoreBrand } from '@/contexts/AuthContext';
 import { uploadImage } from '@/lib/cloudinary';
+import { formatBytes, STORAGE_FULL, usedPercent, useStorage } from '@/lib/usage';
 import {
   JPOS_LOGO, LOGO_MAX_BYTES, NAME_MAX, RECEIPT_MAX, receiptInfo, saveStore, storeProblem,
 } from '@/lib/storeProfile';
@@ -33,6 +34,7 @@ export default function StoreSettings() {
   const { tenant, brandingReady, isSuperAdmin } = useAuth();
   // Its own logo and colors: Business and up (the rules check it too)
   const canBrand = hasFeature(tenant, 'branding');
+  const storage = useStorage();
   const brand = useStoreBrand();
 
   // What's saved now (live), in the form's shape
@@ -90,9 +92,10 @@ export default function StoreSettings() {
   async function onLogoFile(file: File) {
     if (!file.type.startsWith('image/')) { toast.error('Choose a picture (PNG or JPG).'); return; }
     if (file.size > LOGO_MAX_BYTES) { toast.error('The logo must be 2 MB or smaller.'); return; }
+    if (storage.full) { toast.error(STORAGE_FULL, { duration: 6000 }); return; }
     setUploading(true);
     try {
-      const url = await uploadImage(file);
+      const url = await uploadImage(file, 'logo');
       set({ logoUrl: url });
       toast.success('Logo added. Save to use it.');
     } catch {
@@ -299,6 +302,38 @@ export default function StoreSettings() {
             <p className="mt-2 text-center break-words">{r.footer.trim() || 'Thank you!'}</p>
           </div>
         </div>
+      </section>
+
+      {/* Storage: pictures and sales data, against the package's limit */}
+      <section className="card p-5 sm:p-6 space-y-4">
+        <SectionTitle icon={Database} title="Storage" />
+        {!storage.usage ? (
+          storage.failed
+            ? <p className="text-sm text-bark-500">Couldn't check your storage right now.</p>
+            : <div className="h-14 animate-pulse rounded-2xl bg-cream-200/70" />
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-espresso-900">
+              <span className="font-display text-2xl font-semibold">{formatBytes(storage.usage.usedBytes)}</span>
+              {storage.usage.limitBytes != null && <span className="text-bark-500"> of {formatBytes(storage.usage.limitBytes)} used</span>}
+            </p>
+            {storage.usage.limitBytes != null && (
+              <div className="h-3 overflow-hidden rounded-full bg-cream-200" role="progressbar" aria-label="Storage used"
+                aria-valuemin={0} aria-valuemax={100} aria-valuenow={usedPercent(storage.usage)}>
+                <div className={cn('h-full rounded-full transition-all', usedPercent(storage.usage) >= 90 ? 'bg-red-500' : usedPercent(storage.usage) >= 75 ? 'bg-amber-500' : 'bg-espresso-800')}
+                  style={{ width: `${Math.max(2, usedPercent(storage.usage))}%` }} />
+              </div>
+            )}
+            <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-bark-600">
+              <span>Photos: {formatBytes(storage.usage.photosBytes)} ({storage.usage.pictures})</span>
+              <span>Sales and products: {formatBytes(storage.usage.dataBytes)}</span>
+            </div>
+            {storage.full
+              ? <p className="text-sm font-medium text-red-700">{STORAGE_FULL} You can still sell.</p>
+              : usedPercent(storage.usage) >= 80 && <p className="text-sm text-amber-800">Your storage is almost full.</p>}
+            {usedPercent(storage.usage) >= 80 && !isSuperAdmin && <Link to="/admin/billing" className="btn-secondary px-4 py-1.5 text-xs">See packages</Link>}
+          </div>
+        )}
       </section>
 
       {/* Save bar: it follows the screen only while there's something to save */}

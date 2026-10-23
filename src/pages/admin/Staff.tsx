@@ -6,6 +6,7 @@ import { currentTenantId, tenantDoc, tenantRef } from '@/lib/tenant';
 import { hasAccess } from '@/lib/entitlements';
 import { getAuthErrorMessage } from '@/lib/authErrors';
 import { uploadImage } from '@/lib/cloudinary';
+import { STORAGE_FULL, useStorage } from '@/lib/usage';
 import { useAuth } from '@/contexts/AuthContext';
 import Portal from '@/components/shared/Portal';
 import PageHeader from '@/components/shared/PageHeader';
@@ -37,6 +38,8 @@ export default function AdminStaff() {
   const [showPass, setShowPass] = useState(false);
   const [showRfidPass, setShowRfidPass] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  // New photos wait when the shop's storage is full
+  const storage = useStorage();
   // The person being deleted or switched on/off (their card shows a spinner)
   const [busyId, setBusyId] = useState<string | null>(null);
   const photoRef = useRef<HTMLInputElement>(null);
@@ -58,6 +61,7 @@ export default function AdminStaff() {
   }
 
   async function handlePhotoUpload(file: File) {
+    if (storage.full) { toast.error(STORAGE_FULL, { duration: 6000 }); return; }
     setUploadingPhoto(true);
     try {
       const url = await uploadImage(file);

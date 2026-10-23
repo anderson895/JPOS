@@ -47,9 +47,9 @@ export const PLAN_LABEL: Record<PlanId, string> = { starter: 'Starter', business
 
 /** Defaults; the Super Admin can change them in platform settings. */
 export const DEFAULT_ENTITLEMENTS: Record<PlanId, Entitlements> = {
-  starter:    { plan: 'starter',    staffLimit: 3,    rfid: false, fullReports: false, pdfExport: false, trends: false, branding: false, discounts: false, voidSales: false },
-  business:   { plan: 'business',   staffLimit: 10,   rfid: true,  fullReports: true,  pdfExport: true,  trends: true,  branding: true,  discounts: true,  voidSales: true },
-  enterprise: { plan: 'enterprise', staffLimit: null, rfid: true,  fullReports: true,  pdfExport: true,  trends: true,  branding: true,  discounts: true,  voidSales: true },
+  starter:    { plan: 'starter',    staffLimit: 3,    rfid: false, fullReports: false, pdfExport: false, trends: false, branding: false, discounts: false, voidSales: false, storageMB: 500 },
+  business:   { plan: 'business',   staffLimit: 10,   rfid: true,  fullReports: true,  pdfExport: true,  trends: true,  branding: true,  discounts: true,  voidSales: true, storageMB: 2048 },
+  enterprise: { plan: 'enterprise', staffLimit: null, rfid: true,  fullReports: true,  pdfExport: true,  trends: true,  branding: true,  discounts: true,  voidSales: true, storageMB: 10240 },
 };
 
 /** Package features a shop may or may not have (the account limit is separate). */
@@ -64,6 +64,12 @@ export function hasFeature(t: Pick<Tenant, 'plan' | 'entitlements'> | null | und
   if (!t) return false;
   const v = t.entitlements?.[f];
   return typeof v === 'boolean' ? v : t.plan !== 'starter';
+}
+
+/** The package's storage in MB (null = no limit); shops saved before storage limits use their package's. */
+export function storageMB(plan: PlanId, e?: Partial<Entitlements> | null): number | null {
+  if (e?.storageMB === null) return null;
+  return typeof e?.storageMB === 'number' && e.storageMB > 0 ? e.storageMB : DEFAULT_ENTITLEMENTS[plan]?.storageMB ?? 500;
 }
 
 /** The plain-words note for a locked feature. */

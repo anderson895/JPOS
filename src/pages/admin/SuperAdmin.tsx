@@ -14,6 +14,7 @@ import {
 } from '@/lib/platform';
 import { daysLeft, periodEnd, PLAN_IDS, PLAN_LABEL, shopState } from '@/lib/entitlements';
 import { uploadImage } from '@/lib/cloudinary';
+import { formatBytes, getStorageUsage, usedPercent, type StorageUsage } from '@/lib/usage';
 import { cn } from '@/lib/utils';
 import type { PaymentChannel, PlatformSettings, SubscriptionRequest, Tenant } from '@/types';
 
@@ -163,7 +164,7 @@ function Shops() {
       <table className="w-full text-sm">
         <thead><tr className="table-header">
           <th className="table-cell text-left">Shop</th><th className="table-cell text-left">Status</th><th className="table-cell text-left">Package</th>
-          <th className="table-cell text-left">Ends</th><th className="table-cell text-left">Accounts</th><th className="table-cell" />
+          <th className="table-cell text-left">Ends</th><th className="table-cell text-left">Accounts</th><th className="table-cell text-left">Storage</th><th className="table-cell" />
         </tr></thead>
         <tbody>
           {shops.map(t => {
@@ -180,6 +181,7 @@ function Shops() {
                 <td className="table-cell">{PLAN_LABEL[t.plan]}</td>
                 <td className="table-cell">{end ? `${format(end, 'MMM d, yyyy')} (${daysLeft(t)}d)` : '-'}</td>
                 <td className="table-cell">{t.staffCount}{t.entitlements?.staffLimit != null ? ` / ${t.entitlements.staffLimit}` : ''}</td>
+                <td className="table-cell"><ShopStorage tenantId={t.id} /></td>
                 <td className="table-cell text-right">
                   <button className="btn-ghost text-sm" disabled={busy === t.id} onClick={() => toggle(t)}>
                     {busy === t.id ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
@@ -192,6 +194,30 @@ function Shops() {
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** One shop's storage (asked from the server when the row shows). */
+function ShopStorage({ tenantId }: { tenantId: string }) {
+  const [u, setU] = useState<StorageUsage | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let live = true;
+    getStorageUsage(tenantId).then(r => { if (live) setU(r); }).catch(() => { if (live) setFailed(true); });
+    return () => { live = false; };
+  }, [tenantId]);
+  if (failed) return <span className="text-xs text-bark-400">-</span>;
+  if (!u) return <Loader2 className="w-4 h-4 animate-spin text-caramel-500" aria-label="Checking storage" />;
+  const pct = usedPercent(u);
+  return (
+    <div className="min-w-[7rem]">
+      <p className="text-xs text-espresso-900 whitespace-nowrap">{formatBytes(u.usedBytes)}{u.limitBytes != null ? ` / ${formatBytes(u.limitBytes)}` : ''}</p>
+      {u.limitBytes != null && (
+        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-cream-200">
+          <div className={cn('h-full rounded-full', pct >= 90 ? 'bg-red-500' : pct >= 75 ? 'bg-amber-500' : 'bg-espresso-700')} style={{ width: `${Math.max(3, pct)}%` }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -215,7 +241,7 @@ function SettingsForm({ settings }: { settings: PlatformSettings }) {
     if (!f) return;
     if (!f.type.startsWith('image/')) { toast.error('Choose a picture of your QR code.'); return; }
     setUploading(id);
-    try { setChannel(id, label, order, { qrImageUrl: await uploadImage(f) }); toast.success('QR uploaded. Review it, then save.'); }
+    try { setChannel(id, label, order, { qrImageUrl: await uploadImage(f, 'qr') }); toast.success('QR uploaded. Review it, then save.'); }
     catch { toast.error('Upload failed. Please try again.'); }
     finally { setUploading(''); if (fileRefs.current[id]) fileRefs.current[id]!.value = ''; }
   };

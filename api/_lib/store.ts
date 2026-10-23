@@ -1,4 +1,5 @@
-import type { DocumentReference, Firestore } from 'firebase-admin/firestore';
+import { AggregateField, type DocumentReference, type Firestore } from 'firebase-admin/firestore';
+import type { UsageCounts } from './usage.js';
 import {
   checkQuota, last24Hours, withinBudget,
   PAYMENT_LIMIT, VERIFY_IP_LIMIT, VERIFY_LIMIT,
@@ -44,6 +45,10 @@ export interface Store {
   accountInUse(uid: string): Promise<boolean>;
   /** True when this login runs JPOS (platformAdmins/{uid}). */
   isPlatformAdmin(uid: string): Promise<boolean>;
+  /** users/{uid}: the person's shop and role, or null without a profile. */
+  profile(uid: string): Promise<{ tenantId: string; role: string; isActive: boolean } | null>;
+  /** What a shop stores, counted (null when there's no such shop). */
+  shopUsage(tenantId: string): Promise<UsageCounts | null>;
   /** Writes the new email into users/{uid}, when that profile exists. */
   setProfileEmail(uid: string, email: string): Promise<void>;
   /**
@@ -146,6 +151,39 @@ export function firestoreStore(db: Firestore): Store {
     },
     async isPlatformAdmin(uid) {
       return (await db.collection('platformAdmins').doc(uid).get()).exists;
+    },
+    async profile(uid) {
+      const data = (await db.collection('users').doc(uid).get()).data();
+      return data ? { tenantId: String(data.tenantId ?? ''), role: String(data.role ?? ''), isActive: data.isActive === true } : null;
+    },
+    async shopUsage(tenantId) {
+      const shop = db.collection('tenants').doc(tenantId);
+      const products = shop.collection('products');
+      const [shopSnap, branding, payments, productCount, orderCount, pictureCount, measured, staffPhotos] = await Promise.all([
+        shop.get(),
+        shop.collection('settings').doc('branding').get(),
+        shop.collection('settings').doc('payments').get(),
+        products.count().get(),
+        shop.collection('orders').count().get(),
+        products.where('imageUrl', '>', '').count().get(),
+        products.where('imageBytes', '>', 0).aggregate({ n: AggregateField.count(), bytes: AggregateField.sum('imageBytes') }).get(),
+        db.collection('users').where('tenantId', '==', tenantId).where('photoURL', '>', '').count().get(),
+      ]);
+      if (!shopSnap.exists) return null;
+      const t = shopSnap.data() as { plan?: string; entitlements?: { storageMB?: number | null } };
+      const pay = payments.data() as { gcash?: { qrImageUrl?: string }; maya?: { qrImageUrl?: string } } | undefined;
+      const otherPictures = (branding.data()?.logoUrl ? 1 : 0) + (pay?.gcash?.qrImageUrl ? 1 : 0) + (pay?.maya?.qrImageUrl ? 1 : 0)
+        + staffPhotos.data().count;
+      return {
+        plan: t.plan ?? 'starter',
+        storageMB: t.entitlements?.storageMB,
+        products: productCount.data().count,
+        orders: orderCount.data().count,
+        productPictures: pictureCount.data().count,
+        measuredPictures: measured.data().n,
+        measuredBytes: Number(measured.data().bytes) || 0,
+        otherPictures,
+      };
     },
     async setProfileEmail(uid, email) {
       const ref = db.collection('users').doc(uid);

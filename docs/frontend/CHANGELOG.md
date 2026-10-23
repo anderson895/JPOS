@@ -709,3 +709,13 @@ The owner's list (note.txt): logos and colors per shop, the shop's name on its s
 - **Locked in the app with a note** ("included in the Business and Enterprise packages"): Store Settings logo and colors, Products → Discounts, the discount button on a cart line, Reports → Void. A whole-order discount and Senior/PWD stay in every package. A shop that moves down to Starter goes back to the JPOS look (its sign-in page too).
 - The Subscription page lists what Business adds.
 - **Verified** on the local test app: 12/12 (a new Starter shop vs the Enterprise test shop, landing cards).
+
+## 34. Storage per shop (2026-10-23)
+
+- **Owner: "dapat namomonitor din ang storage" → watch + limit.** Each package has storage for pictures and sales data: Starter 500 MB, Business 2 GB, Enterprise 10 GB (shown on the package cards).
+- **Pictures are made smaller before upload** (`src/lib/cloudinary.ts`): photos ≤ 1280 px JPEG, logos ≤ 512 px PNG, QR codes ≤ 1024 px PNG (stay sharp). A 6 MB photo became about 0.7 MB in the test (real photos less).
+- **Store Settings → Storage:** "12 MB of 500 MB used", a bar (amber at 75%, red at 90%), photos and sales data apart, "almost full" and "full" notes with See packages.
+- **When full:** new pictures wait (products, logo, QR codes, staff photos) with "Your storage is full. Remove some photos, or move to a bigger package." Selling never stops.
+- **Super Admin → Shops:** a Storage column with each shop's use and bar.
+- Pricing cards: Starter now starts with "Point of sale", no "Cash + GCash/Maya QR" line, and says "Available on mobile and desktop"; Enterprise lists two-step sign-in (2FA) as coming soon.
+- **Verified** on the local test app: 9/9 (+1 test-only mismatch: 50 KB shows as 51 KB).

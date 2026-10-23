@@ -4,6 +4,7 @@ import { defaultDeps, isLocalTest, notSetUp, type Deps, type Mailer } from './de
 import { emailChangeCodeMessage, passwordResetCodeMessage, paymentNoticeMessage, signupCodeMessage, type Message } from './mail.js';
 import { CODE_TTL_MS, codeHash, emailId, type CodeCheck } from './signupCode.js';
 import type { Reserve } from './store.js';
+import { computeUsage } from './usage.js';
 
 type GetDeps = () => Deps;
 
@@ -177,6 +178,29 @@ export function signupFinishHandler(getDeps: GetDeps = defaultDeps) {
       throw new ApiError(503, 'signup_failed', "We couldn't create your account right now. Send a new code and try again.");
     }
     return json({ created: true });
+  });
+}
+
+/**
+ * POST /api/usage { tenantId? }: how much storage a shop uses, and its limit.
+ * A shop's admins see their own shop; the Super Admin sees any shop.
+ * Only numbers come back, never the shop's data.
+ */
+export function usageHandler(getDeps: GetDeps = defaultDeps) {
+  return handle(async (request) => {
+    requireMethod(request, 'POST');
+    const deps = getDeps();
+    const uid = await verifyCaller(request, deps);
+    const body = await readJsonBody(request);
+    const asked = typeof body.tenantId === 'string' ? body.tenantId.trim() : '';
+    if (asked && !/^[A-Za-z0-9_-]{1,64}$/.test(asked)) throw new ApiError(400, 'invalid_shop', 'That shop is not right.');
+    const [me, superAdmin] = await Promise.all([deps.store.profile(uid), deps.store.isPlatformAdmin(uid)]);
+    const tenantId = asked || me?.tenantId || '';
+    const ownAdmin = !!me && me.isActive && me.role === 'admin' && me.tenantId === tenantId;
+    if (!tenantId || !(ownAdmin || superAdmin)) throw new ApiError(403, 'forbidden', "Only the shop's admins can see its storage.");
+    const counts = await deps.store.shopUsage(tenantId);
+    if (!counts) throw new ApiError(404, 'no_shop', 'This shop was not found.');
+    return json(computeUsage(counts));
   });
 }
 

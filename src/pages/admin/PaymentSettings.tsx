@@ -3,6 +3,7 @@ import { FirebaseError } from 'firebase/app';
 import { getPaymentSettings, savePaymentSettings } from '@/lib/storeSettings';
 import { paymentSettingsProblem, WALLET_LABEL, type WalletMethod } from '@/lib/eWallet';
 import { uploadImage } from '@/lib/cloudinary';
+import { STORAGE_FULL, useStorage } from '@/lib/usage';
 import { cn, formatDateTime } from '@/lib/utils';
 import PageHeader from '@/components/shared/PageHeader';
 import Portal from '@/components/shared/Portal';
@@ -37,6 +38,7 @@ export default function AdminPaymentSettings() {
   const [uploading, setUploading] = useState<WalletMethod | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmQr, setConfirmQr] = useState<WalletMethod[] | null>(null);
+  const storage = useStorage();
 
   async function load() {
     setLoading(true);
@@ -72,9 +74,10 @@ export default function AdminPaymentSettings() {
   async function handleQrFile(method: WalletMethod, file: File) {
     if (!file.type.startsWith('image/')) { toast.error('Choose an image file (PNG or JPG).'); return; }
     if (file.size > MAX_QR_BYTES) { toast.error('The QR image must be 5 MB or smaller.'); return; }
+    if (storage.full) { toast.error(STORAGE_FULL, { duration: 6000 }); return; }
     setUploading(method);
     try {
-      const url = await uploadImage(file);
+      const url = await uploadImage(file, 'qr');
       setWallet(method, { qrImageUrl: url });
       toast.success(`${WALLET_LABEL[method]} QR uploaded. Check it, then save.`);
     } catch {

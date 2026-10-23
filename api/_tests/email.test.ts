@@ -5,8 +5,9 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   emailChangeCodeHandler, emailChangeFinishHandler, passwordCodeHandler, passwordResetHandler, paymentNoticeHandler,
-  signupCodeHandler, signupFinishHandler,
+  signupCodeHandler, signupFinishHandler, usageHandler,
 } from '../_lib/handlers.js';
+import { computeUsage, storageLimitBytes, BASE_DATA_BYTES, EST_ORDER_BYTES, EST_PICTURE_BYTES, EST_PRODUCT_BYTES, MB, type UsageCounts } from '../_lib/usage.js';
 import { ApiError } from '../_lib/http.js';
 import {
   BUDGET, checkQuota, hourKey, last24Hours, withinBudget, PAYMENT_LIMIT, VERIFY_IP_LIMIT, VERIFY_LIMIT,
@@ -43,6 +44,10 @@ interface World {
   profileEmail: Map<string, string>;
   /** The password kept on a person's RFID card, by uid */
   cards: Map<string, string>;
+  /** users/{uid}: shop and role */
+  profiles: Map<string, { tenantId: string; role: string; isActive: boolean }>;
+  /** What each shop stores */
+  shops: Map<string, UsageCounts>;
 }
 
 /** In-memory version of firestoreStore, using the same limits. */
@@ -84,6 +89,8 @@ function memoryStore(w: World): Store {
     isPlatformAdmin: async (uid) => w.admins.has(uid),
     setProfileEmail: async (uid, email) => { if (w.profileEmail.has(uid)) w.profileEmail.set(uid, email); },
     setCardPassword: async (uid, password) => { if (w.cards.has(uid)) w.cards.set(uid, password); },
+    profile: async (uid) => w.profiles.get(uid) ?? null,
+    shopUsage: async (tenantId) => w.shops.get(tenantId) ?? null,
     reservePaymentNotice: async (id, uid, now) => reserve('payment', `pay_${uid}`, PAYMENT_LIMIT, now, null, `paid_${id}`),
     releasePaymentNotice: async (id, uid, now) => release('payment', `pay_${uid}`, now, null, `paid_${id}`),
     getPaymentRequest: async (id) => w.requests[id] ?? null,
@@ -131,6 +138,15 @@ function newWorld(): World {
     admins: new Set(['boss', 'gboss']),
     profileEmail: new Map([['boss', 'admin@shop.test'], ['juan', 'juan@shop.test']]),
     cards: new Map([['cashier', 'cashier-password']]),
+    profiles: new Map([
+      ['juan', { tenantId: 't1', role: 'admin', isActive: true }],
+      ['cashier', { tenantId: 't1', role: 'staff', isActive: true }],
+      ['maria', { tenantId: 't2', role: 'admin', isActive: true }],
+    ]),
+    shops: new Map([
+      ['t1', { plan: 'starter', products: 40, orders: 1000, productPictures: 30, measuredPictures: 20, measuredBytes: 4 * MB, otherPictures: 2 }],
+      ['t2', { plan: 'business', storageMB: null, products: 0, orders: 0, productPictures: 0, measuredPictures: 0, measuredBytes: 0, otherPictures: 0 }],
+    ]),
   };
 }
 
@@ -709,6 +725,53 @@ describe('Forgot password', () => {
     w.mailFails = false;
     w.now = new Date(START.getTime() + 61_000);   // the one-a-minute wait still applies
     assert.equal((await askCode(w, 'juan@shop.test')).status, 200);
+  });
+});
+
+describe('Storage (POST /api/usage)', () => {
+  const ask = (w: World, token: string | undefined, body: unknown = {}) => call(usageHandler(depsFor(w)), post('usage', token, body));
+
+  test("a shop's admin sees its storage and package limit", async () => {
+    const w = newWorld();
+    const r = await ask(w, 'ok:juan');
+    assert.equal(r.status, 200);
+    const u = r.body as { usedBytes: number; limitBytes: number; photosBytes: number; dataBytes: number; pictures: number };
+    // 20 measured (4 MB) + 10 older ones and 2 other pictures, estimated
+    assert.equal(u.photosBytes, 4 * MB + 12 * EST_PICTURE_BYTES);
+    assert.equal(u.dataBytes, 1000 * EST_ORDER_BYTES + 40 * EST_PRODUCT_BYTES + BASE_DATA_BYTES);
+    assert.equal(u.usedBytes, u.photosBytes + u.dataBytes);
+    assert.equal(u.limitBytes, 500 * MB);
+    assert.equal(u.pictures, 32);
+  });
+
+  test('a cashier, another shop, or no sign-in: refused', async () => {
+    const w = newWorld();
+    assert.equal((await ask(w, 'ok:cashier')).status, 403);
+    assert.equal((await ask(w, 'ok:maria', { tenantId: 't1' })).status, 403);
+    assert.equal((await ask(w, undefined)).status, 401);
+  });
+
+  test('the Super Admin sees any shop', async () => {
+    const w = newWorld();
+    const r = await ask(w, 'ok:boss', { tenantId: 't2' });
+    assert.equal(r.status, 200);
+    assert.equal((r.body as { limitBytes: number | null }).limitBytes, null);
+    assert.equal((await ask(w, 'ok:boss', { tenantId: 'nope' })).status, 404);
+    assert.equal((await ask(w, 'ok:boss', { tenantId: '../x' })).status, 400);
+  });
+
+  test('package limits: Starter 500 MB, Business 2 GB, Enterprise 10 GB; a set limit wins', () => {
+    assert.equal(storageLimitBytes('starter'), 500 * MB);
+    assert.equal(storageLimitBytes('business'), 2048 * MB);
+    assert.equal(storageLimitBytes('enterprise'), 10240 * MB);
+    assert.equal(storageLimitBytes('starter', 1000), 1000 * MB);
+    assert.equal(storageLimitBytes('business', null), null);
+    assert.equal(storageLimitBytes('unknown'), 500 * MB);
+  });
+
+  test('more measured pictures than pictures (old data): never negative', () => {
+    const u = computeUsage({ plan: 'starter', products: 1, orders: 0, productPictures: 1, measuredPictures: 3, measuredBytes: 900, otherPictures: 0 });
+    assert.equal(u.photosBytes, 900);
   });
 });
 

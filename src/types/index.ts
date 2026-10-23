@@ -36,6 +36,8 @@ export interface Entitlements {
   discounts?: boolean;
   /** Voiding a sale. */
   voidSales?: boolean;
+  /** Storage for pictures and sales data, in MB; null = no limit. Missing: the package decides (500 / 2048 / 10240). */
+  storageMB?: number | null;
 }
 
 export type PlanId = 'starter' | 'business' | 'enterprise';
@@ -173,6 +175,8 @@ export interface Product {
   categoryId: string;
   categoryName: string;
   imageUrl?: string;
+  /** The picture's size in storage, measured when it was uploaded. */
+  imageBytes?: number;
   isAvailable: boolean;
   cost: number;
   variants?: ProductVariant[];

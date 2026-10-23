@@ -3,7 +3,8 @@ import {
   getDocs, addDoc, updateDoc, deleteDoc
 } from 'firebase/firestore';
 import { tenantCol, tenantDoc } from '@/lib/tenant';
-import { uploadImage } from '@/lib/cloudinary';
+import { uploadPicture } from '@/lib/cloudinary';
+import { STORAGE_FULL, useStorage } from '@/lib/usage';
 import { cn, formatCurrency } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { BUSINESS_UP, hasFeature } from '@/lib/entitlements';
@@ -29,6 +30,8 @@ const defaultProduct: Omit<Product, 'id' | 'createdAt' | 'updatedAt'> = {
 export default function AdminProducts() {
   const { tenant } = useAuth();
   const canDiscounts = hasFeature(tenant, 'discounts');
+  // New photos wait when the shop's storage is full (selling never stops)
+  const storage = useStorage();
   // The details this kind of store fills in first; the rest are under "More details"
   const mainFields = mainDetailFields(tenant?.businessType);
   const [moreDetails, setMoreDetails] = useState(false);
@@ -98,6 +101,7 @@ export default function AdminProducts() {
         categoryId: editProduct.categoryId || '',
         categoryName: cat?.name || '',
         imageUrl: editProduct.imageUrl || '',
+        imageBytes: editProduct.imageUrl ? editProduct.imageBytes ?? 0 : 0,
         isAvailable: editProduct.isAvailable ?? true,
         variants: editProduct.variants || [],
         brand: editProduct.brand?.trim() || '',
@@ -118,6 +122,7 @@ export default function AdminProducts() {
       setEditId(null);
       setEditProduct(defaultProduct);
       fetchAll();
+      storage.refresh();
     } catch {
       toast.error('Failed to save product');
     } finally {
@@ -152,10 +157,11 @@ export default function AdminProducts() {
   }
 
   async function handleImageUpload(file: File) {
+    if (storage.full) { toast.error(STORAGE_FULL, { duration: 6000 }); return; }
     setImgUploading(true);
     try {
-      const url = await uploadImage(file);
-      setEditProduct(prev => ({ ...prev, imageUrl: url }));
+      const { url, bytes } = await uploadPicture(file, 'photo');
+      setEditProduct(prev => ({ ...prev, imageUrl: url, imageBytes: bytes }));
       toast.success('Image uploaded');
     } catch {
       toast.error('Image upload failed');
