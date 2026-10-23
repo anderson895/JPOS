@@ -701,3 +701,7 @@ The owner's list (note.txt): logos and colors per shop, the shop's name on its s
 - **"Powered by JPOS"** on a shop's sign-in card (`/s/:slug`; first a "JPOS home" button, which the owner asked to drop): goes to the main page and the device stops returning to the shop page (before, once a device had signed in on a shop page, the main address always went back there with no way out). Logging out still returns to where you signed in.
 - **Code boxes** fit any space (Account Settings on phones overflowed).
 - **Verified** on the local test app: forgot password 20/20 (owner, unknown email, cashier with an RFID card), JPOS home 7/7, code boxes at 320–1280 px.
+
+## 33. Pricing: what every package has (2026-10-23)
+
+- Under the three package cards (landing and sign-up, `PlanCards`), an **Every package has** row: Your logo, colors and name · Barcode scan + product details · Discounts + Senior/PWD · VAT receipts · Void sales with a reason · Install on phone or computer. The cards keep their short lists, so they stay even.

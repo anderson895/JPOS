@@ -1,4 +1,4 @@
-import { Check, Sparkles } from 'lucide-react';
+import { BadgePercent, Ban, Check, Download, Palette, Receipt, ScanBarcode, Sparkles, type LucideIcon } from 'lucide-react';
 import { usePlatformSettings } from '@/components/shared/ContactOwner';
 import { PLAN_IDS } from '@/lib/entitlements';
 import { cn } from '@/lib/utils';
@@ -18,6 +18,16 @@ const FEATURES: Record<PlanId, string[]> = {
   business: ['Everything in Starter', 'All reports + PDF', 'Sales trends', 'RFID card login'],
   enterprise: ['Everything in Business', 'Priority support'],
 };
+/** In every package, the free trial too (shown once, under the cards). */
+const EVERY_PACKAGE: { icon: LucideIcon; label: string }[] = [
+  { icon: Palette, label: 'Your logo, colors and name' },
+  { icon: ScanBarcode, label: 'Barcode scan + product details' },
+  { icon: BadgePercent, label: 'Discounts + Senior/PWD' },
+  { icon: Receipt, label: 'VAT receipts' },
+  { icon: Ban, label: 'Void sales with a reason' },
+  { icon: Download, label: 'Install on phone or computer' },
+];
+
 const TAGLINE: Record<PlanId, string> = {
   starter: 'For small shops',
   business: 'For growing shops',
@@ -31,6 +41,7 @@ const TAGLINE: Record<PlanId, string> = {
 export default function PlanCards({ onChoose, selected }: { onChoose: (choice: PlanChoice) => void; selected?: PlanChoice }) {
   const { settings } = usePlatformSettings();
   return (
+    <div>
     <div className="grid gap-4 md:grid-cols-3 items-stretch">
       {PLAN_IDS.map(id => {
         const plan = settings.plans[id];
@@ -95,6 +106,19 @@ export default function PlanCards({ onChoose, selected }: { onChoose: (choice: P
           </div>
         );
       })}
+    </div>
+
+    {/* What every package has, the free trial included */}
+    <div className="mt-5 rounded-3xl border border-cream-300/80 bg-cream-50/70 px-5 py-5 backdrop-blur-sm">
+      <p className="text-center text-sm font-semibold text-espresso-900">Every package has</p>
+      <ul className="mt-3 flex flex-wrap justify-center gap-2">
+        {EVERY_PACKAGE.map(({ icon: Icon, label }) => (
+          <li key={label} className="inline-flex items-center gap-2 rounded-full border border-cream-300 bg-white/80 px-3.5 py-2 text-sm text-espresso-800">
+            <Icon className="w-4 h-4 text-caramel-600" aria-hidden="true" /> {label}
+          </li>
+        ))}
+      </ul>
+    </div>
     </div>
   );
 }
