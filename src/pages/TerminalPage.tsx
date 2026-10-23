@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
-import { AlertTriangle, Loader2, Store } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Loader2, Store } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { applyTheme } from '@/components/shared/theme';
-import { rememberTerminal } from '@/lib/terminal';
+import { forgetSignInPage, rememberTerminal } from '@/lib/terminal';
 import { getPublicBranding, storeBrand, type StoreBrand } from '@/lib/storeProfile';
 import LoginCard from '@/components/landing/LoginCard';
 import BrandMark from '@/components/shared/BrandMark';
@@ -15,11 +15,15 @@ import InstallAppButton from '@/components/shared/InstallApp';
  * Staff sign in here with their RFID card (or password). The device remembers
  * the terminal, so signing out comes back here instead of the public page.
  * It wears the shop's own name, logo and colors (Store Settings).
+ * "JPOS home" leaves it for good: the device stops coming back here.
  */
 export default function TerminalPage() {
   const { slug = '' } = useParams();
   const [state, setState] = useState<'checking' | 'ok' | 'invalid'>('checking');
   const [brand, setBrand] = useState<StoreBrand | null>(null);
+  const navigate = useNavigate();
+  // To the JPOS main page; the main address stops bringing this device back here
+  const goHome = () => { forgetSignInPage(); navigate('/login'); };
 
   useEffect(() => {
     let cancelled = false;
@@ -53,7 +57,15 @@ export default function TerminalPage() {
   }, [brand]);
 
   return (
-    <div data-theme={brand?.theme ?? 'espresso'} className="min-h-dvh espresso-surface flex flex-col items-center justify-center gap-6 px-4 py-10">
+    <div data-theme={brand?.theme ?? 'espresso'} className="relative min-h-dvh espresso-surface flex flex-col items-center justify-center gap-6 px-4 pt-20 pb-10">
+      <button
+        type="button"
+        onClick={goHome}
+        className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-cream-100/25 px-4 py-2 text-sm font-medium text-cream-50 transition-colors hover:bg-white/10"
+      >
+        <ArrowLeft className="w-4 h-4" aria-hidden="true" /> JPOS home
+      </button>
+
       {/* The shop's own card shows its name; the JPOS mark only while there's no shop to show */}
       {!brand && <BrandMark tone="dark" subtitle="Staff sign-in" />}
 
@@ -68,7 +80,7 @@ export default function TerminalPage() {
           <p className="mt-2 text-sm text-bark-600">
             This sign-in page doesn't belong to any shop. Ask the shop owner for the right link.
           </p>
-          <a href="/login" className="btn-secondary mt-5 inline-flex">Go to sign in</a>
+          <button type="button" onClick={goHome} className="btn-secondary mt-5 inline-flex">Go to JPOS home</button>
         </div>
       )}
 

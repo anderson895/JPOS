@@ -37,3 +37,12 @@ export function signedOutHome(): string {
   const slug = rememberedTerminal();
   return slug ? `/s/${slug}` : '/login';
 }
+
+/**
+ * "JPOS home" on a shop's sign-in page: this device stops going back to that
+ * page, so the main address opens the JPOS landing page again.
+ */
+export function forgetSignInPage() {
+  try { localStorage.removeItem(FROM_KEY); } catch { /* storage blocked */ }
+  forgetTerminal();
+}
