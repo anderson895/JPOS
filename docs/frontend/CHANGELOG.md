@@ -494,3 +494,76 @@ Checks: `tsc --strict --noUnusedLocals --noUnusedParameters` and `npm run build`
 - No emoji; lucide icons only (`AlertTriangle`, `Store`, `CreditCard`).
 - Shop branding on the terminal (logo, background, theme) comes in Phase B.
 
+
+## 26. Sign-up with a 6-digit code, and loading on every action (2026-10-23)
+
+**Sign-up (`/subscribe`, rewritten):**
+- The form is unchanged. "Create free account" now emails a **6-digit code** and shows "Check your email" with one big code box.
+  - Typing the 6th digit submits it.
+  - There's a "Send a new code" countdown and a hint to check Spam.
+  - "Back" returns to the filled-in form. Pressing Create again within 10 minutes doesn't send another email.
+- A right code shows one "please wait" screen: "Creating your account…" → "Setting up your shop…" → "Starting your free trial…". The owner then lands on the **dashboard, signed in, trial running**. A paid package opens Subscription with that package picked.
+  - The "Set up your shop" page now only appears as a fallback: after a Google sign-up whose shop couldn't be made, or when the link was taken.
+- **Google:** a new Google account makes the shop straight from the form, with the same wait screen.
+- **Back always works:** when signed in without a shop, "Back" signs out and opens the sign-in page. Before, `/login` bounced straight back to `/subscribe`.
+- `App.tsx` no longer swaps `/subscribe` for the full-screen loader while the new account signs in, so the page keeps its progress.
+- Removed: `VerifyEmailPage` (`/verify-email`) and the Billing auto-trial (`AUTO_TRIAL_KEY`).
+
+**Loading indicators added:**
+- Sign-up: send code, send a new code, Google, Back (sign out), creating the shop.
+- Super Admin: Suspend/Restore shop, Reject payment.
+- Products: delete product, show/hide in POS, delete category.
+- Manage Staff: delete, active/inactive.
+- Subscription: "Take back this payment".
+
+**Redesign:** sign-up and the email code look like the landing page ("About JPOS" style), with the POS pictures from `reference_UI/Illustration Asset Kit.png`. They follow the layouts of `registration.png` and `Verification.png`, in JPOS colors and fonts.
+- **One sign-up page, `/subscribe`.** Every way in leads straight to its form:
+  - **Get Started** opens it with the free trial picked.
+  - The **package buttons** in Pricing open it with that package picked.
+  - **Create account** on the landing sign-in card opens it.
+- **`/subscribe`:**
+  - The header is the JPOS mark plus the "GOOD SERVICE • GREAT BUSINESS" eyebrow.
+  - The left side has a script "Join" + "JPOS" heading (like "About JPOS"), three highlights (fast setup, secure, support) and the counter picture: the POS terminal and receipt printer.
+  - The form sits in the landing's cream card (`CreamCard`, now shared with the sign-in card).
+- **Email code page:** one centered cream card with a mail tile, a script "Almost there" line, **six code boxes** (one invisible input on top, so typing, pasting and autofill work), Confirm, a "Local test" button, the resend countdown and "Check Spam". The terminal and printer sit in the corners. The "please wait" screens use the same card with "Just a moment".
+- **Shop link field:** a real input with a **Copy** button that copies the full link. Pasting a whole link keeps only the shop's part.
+- **No shop without platform settings:** if `platform/settings` is missing, `createShop` now says "New shops can't be created yet…" instead of "Missing or insufficient permissions" (the rules refuse every shop without it). The console names the fix: `node scripts/setup-platform.mjs`.
+- **Shared code:**
+  - `src/components/signup/useSignUp.ts`: the whole flow.
+  - `SignUpParts.tsx`: the form, code step and wait screen.
+  - `GoogleIcon` and `CreamCard` in `components/shared`.
+- **Assets:** `public/images/signup/pos-terminal.webp` (31 kB) and `receipt-printer.webp` (12 kB), cut from the transparent asset kit. The screen's green logo and Checkout button were recolored espresso. No plant and no coffee pictures, as asked.
+- **Landing nav:** the background, blur and shadow fade in gradually over the first 140 px of scrolling, and the white line under the bar is gone (no `border-b`).
+- **Phones:** single-column form grid, so nothing pushes past the screen edge. The shop-link prefix shortens to "/s/" on narrow screens.
+
+## 27. Point of sale, not coffee: landing retheme (2026-10-23)
+
+The owner: "Point of sales naman kasi ang inooffer ko hindi coffee". The landing and sign-up now show a shop counter instead of a café.
+- **Hero:**
+  - The background is the light retail photo `reference_UI/Sage Green Retail Login Background.png`, mirrored so the shop sits on the right and the text side stays calm. It's saved as `public/images/hero-retail.jpg` (72 kB).
+  - Text is espresso on cream. "Simplified" uses the new `.text-gradient-caramel-deep` (readable on light).
+  - Get Started is the espresso button with a store icon. The highlights use bolt, chart and shield icons.
+  - The floating coffee beans are gone. The copy now starts with "store".
+- **Nav:** dark text on the light hero. When scrolled it fades into frosted cream with a soft shadow (still gradual, no line). The active link is an espresso pill.
+- **About:** the latte photo is replaced by the POS terminal and receipt printer on a cream-to-sage backdrop in the same blob frame. No circles, as asked.
+- **Features, Pricing, sign-up page:** soft sage circles (`SageBubble`, fixed `sage-*` colors in tailwind.config.js) replace the coffee branches and beans.
+  - The Dashboard section has no decoration. A printer was tried there but covered the mock's numbers.
+- **Content:** "Order Management" uses a cart icon. The dashboard mock's top items are now Bottled Water, Instant Noodles, Bread and Soft Drinks (not coffee drinks).
+- **Cards:** `CreamCard` (the sign-in card and every sign-up card) has sage circles in its corner instead of the coffee branch, and a soft shadow that suits the light hero.
+- **Loader:** "Brewing your workspace…" → "Getting your workspace ready…".
+- **Removed:**
+  - `CoffeeBean`, `CoffeeBranch` and `public/images/coffee-branch.png`.
+  - `hero-bg.jpg` and `about.jpg` stay, because the demo recorder's mock products use them.
+  - The POS pictures moved to `public/images/pos/`.
+
+**Sign-up fixes in the same round:**
+- **One layout for every step:** the email code and "please wait" screens use the registration page's two columns ("Join JPOS" + the POS picture on the left, the card on the right). The pictures cut off at the screen corners are gone.
+- **When sign-up can't work yet** (no `platform/settings` in the database):
+  - The form says so before anything is typed: "Sign-up isn't open yet…".
+  - The buttons are disabled, so no code is sent and no account is made.
+  - On this computer only (`import.meta.env.DEV`) it also names the fix: `node scripts/setup-platform.mjs`.
+- **Other fixes:**
+  - The same error no longer stacks up in several toasts (toast id = message).
+  - "Your name" fills in from the Google account.
+  - The shop and name fields have autofill hints (`organization`, `name`), so the browser stops putting the email there.
+- **"Local test / LIVE" label (this computer only):** a small label at the bottom of every page says which data the dev server uses: green "Local test · fake data" (`npm run dev`) or red "LIVE database · real accounts" (`npm run dev:live`). It came up after the owner tried the local test account on the live database and Firebase locked them out with "Too many attempts". It's never in the live build, and it's hidden in the demo recorder (whose `lib/firebase` mock now also exports `USE_EMULATORS`, which it was missing).

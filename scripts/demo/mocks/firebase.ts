@@ -3,6 +3,9 @@
 export const auth = { currentUser: { uid: 'u1' } as { uid: string } | null };
 export const db = {};
 export const storage = {};
+export const USE_EMULATORS = false;
+// Hides the "Local test / LIVE" label from the recorded video
+export const DATA_MODE = 'demo' as const;
 export async function createUserWithoutSignIn() {}
 export async function verifyCredentials() {}
 export default {};

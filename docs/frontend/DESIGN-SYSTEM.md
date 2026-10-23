@@ -44,7 +44,7 @@ Rules for theme-safe code:
   - SVG attributes and jsPDF can't read variables: use `themeColor('caramel-500')` / `themeRgb('espresso-800')` from `theme.ts`.
   - Recharts: use `useChartTheme()`, which re-reads the colors when the theme changes.
 - Fixed-color exceptions: status colors (emerald/red/amber), the receipt and QR (always black on white), the select chevron's data-URI, and stored data such as category colors.
-- The coffee decorations (`CoffeeBean`, `CoffeeBranch`, the café photos) are for the **landing page only**. The shop app stays business-neutral.
+- **JPOS sells a point of sale, not coffee** (owner, 2026-10-23): no coffee pictures or decorations anywhere. The landing and sign-up use the light retail photo (`/images/hero-retail.jpg`), the POS pictures (`/images/pos/terminal.webp`, `receipt-printer.webp`) and soft sage circles (`SageBubble`, `sage-*` colors). The shop app stays business-neutral.
 - **Adding or changing a theme:** edit `docs/frontend/tools/generate-themes.py`, then run it. It keeps the default palette's lightness steps, sets hue and saturation per role, nudges lightness until every key pair passes WCAG AA, and writes `themes.css` and `contrast.md`. Paste `themes.css` into `src/index.css`, and update the table in CHANGELOG §21.
 
 ## 2. Typography
@@ -60,7 +60,7 @@ Rules for theme-safe code:
 
 - **Radius:** cards `rounded-3xl`; modals `rounded-4xl`; buttons, inputs, pills and badges `rounded-full`; textareas `rounded-2xl`.
 - **Shadows:** `shadow-card` (resting card), `shadow-lift` (hover/featured), `shadow-glow` (caramel CTA).
-- **Motion:** `animate-fade-in` (page), `animate-slide-up` (modals, hero), `animate-float` / `animate-float-slow` (decorative beans; set `--r` for rotation). `prefers-reduced-motion` turns these off.
+- **Motion:** `animate-fade-in` (page), `animate-slide-up` (modals, hero), `animate-float` / `animate-float-slow` (floating decorations; set `--r` for rotation). `prefers-reduced-motion` turns these off.
 
 ## 4. Component classes (`src/index.css`)
 
@@ -100,7 +100,7 @@ Rules for theme-safe code:
 | `PageHeader` | `eyebrow?`, `title`, `subtitle?`, `actions?` | Top of every page |
 | `StatCard` | `icon`, `label`, `value`, `change?`, `changeHint?`, `loading?`, `tone?` (`espresso`, `caramel`, `cream`) | KPI tiles |
 | `BrandMark` | `tone?` (`light`, `dark`), `subtitle?`, `size?`, `iconOnly?` | Logo tile + "JPOS" wordmark |
-| `Decor` | `CoffeeBean`, `Swash`, `Wave` (`fill` = color of the section below), `SectionTitle`, `CoffeeBranch` | Decoration |
+| `Decor` | `SageBubble` (soft sage circle), `Swash`, `Wave` (`fill` = color of the section below), `SectionTitle` | Decoration |
 | `chartTheme` | `CHART`, `CHART_SERIES`, `TOOLTIP_STYLE` | Recharts colors. Use `CHART.line` for strokes and `CHART.accent` for fills/bars |
 | `Portal` | children | Required wrapper for any `position: fixed` overlay |
 

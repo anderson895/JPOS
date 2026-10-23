@@ -5,12 +5,16 @@ import { DEFAULT_PLATFORM_SETTINGS, subscribePlatformSettings } from '@/lib/plat
 import type { PlatformSettings } from '@/types';
 import { cn } from '@/lib/utils';
 
-/** Live platform settings (prices, payment QRs, contact). Public, so it works signed out too. */
+/**
+ * Live platform settings (prices, payment QRs, contact). Public, so it works signed out too.
+ * `saved` is false while loading and when they were never set up (then `settings` holds the defaults).
+ */
 export function usePlatformSettings() {
   const [settings, setSettings] = useState<PlatformSettings>(DEFAULT_PLATFORM_SETTINGS);
   const [loaded, setLoaded] = useState(false);
-  useEffect(() => subscribePlatformSettings(s => { setSettings(s); setLoaded(true); }, () => setLoaded(true)), []);
-  return { settings, loaded };
+  const [saved, setSaved] = useState(false);
+  useEffect(() => subscribePlatformSettings((s, isSaved) => { setSettings(s); setSaved(isSaved); setLoaded(true); }, () => setLoaded(true)), []);
+  return { settings, loaded, saved };
 }
 
 /** "0945 445 4744" for display; the tel: link keeps the digits. */

@@ -1,10 +1,9 @@
 import { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import LoginPage from './pages/LoginPage';
 import TerminalPage from './pages/TerminalPage';
 import SubscribePage from './pages/SubscribePage';
-import VerifyEmailPage from './pages/VerifyEmailPage';
 import LoadingScreen from './components/shared/LoadingScreen';
 import { signedOutHome } from './lib/terminal';
 
@@ -53,8 +52,11 @@ function ProtectedRoute({ children, role }: { children: React.ReactNode; role?: 
 
 export default function App() {
   const { currentUser, loading, noShop, isSuperAdmin, superAdminChecked } = useAuth();
+  const { pathname } = useLocation();
 
-  if (loading) return <LoadingScreen />;
+  // The sign-up page stays on screen while the new account signs in, so it can
+  // keep showing its progress and go on to create the shop
+  if (loading && pathname !== '/subscribe') return <LoadingScreen />;
 
   return (
     // Shown while a layout's code loads (first visit to the admin or staff area)
@@ -69,10 +71,8 @@ export default function App() {
           }
         />
 
-        {/* New shops: create an account, verify the email, create the shop */}
+        {/* New shops: confirm the email with a code, then the account and shop are made */}
         <Route path="/subscribe" element={<SubscribePage />} />
-        {/* The "Confirm my email" link in the sign-up email */}
-        <Route path="/verify-email" element={<VerifyEmailPage />} />
 
         {/* A shop's counter terminal (RFID + password), bookmarked on the POS device */}
         <Route

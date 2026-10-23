@@ -4,6 +4,7 @@ import {
   PAYMENT_LIMIT, VERIFY_IP_LIMIT, VERIFY_LIMIT,
   type Limit, type MailKind, type QuotaState,
 } from './quota.js';
+import { checkCode, type CodeCheck, type StoredCode } from './signupCode.js';
 
 export type Reserve =
   | { ok: true }
@@ -23,15 +24,21 @@ export interface PaymentRequestDoc {
   status: string;
 }
 
-/** What the email handlers read and count in Firestore. */
+/** What the API handlers read, count and keep in Firestore. */
 export interface Store {
   /**
-   * Counts one confirmation email for this account, this network (hashed IP,
-   * when known) and the verify share of the budget, if all the limits allow it.
+   * Counts one sign-up code email for this address (its emailId), this network
+   * (hashed IP, when known) and the verify share of the budget, if all the limits allow it.
    */
-  reserveVerifyEmail(uid: string, ipId: string | null, now: Date): Promise<Reserve>;
+  reserveVerifyEmail(emailId: string, ipId: string | null, now: Date): Promise<Reserve>;
   /** Gives back what reserveVerifyEmail counted, when the email couldn't be sent. */
-  releaseVerifyEmail(uid: string, ipId: string | null, now: Date): Promise<void>;
+  releaseVerifyEmail(emailId: string, ipId: string | null, now: Date): Promise<void>;
+  /** Keeps the newest sign-up code for this address (it replaces any older one). */
+  saveSignupCode(emailId: string, code: StoredCode): Promise<void>;
+  /** Checks a typed code: a right one is used up, a wrong one counts as a try. */
+  checkSignupCode(emailId: string, hash: string, now: Date): Promise<CodeCheck>;
+  /** True when this login has a JPOS profile or runs JPOS (Super Admin). */
+  accountInUse(uid: string): Promise<boolean>;
   getPaymentRequest(id: string): Promise<PaymentRequestDoc | null>;
   /** Marks this payment's Super Admin email as sent. Refused ('duplicate') if it already was. */
   reservePaymentNotice(requestId: string, uid: string, now: Date): Promise<Reserve>;
@@ -40,10 +47,11 @@ export interface Store {
 }
 
 /**
- * Server-only collection: no Firestore rule matches it, so the app can never
- * read or change it. Only this server (Admin SDK) writes the counters.
+ * Server-only collections: no Firestore rule matches them, so the app can never
+ * read or change them. Only this server (Admin SDK) writes the counters and codes.
  */
 const LOG = 'mailLog';
+const CODES = 'signupCodes';
 
 interface Counted {
   kind: MailKind;
@@ -106,8 +114,24 @@ export function firestoreStore(db: Firestore): Store {
     });
 
   return {
-    reserveVerifyEmail: (uid, ipId, now) => reserve({ kind: 'verify', quotaId: `verify_${uid}`, limit: VERIFY_LIMIT, ipId, now }),
-    releaseVerifyEmail: (uid, ipId, now) => release({ kind: 'verify', quotaId: `verify_${uid}`, ipId, now }),
+    reserveVerifyEmail: (emailId, ipId, now) => reserve({ kind: 'verify', quotaId: `verify_${emailId}`, limit: VERIFY_LIMIT, ipId, now }),
+    releaseVerifyEmail: (emailId, ipId, now) => release({ kind: 'verify', quotaId: `verify_${emailId}`, ipId, now }),
+    async saveSignupCode(emailId, code) {
+      await db.collection(CODES).doc(emailId).set(code);
+    },
+    checkSignupCode: (emailId, hash, now) =>
+      db.runTransaction(async (tx) => {
+        const ref = db.collection(CODES).doc(emailId);
+        const snap = await tx.get(ref);
+        const { result, next } = checkCode(snap.data() as Partial<StoredCode> | undefined, hash, now.getTime());
+        if (next) tx.set(ref, next);
+        else if (snap.exists) tx.delete(ref);
+        return result;
+      }),
+    async accountInUse(uid) {
+      const [profile, admin] = await db.getAll(db.collection('users').doc(uid), db.collection('platformAdmins').doc(uid));
+      return profile.exists || admin.exists;
+    },
     reservePaymentNotice: (requestId, uid, now) =>
       reserve({ kind: 'payment', quotaId: `pay_${uid}`, limit: PAYMENT_LIMIT, onceId: `paid_${requestId}`, now }),
     releasePaymentNotice: (requestId, uid, now) =>

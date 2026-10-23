@@ -1,6 +1,4 @@
-import type { CSSProperties } from 'react';
 import { ArrowRight, Check } from 'lucide-react';
-import { CoffeeBean, CoffeeBranch } from '@/components/shared/Decor';
 import { ABOUT_POINTS } from './content';
 import { scrollToSection } from './scroll';
 
@@ -46,23 +44,32 @@ export default function AboutSection() {
           </button>
         </div>
 
-        {/* Photo in blob frame */}
+        {/* The JPOS counter (POS terminal + receipt printer) in the blob frame */}
         <div className="relative mx-auto w-full max-w-xl">
-          <CoffeeBranch className="absolute -top-14 -right-10 w-56 opacity-70 rotate-[18deg] z-10" />
           <div
-            className="absolute -inset-3 sm:-inset-4 bg-gradient-to-br from-caramel-200 via-cream-300 to-caramel-300/70"
+            className="absolute -inset-3 sm:-inset-4 bg-gradient-to-br from-sage-300 via-cream-300 to-caramel-200"
             style={{ borderRadius: BLOB }}
           />
-          <img
-            src="/images/about.jpg"
-            alt="A latte with heart art on a wooden café counter"
-            className="relative w-full aspect-[5/4] object-cover shadow-lift"
+          <div
+            className="relative w-full aspect-[5/4] overflow-hidden shadow-lift bg-gradient-to-br from-cream-50 via-cream-100 to-sage-200"
             style={{ borderRadius: BLOB }}
-            loading="lazy"
-          />
-          <CoffeeBean className="absolute -left-6 top-[58%] w-8 animate-float" style={{ '--r': '-30deg' } as CSSProperties} />
-          <CoffeeBean className="absolute -left-2 top-[72%] w-6 animate-float-slow" style={{ '--r': '40deg' } as CSSProperties} />
-          <CoffeeBean className="absolute right-[12%] -bottom-6 w-7 animate-float" style={{ '--r': '75deg' } as CSSProperties} />
+          >
+            {/* Soft floor shadow under the devices */}
+            <div className="absolute inset-x-[12%] bottom-[15%] h-8 rounded-[50%] bg-espresso-900/20 blur-xl" />
+            <img
+              src="/images/pos/terminal.webp"
+              alt="A JPOS point-of-sale terminal with a receipt printer"
+              width={512} height={453}
+              className="absolute bottom-[15%] left-[9%] w-[56%] drop-shadow-[0_24px_28px_rgba(40,30,20,0.3)]"
+              loading="lazy"
+            />
+            <img
+              src="/images/pos/receipt-printer.webp" alt=""
+              width={308} height={308}
+              className="absolute bottom-[15%] right-[9%] w-[30%] drop-shadow-[0_18px_22px_rgba(40,30,20,0.28)]"
+              loading="lazy"
+            />
+          </div>
         </div>
       </div>
     </section>

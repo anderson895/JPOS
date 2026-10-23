@@ -5,7 +5,7 @@ import { FirebaseError } from 'firebase/app';
 import { auth, db } from '@/lib/firebase';
 import { uploadImage } from '@/lib/cloudinary';
 import { normalizeReference } from '@/lib/eWallet';
-import { getPlatformSettings } from '@/lib/platform';
+import { getPlatformSettings, getSavedPlatformSettings } from '@/lib/platform';
 import { callApi } from '@/lib/api';
 import { PLAN_LABEL } from '@/lib/entitlements';
 import type { PlanId, SubscriptionRequest, Tenant } from '@/types';
@@ -36,6 +36,12 @@ export async function isSlugAvailable(slug: string): Promise<boolean> {
   return !(await getDoc(doc(db, 'slugs', slug))).exists();
 }
 
+/**
+ * Shown when JPOS's prices and trial (platform/settings) were never set up:
+ * the rules then refuse every new shop, so sign-up waits for the setup.
+ */
+export const SIGNUP_CLOSED_MESSAGE = "Sign-up isn't open yet. Please message us and we'll help you get started.";
+
 export class SlugTakenError extends Error {
   constructor() { super('That shop link is already taken. Try another one.'); this.name = 'SlugTakenError'; }
 }
@@ -52,7 +58,13 @@ export async function createShop(input: { shopName: string; slug: string; ownerN
   await user.getIdToken(true);
   if (!(await isSlugAvailable(input.slug))) throw new SlugTakenError();
 
-  const settings = await getPlatformSettings();
+  // The rules check the new shop against the saved prices and trial: without
+  // them every shop is refused, so say what's wrong instead of "permission denied"
+  const settings = await getSavedPlatformSettings();
+  if (!settings) {
+    console.error('[JPOS] platform/settings is missing in this database. Run "node scripts/setup-platform.mjs" (see its header) once.');
+    throw new Error(SIGNUP_CLOSED_MESSAGE);
+  }
   const iso = new Date().toISOString();
   const shopRef = doc(collection(db, 'tenants'));
   const batch = writeBatch(db);
@@ -79,7 +91,7 @@ export async function createShop(input: { shopName: string; slug: string; ownerN
 }
 
 /** Starts the one-time free trial: selling unlocks for `trialDays` from now. */
-export async function startTrial(t: Tenant) {
+export async function startTrial(t: Pick<Tenant, 'id' | 'status' | 'trialUsed'>) {
   if (t.trialUsed || t.status !== 'setup') throw new Error('The free trial was already used.');
   const batch = writeBatch(db);
   batch.update(doc(db, 'tenants', t.id), { status: 'trial', trialUsed: true, trialStartedAt: serverTimestamp(), updatedAt: serverTimestamp() });

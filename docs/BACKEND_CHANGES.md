@@ -679,3 +679,45 @@ The public landing page used to download the whole app in one 1.7 MB file: every
 - **Known follow-up:** the demo recorder mocks (`scripts/demo/mocks/firestore.ts`) still use root collections. Update them before the final tutorial is recorded.
 - **Windows note:** `firebase emulators:exec` can leave the Java emulator running after the tests. If a port stays busy, end the `java.exe` whose command line contains `cloud-firestore-emulator`.
 
+
+## 24. Sign-up with an email code (2026-10-23)
+
+**Owner request:** no account may exist in Firebase Authentication until its email is confirmed. Bugs this fixes:
+- After confirming in Gmail, owners stayed stuck on "Set up your shop" instead of landing in the app.
+- "Back" couldn't reach the sign-in page.
+- A `localhost` link in local testing didn't open on a phone.
+
+**New flow:**
+1. **`POST /api/signup/code { email }`** (public). It emails a 6-digit code and creates **no account**.
+   - Refused (409 `email_taken`) when the email already has a login. The one exception: a login the old flow left behind (never confirmed, password only, not disabled, no `users/{uid}` profile, not in `platformAdmins`).
+   - Same limits as before, now per address: one email a minute and 5 a day per address, 10 a day per network, and the `verify` share of the daily Gmail budget. A failed send isn't counted.
+2. **`POST /api/signup/finish { email, code, password, name }`** (public). It checks the code, then creates the login with `emailVerified: true` (Admin SDK). A leftover login from the old flow is deleted first.
+   - Codes last 10 minutes and allow 5 tries. A new code replaces the old one.
+   - Errors: `code_wrong` ("N tries left"), `code_expired`, `code_locked`, `code_missing`.
+   - Bad input (`invalid_code`, `weak_password`, `invalid_email`) and `email_taken` don't use up a try.
+3. The app signs in with the same password, creates the shop (`createShop`) and, when the trial was picked, starts it (`startTrial`). It then opens `/admin`. A paid package opens `/admin/billing?plan=…`.
+
+**Storage:**
+- Codes live in the server-only collection `signupCodes/{emailId}`. Only a SHA-256 hash of the code is kept, plus `expiresAt` and `tries`.
+- `emailId` is a hash of the address.
+- No Firestore rule matches the collection, so the app can never read it.
+
+**Removed:**
+- `/api/email/verify`, `verifyEmailHandler` and `generateEmailVerificationLink`
+- the `/verify-email` page
+- `signUp`, `resendVerification` and `checkEmailVerified` in AuthContext
+- the Billing `?start=trial` auto-start
+
+**AuthContext:**
+- `sendSignUpCode` and `finishSignUp` replace the old sign-up calls. `loginWithGoogle` now returns `{ isNew }`.
+- A never-confirmed password login without a profile (old flow) is signed out. Signing in with one says to sign up again.
+
+**Email deliverability:** the code email has **no links**. The old "Confirm my email" button pointed to a `vercel.app` address, a common spam signal. Emails are now full HTML pages (charset, `lang`, title) with a plain-text part.
+
+**Local testing:**
+- `npm run dev`: test addresses (`@shop.test`) get "Local test: fill in the code". Real addresses also get the real email when `VITE_LOCAL_REAL_EMAIL=true` and Gmail is in `.env`.
+- `npm run dev:live`: needs `FIREBASE_SERVICE_ACCOUNT` in `.env`. When it's missing, the page and the terminal now say so, instead of "Please contact us".
+
+**Tests:**
+- `npm run test:api`: 45/45 (sign-up codes, limits, leftovers, payment emails, `checkCode`).
+- Playwright E2E on the emulators: 21/21. It covers no account before the code, a wrong code, Back, the right code → dashboard with the trial running, a reused code refused, "no shop" → Back → sign-in, and the old leftover login.

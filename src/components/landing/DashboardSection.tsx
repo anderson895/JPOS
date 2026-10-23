@@ -1,7 +1,6 @@
-import type { CSSProperties } from 'react';
 import { ArrowRight, CheckCircle2 } from 'lucide-react';
 import DashboardMock from './DashboardMock';
-import { CoffeeBean, CoffeeBranch, Wave } from '@/components/shared/Decor';
+import { Wave } from '@/components/shared/Decor';
 import { DASHBOARD_POINTS } from './content';
 import { scrollToSection } from './scroll';
 
@@ -36,9 +35,6 @@ export default function DashboardSection() {
         </div>
 
         <div className="relative">
-          <CoffeeBranch className="hidden sm:block absolute -left-16 -bottom-12 w-52 opacity-50 rotate-[30deg] z-10 brightness-150" />
-          <CoffeeBean className="hidden sm:block absolute -right-3 -bottom-5 w-9 z-10 animate-float" style={{ '--r': '40deg' } as CSSProperties} />
-          <CoffeeBean className="hidden sm:block absolute right-10 -bottom-8 w-6 z-10 animate-float-slow" style={{ '--r': '-20deg' } as CSSProperties} />
           <DashboardMock />
         </div>
       </div>

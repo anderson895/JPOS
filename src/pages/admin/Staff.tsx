@@ -37,6 +37,8 @@ export default function AdminStaff() {
   const [showPass, setShowPass] = useState(false);
   const [showRfidPass, setShowRfidPass] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  // The person being deleted or switched on/off (their card shows a spinner)
+  const [busyId, setBusyId] = useState<string | null>(null);
   const photoRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { fetchStaff(); }, []);
@@ -193,6 +195,7 @@ export default function AdminStaff() {
     if (id === currentUser?.id) { toast.error("You can't delete your own account"); return; }
     const member = staff.find(s => s.id === id);
     if (!confirm('Delete this staff member? They will lose access immediately and their RFID card will stop working.')) return;
+    setBusyId(id);
     try {
       const batch = writeBatch(db);
       batch.delete(doc(db, 'users', id));
@@ -208,14 +211,17 @@ export default function AdminStaff() {
       setStaff(prev => prev.filter(s => s.id !== id));
       toast.success('Staff deleted');
     } catch { toast.error('Failed to delete'); }
+    finally { setBusyId(null); }
   }
 
   async function handleToggle(s: Staff) {
     if (s.id === currentUser?.id) { toast.error("You can't deactivate your own account"); return; }
+    setBusyId(s.id);
     try {
       await updateDoc(doc(db, 'users', s.id), { isActive: !s.isActive });
       setStaff(prev => prev.map(x => x.id === s.id ? { ...x, isActive: !x.isActive } : x));
     } catch { toast.error('Failed to update'); }
+    finally { setBusyId(null); }
   }
 
   function openAdd() {
@@ -265,7 +271,7 @@ export default function AdminStaff() {
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {admins.map(s => (
-              <StaffCard key={s.id} staff={s} isSelf={s.id === currentUser?.id} onEdit={() => openEdit(s)} onDelete={handleDelete} onToggle={handleToggle} />
+              <StaffCard key={s.id} staff={s} isSelf={s.id === currentUser?.id} busy={busyId === s.id} onEdit={() => openEdit(s)} onDelete={handleDelete} onToggle={handleToggle} />
             ))}
           </div>
         </div>
@@ -295,7 +301,7 @@ export default function AdminStaff() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {staffMembers.map(s => (
-              <StaffCard key={s.id} staff={s} isSelf={s.id === currentUser?.id} onEdit={() => openEdit(s)} onDelete={handleDelete} onToggle={handleToggle} />
+              <StaffCard key={s.id} staff={s} isSelf={s.id === currentUser?.id} busy={busyId === s.id} onEdit={() => openEdit(s)} onDelete={handleDelete} onToggle={handleToggle} />
             ))}
           </div>
         )}
@@ -478,10 +484,12 @@ export default function AdminStaff() {
   );
 }
 
-function StaffCard({ staff, isSelf, onEdit, onDelete, onToggle }: {
+function StaffCard({ staff, isSelf, busy, onEdit, onDelete, onToggle }: {
   staff: Staff;
   /** The signed-in admin's own card: can't be deactivated or deleted (would lock them out). */
   isSelf: boolean;
+  /** Being deleted or switched on/off right now */
+  busy: boolean;
   onEdit: () => void;
   onDelete: (id: string) => void;
   onToggle: (s: Staff) => void;
@@ -523,19 +531,20 @@ function StaffCard({ staff, isSelf, onEdit, onDelete, onToggle }: {
       <div className="relative flex items-center gap-2 pt-3 border-t border-cream-300/70">
         <button
           onClick={() => onToggle(staff)}
-          disabled={isSelf}
+          disabled={isSelf || busy}
           title={isSelf ? "You can't deactivate your own account" : undefined}
           className="text-bark-400 hover:text-espresso-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 text-xs"
         >
-          {staff.isActive ? <ToggleRight className="w-6 h-6 text-emerald-600" /> : <ToggleLeft className="w-6 h-6" />}
+          {busy ? <span className="w-6 h-6 flex items-center justify-center"><Loader2 className="w-4 h-4 animate-spin text-caramel-600" /></span>
+            : staff.isActive ? <ToggleRight className="w-6 h-6 text-emerald-600" /> : <ToggleLeft className="w-6 h-6" />}
           <span>{staff.isActive ? 'Active' : 'Inactive'}</span>
         </button>
-        <button onClick={onEdit} className="ml-auto btn-ghost py-1.5 px-3 text-xs">
+        <button onClick={onEdit} disabled={busy} className="ml-auto btn-ghost py-1.5 px-3 text-xs">
           <Edit2 className="w-3.5 h-3.5" /> Edit
         </button>
         {!isSelf && (
-          <button onClick={() => onDelete(staff.id)} className="w-8 h-8 rounded-full flex items-center justify-center text-bark-300 hover:text-red-500 hover:bg-red-50 transition-colors" title="Delete staff">
-            <Trash2 className="w-4 h-4" />
+          <button onClick={() => onDelete(staff.id)} disabled={busy} className="w-8 h-8 rounded-full flex items-center justify-center text-bark-300 hover:text-red-500 hover:bg-red-50 transition-colors" title="Delete staff">
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
           </button>
         )}
       </div>

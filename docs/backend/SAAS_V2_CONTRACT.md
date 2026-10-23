@@ -94,6 +94,8 @@ function writable(t)       { return tenant(t).suspended == false
 ## 4. Trial (self-serve)
 
 ### 4.1 Client order (exact)
+> **Superseded (2026-10-23):** sign-up now confirms the email with a **6-digit code before any account exists** (`/api/signup/code` → `/api/signup/finish`, which creates the login already verified). Then the app signs in, creates the shop and starts the trial. Steps 1–3 below no longer apply. See `docs/BACKEND_CHANGES.md` §24.
+
 1. `createUserWithEmailAndPassword` (on `/subscribe`).
 2. `sendEmailVerification(user)` → "Check your inbox". The page offers **"I've verified"**.
 3. On click:

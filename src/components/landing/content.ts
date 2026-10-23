@@ -1,6 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import {
-  BarChart3, Package, Coffee, FileText, ShieldCheck, CreditCard,
+  BarChart3, Package, Coffee, FileText, ShieldCheck, CreditCard, ShoppingCart,
   CupSoda, Croissant, UtensilsCrossed, Store, ShoppingBag, Scissors, Shirt, Car,
 } from 'lucide-react';
 
@@ -44,7 +44,7 @@ export const ABOUT_POINTS = [
 export const FEATURES: { icon: LucideIcon; title: string; text: string }[] = [
   { icon: BarChart3,   title: 'Sales Tracking',        text: 'Monitor your daily, weekly, and monthly sales.' },
   { icon: Package,     title: 'Products & Services',   text: 'Add items or services with prices, photos and categories.' },
-  { icon: Coffee,      title: 'Order Management',      text: 'Process orders quickly and efficiently.' },
+  { icon: ShoppingCart, title: 'Order Management',      text: 'Process orders quickly and efficiently.' },
   { icon: FileText,    title: 'Detailed Reports',      text: 'Get insights with comprehensive reports.' },
   { icon: ShieldCheck, title: 'Secure Access',         text: 'Keep your data safe with role-based access.' },
   { icon: CreditCard,  title: 'Cash, GCash & Maya',     text: "Take cash or your shop's own GCash/Maya QR." },

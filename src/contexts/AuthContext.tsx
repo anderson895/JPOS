@@ -1,9 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  updateProfile,
-  reload,
   signInWithPopup,
   GoogleAuthProvider,
   EmailAuthProvider,
@@ -22,7 +19,7 @@ import toast from 'react-hot-toast';
 import { auth, db } from '@/lib/firebase';
 import { setCurrentTenant, tenantDoc, tenantRef } from '@/lib/tenant';
 import { isSuperAdmin as checkSuperAdmin } from '@/lib/platform';
-import { callApi } from '@/lib/api';
+import { callPublicApi } from '@/lib/api';
 import type { Tenant, User } from '@/types';
 
 interface AuthContextType {
@@ -40,12 +37,12 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   /** RFID works only on a shop's own staff sign-in page (/s/:slug), so the card lookup knows the shop. */
   loginWithRFID: (rfidTag: string, terminalSlug: string) => Promise<void>;
-  loginWithGoogle: () => Promise<void>;
-  /** New account for a shop owner; emails the confirmation link (from JPOS's Gmail). */
-  signUp: (email: string, password: string, displayName: string) => Promise<{ emailSent: boolean; problem?: string }>;
-  resendVerification: () => Promise<void>;
-  /** Re-reads the account after the owner clicked the email link. True when verified. */
-  checkEmailVerified: () => Promise<boolean>;
+  /** isNew: a Google account with no shop yet (it continues at /subscribe). */
+  loginWithGoogle: () => Promise<{ isNew: boolean }>;
+  /** Sign-up step 1: emails a 6-digit code (from JPOS's Gmail). No account is made yet. */
+  sendSignUpCode: (email: string) => Promise<void>;
+  /** Sign-up step 2: a right code makes the account (email already confirmed), then signs in. */
+  finishSignUp: (input: { email: string; code: string; password: string; name: string }) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -62,6 +59,14 @@ async function fetchUserProfile(fbUser: FirebaseUser): Promise<User | null> {
   const snap = await getDoc(doc(db, 'users', fbUser.uid));
   return snap.exists() ? ({ id: fbUser.uid, ...snap.data() } as User) : null;
 }
+
+/**
+ * A password login whose email was never confirmed and that has no shop: only
+ * the old sign-up (before the email code) made these. Staff logins aren't
+ * confirmed either, but they always have a profile, so they never count.
+ */
+const isUnconfirmedSignUp = (u: FirebaseUser) =>
+  !u.emailVerified && u.providerData.length > 0 && u.providerData.every(p => p.providerId === 'password');
 
 /** slugs/{slug} -> the shop's id (a public lookup, so the staff sign-in page can find its shop). */
 async function resolveTerminalShop(slug: string): Promise<string> {
@@ -170,6 +175,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (!snap.exists()) {
             // A card can't open an account that has no profile
             if (rfidSignIn.current || shopId) { resetSession(); return; }
+            // Left behind by the old sign-up (email never confirmed): it can't
+            // create a shop. Signing up again with the same email replaces it.
+            if (isUnconfirmedSignUp(fbUser)) { resetSession(); return; }
             // A new sign-up (no shop yet): they finish at /subscribe.
             clearState();
             setNoShop(true);
@@ -226,6 +234,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (email: string, password: string) => {
     const cred = await signInWithEmailAndPassword(auth, email, password);
     const userData = await fetchUserProfile(cred.user);
+    if (!userData && isUnconfirmedSignUp(cred.user)) {
+      await signOut(auth);
+      throw new Error("This email was never confirmed. Sign up again with it and we'll send you a code.");
+    }
     // No profile = an owner who hasn't finished setting up their shop: the app
     // takes them to /subscribe to continue.
     if (userData && !userData.isActive) {
@@ -321,41 +333,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const cred = await signInWithPopup(auth, provider);
 
     const userData = await fetchUserProfile(cred.user);
-    if (!userData) return;   // new owner → /subscribe
+    if (!userData) return { isNew: true };   // new owner → /subscribe
     if (!userData.isActive) {
       await signOut(auth);
       throw new Error('This account has been deactivated. Contact your administrator.');
     }
     await restoreRfidPassword(cred.user, userData);
+    return { isNew: false };
   };
 
-  const signUp = async (email: string, password: string, displayName: string) => {
-    const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
-    // Before the email goes out: it greets the owner by name
-    await updateProfile(cred.user, { displayName: displayName.trim() }).catch(() => { /* cosmetic */ });
-    // The account exists even if the email fails; "Send the email again" retries
-    try {
-      await callApi('email/verify');
-      return { emailSent: true };
-    } catch (err) {
-      return { emailSent: false, problem: err instanceof Error ? err.message : 'We could not send the email.' };
-    }
+  const sendSignUpCode = async (email: string) => {
+    await callPublicApi('signup/code', { email: email.trim() });
   };
 
-  const resendVerification = async () => {
-    if (!auth.currentUser) throw new Error('Sign in again.');
-    await callApi('email/verify');
-  };
-
-  const checkEmailVerified = async () => {
-    const user = auth.currentUser;
-    if (!user) return false;
-    await reload(user);
-    if (!user.emailVerified) return false;
-    // A fresh token carries email_verified = true, which the shop-creation rule checks
-    await user.getIdToken(true);
-    setFirebaseUser(auth.currentUser);
-    return true;
+  const finishSignUp = async ({ email, code, password, name }: { email: string; code: string; password: string; name: string }) => {
+    await callPublicApi('signup/finish', { email: email.trim(), code, password, name: name.trim() });
+    // The account was made with its email confirmed, so the shop can be created right away
+    await signInWithEmailAndPassword(auth, email.trim(), password);
   };
 
   const logout = async () => {
@@ -381,7 +375,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider value={{
       currentUser, tenant, firebaseUser, noShop, isSuperAdmin, superAdminChecked, loading,
-      login, loginWithRFID, loginWithGoogle, signUp, resendVerification, checkEmailVerified,
+      login, loginWithRFID, loginWithGoogle, sendSignUpCode, finishSignUp,
       logout, refreshUser,
     }}>
       {children}

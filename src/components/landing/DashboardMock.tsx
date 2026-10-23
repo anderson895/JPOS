@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, ShoppingCart, Package, FileText, Settings, LogOut,
-  Wallet, ShoppingBag, Coffee, ArrowUpRight, ChevronDown,
+  Wallet, ShoppingBag, ArrowUpRight, ChevronDown,
 } from 'lucide-react';
 import BrandMark from '@/components/shared/BrandMark';
 
@@ -8,13 +8,14 @@ import BrandMark from '@/components/shared/BrandMark';
 const STATS = [
   { icon: Wallet, label: 'Total Sales', value: '₱12,450.00', change: '12%' },
   { icon: ShoppingBag, label: 'Total Orders', value: '128', change: '8%' },
-  { icon: Coffee, label: 'Total Items Sold', value: '42', change: '15%' },
+  { icon: Package, label: 'Total Items Sold', value: '42', change: '15%' },
 ];
+// A mix any small shop sells (JPOS is for every kind of shop, not just cafés)
 const TOP_ITEMS = [
-  { name: 'Americano', pct: 35 },
-  { name: 'Latte', pct: 28 },
-  { name: 'Cappuccino', pct: 20 },
-  { name: 'Mocha', pct: 17 },
+  { name: 'Bottled Water', pct: 35 },
+  { name: 'Instant Noodles', pct: 28 },
+  { name: 'Bread', pct: 20 },
+  { name: 'Soft Drinks', pct: 17 },
 ];
 const NAV = [
   { icon: LayoutDashboard, label: 'Dashboard', active: true },
@@ -106,7 +107,7 @@ export default function DashboardMock() {
                 <li key={name}>
                   <div className="flex items-center gap-2 text-[11px]">
                     <span className="w-5 h-5 rounded-full bg-espresso-800 text-caramel-200 flex items-center justify-center">
-                      <Coffee className="w-3 h-3" />
+                      <ShoppingBag className="w-3 h-3" />
                     </span>
                     <span className="flex-1">{name}</span>
                     <span className="text-bark-500">{pct}%</span>

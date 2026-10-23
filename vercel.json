@@ -1,6 +1,7 @@
 {
   "functions": {
-    "api/email/*.ts": { "maxDuration": 30 }
+    "api/email/*.ts": { "maxDuration": 30 },
+    "api/signup/*.ts": { "maxDuration": 30 }
   },
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/index.html" }

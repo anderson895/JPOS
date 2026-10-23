@@ -36,6 +36,8 @@ export default function AdminProducts() {
   const [editCatId, setEditCatId]     = useState<string | null>(null);
   const [editCatName, setEditCatName] = useState('');
   const [savingCat, setSavingCat]     = useState(false);
+  // The product or category being deleted or switched on/off (its button shows a spinner)
+  const [busyId, setBusyId]           = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { fetchAll(); }, []);
@@ -102,21 +104,27 @@ export default function AdminProducts() {
 
   async function handleDelete(id: string) {
     if (!confirm('Delete this product?')) return;
+    setBusyId(id);
     try {
       await deleteDoc(tenantDoc('products', id));
       setProducts(prev => prev.filter(p => p.id !== id));
       toast.success('Product deleted');
     } catch {
       toast.error('Failed to delete');
+    } finally {
+      setBusyId(null);
     }
   }
 
   async function handleToggleAvail(p: Product) {
+    setBusyId(p.id);
     try {
       await updateDoc(tenantDoc('products', p.id), { isAvailable: !p.isAvailable });
       setProducts(prev => prev.map(x => x.id === p.id ? { ...x, isAvailable: !x.isAvailable } : x));
     } catch {
       toast.error('Failed to update');
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -191,12 +199,15 @@ export default function AdminProducts() {
       toast.error('Cannot delete — category is used by products'); return;
     }
     if (!confirm('Delete this category?')) return;
+    setBusyId(id);
     try {
       await deleteDoc(tenantDoc('categories', id));
       setCategories(prev => prev.filter(c => c.id !== id));
       toast.success('Category deleted');
     } catch {
       toast.error('Failed to delete category');
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -272,8 +283,8 @@ export default function AdminProducts() {
                   <button onClick={() => openEdit(p)} className="w-8 h-8 bg-cream-50/95 rounded-full flex items-center justify-center shadow-md hover:bg-white" title="Edit product">
                     <Edit2 className="w-3.5 h-3.5 text-espresso-700" />
                   </button>
-                  <button onClick={() => handleDelete(p.id)} className="w-8 h-8 bg-cream-50/95 rounded-full flex items-center justify-center shadow-md hover:bg-red-50" title="Delete product">
-                    <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                  <button onClick={() => handleDelete(p.id)} disabled={busyId === p.id} className="w-8 h-8 bg-cream-50/95 rounded-full flex items-center justify-center shadow-md hover:bg-red-50" title="Delete product">
+                    {busyId === p.id ? <Loader2 className="w-3.5 h-3.5 text-red-500 animate-spin" /> : <Trash2 className="w-3.5 h-3.5 text-red-500" />}
                   </button>
                 </div>
                 {!p.isAvailable && (
@@ -289,12 +300,15 @@ export default function AdminProducts() {
                   <span className="font-display font-semibold text-lg text-espresso-800">{formatCurrency(p.price)}</span>
                   <button
                     onClick={() => handleToggleAvail(p)}
+                    disabled={busyId === p.id}
                     title={p.isAvailable ? 'Available — click to hide from POS' : 'Unavailable — click to show in POS'}
                     className="flex items-center"
                   >
-                    {p.isAvailable
-                      ? <ToggleRight className="w-7 h-7 text-emerald-600" />
-                      : <ToggleLeft  className="w-7 h-7 text-bark-400" />}
+                    {busyId === p.id
+                      ? <span className="w-7 h-7 flex items-center justify-center"><Loader2 className="w-4 h-4 text-caramel-600 animate-spin" /></span>
+                      : p.isAvailable
+                        ? <ToggleRight className="w-7 h-7 text-emerald-600" />
+                        : <ToggleLeft  className="w-7 h-7 text-bark-400" />}
                   </button>
                 </div>
               </div>
@@ -449,10 +463,11 @@ export default function AdminProducts() {
                         </button>
                         <button
                           onClick={() => deleteCategory(c.id)}
+                          disabled={busyId === c.id}
                           className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-red-50"
                           title="Delete category"
                         >
-                          <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                          {busyId === c.id ? <Loader2 className="w-3.5 h-3.5 text-red-500 animate-spin" /> : <Trash2 className="w-3.5 h-3.5 text-red-500" />}
                         </button>
                       </div>
                     </>

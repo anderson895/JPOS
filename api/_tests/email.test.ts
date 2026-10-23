@@ -1,13 +1,15 @@
-// Unit tests for the email API. No network, no Gmail, no Firebase: the
-// sign-in check, Firestore counters and the mailer are all faked.
+// Unit tests for the API (sign-up codes and emails). No network, no Gmail, no
+// Firebase: the sign-in check, the logins, Firestore and the mailer are all faked.
 // Run with: npm run test:api
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { paymentNoticeHandler, verifyEmailHandler } from '../_lib/handlers.js';
+import { paymentNoticeHandler, signupCodeHandler, signupFinishHandler } from '../_lib/handlers.js';
+import { ApiError } from '../_lib/http.js';
 import {
   BUDGET, checkQuota, hourKey, last24Hours, withinBudget, PAYMENT_LIMIT, VERIFY_IP_LIMIT, VERIFY_LIMIT,
   type Limit, type MailKind, type QuotaState,
 } from '../_lib/quota.js';
+import { checkCode, codeHash, emailId, newCode, CODE_TRIES, CODE_TTL_MS, type StoredCode } from '../_lib/signupCode.js';
 import type { AuthUser, Deps } from '../_lib/deps.js';
 import type { Message } from '../_lib/mail.js';
 import type { PaymentRequestDoc, Reserve, Store } from '../_lib/store.js';
@@ -16,16 +18,22 @@ const APP = 'https://jpos.example.com';
 const START = new Date('2026-10-23T02:00:00Z');
 
 interface Sent extends Message { to: string[] }
+interface Account extends AuthUser { password?: string; displayName?: string }
 
 interface World {
-  users: Record<string, AuthUser>;
+  /** Logins by uid */
+  accounts: Record<string, Account>;
+  /** Logins with a JPOS profile, or the Super Admin */
+  inUse: Set<string>;
+  codes: Map<string, StoredCode>;
+  codesMade: number;
   requests: Record<string, PaymentRequestDoc>;
   log: Map<string, unknown>;
   sent: Sent[];
   now: Date;
   env: Record<string, string | undefined>;
   mailFails: boolean;
-  links: number;
+  createFails: boolean;
 }
 
 /** In-memory version of firestoreStore, using the same limits. */
@@ -55,8 +63,15 @@ function memoryStore(w: World): Store {
     if (onceId) w.log.delete(onceId);
   };
   return {
-    reserveVerifyEmail: async (uid, ipId, now) => reserve('verify', `verify_${uid}`, VERIFY_LIMIT, now, ipId),
-    releaseVerifyEmail: async (uid, ipId, now) => release('verify', `verify_${uid}`, now, ipId),
+    reserveVerifyEmail: async (id, ipId, now) => reserve('verify', `verify_${id}`, VERIFY_LIMIT, now, ipId),
+    releaseVerifyEmail: async (id, ipId, now) => release('verify', `verify_${id}`, now, ipId),
+    saveSignupCode: async (id, code) => { w.codes.set(id, { ...code }); },
+    checkSignupCode: async (id, hash, now) => {
+      const { result, next } = checkCode(w.codes.get(id), hash, now.getTime());
+      if (next) w.codes.set(id, next); else w.codes.delete(id);
+      return result;
+    },
+    accountInUse: async (uid) => w.inUse.has(uid),
     reservePaymentNotice: async (id, uid, now) => reserve('payment', `pay_${uid}`, PAYMENT_LIMIT, now, null, `paid_${id}`),
     releasePaymentNotice: async (id, uid, now) => release('payment', `pay_${uid}`, now, null, `paid_${id}`),
     getPaymentRequest: async (id) => w.requests[id] ?? null,
@@ -66,13 +81,25 @@ function memoryStore(w: World): Store {
 const REQ_ID = 'Req1234567890abc';
 
 function newWorld(): World {
+  const login = (uid: string, email: string, more: Partial<Account> = {}): Account =>
+    ({ uid, email, emailVerified: false, disabled: false, providers: ['password'], ...more });
   return {
-    users: {
-      juan: { email: 'juan@shop.test', emailVerified: false, displayName: 'Juan <b>Dela Cruz</b>', disabled: false },
-      maria: { email: 'maria@shop.test', emailVerified: false, displayName: 'Maria', disabled: false },
-      done: { email: 'done@shop.test', emailVerified: true, displayName: 'Done', disabled: false },
-      off: { email: 'off@shop.test', emailVerified: false, displayName: 'Off', disabled: true },
+    accounts: {
+      // An owner with a shop (verified)
+      juan: login('juan', 'juan@shop.test', { emailVerified: true }),
+      maria: login('maria', 'maria@shop.test', { emailVerified: true }),
+      // Staff accounts are never verified, but they belong to a shop
+      cashier: login('cashier', 'cashier@shop.test'),
+      // Signed up with Google, no shop yet
+      gina: login('gina', 'gina@gmail.test', { emailVerified: true, providers: ['google.com'] }),
+      // Left behind by the old sign-up: never confirmed, no shop
+      old: login('old', 'old@shop.test', { password: 'old-password' }),
+      // Turned off by the Super Admin
+      off: login('off', 'off@shop.test', { disabled: true }),
     },
+    inUse: new Set(['juan', 'maria', 'cashier']),
+    codes: new Map(),
+    codesMade: 0,
     requests: {
       [REQ_ID]: {
         tenantId: 't1', tenantName: 'Kape <script>alert(1)</script>\nBcc: x@evil.test', uid: 'juan', requesterName: 'Juan',
@@ -85,15 +112,19 @@ function newWorld(): World {
     now: START,
     env: { APP_URL: APP, GMAIL_USER: 'jpos.owner@gmail.com', GMAIL_APP_PASSWORD: 'abcd efgh ijkl mnop', VITE_CLOUDINARY_CLOUD_NAME: 'demo' },
     mailFails: false,
-    links: 0,
+    createFails: false,
   };
 }
+
+/** The n-th code the fake server made: "000001", "000002"… */
+const nth = (n: number) => String(n).padStart(6, '0');
 
 function depsFor(w: World): () => Deps {
   return () => ({
     env: w.env,
     now: () => w.now,
     store: memoryStore(w),
+    newCode: () => nth(++w.codesMade),
     auth: {
       // A "token" is "ok:<uid>"; anything else is refused the way the Admin SDK does
       verifyIdToken: async (token) => {
@@ -101,15 +132,20 @@ function depsFor(w: World): () => Deps {
         if (!token.startsWith('ok:')) throw Object.assign(new Error('bad'), { code: 'auth/argument-error' });
         return { uid: token.slice(3) };
       },
-      getUser: async (uid) => {
-        const u = w.users[uid];
-        if (!u) throw Object.assign(new Error('none'), { code: 'auth/user-not-found' });
-        return u;
+      getUserByEmail: async (email) => {
+        const a = Object.values(w.accounts).find(x => x.email === email);
+        return a ? { uid: a.uid, email: a.email, emailVerified: a.emailVerified, disabled: a.disabled, providers: a.providers } : null;
       },
-      generateEmailVerificationLink: async (email) => {
-        w.links += 1;
-        return `https://demo.firebaseapp.com/__/auth/action?mode=verifyEmail&oobCode=CODE-${w.links}-${encodeURIComponent(email)}&apiKey=k`;
+      createUser: async ({ email, password, displayName }) => {
+        if (w.createFails) throw new Error('auth/internal-error');
+        if (Object.values(w.accounts).some(x => x.email === email)) {
+          throw new ApiError(409, 'email_taken', 'This email already has an account. Sign in instead.', 'email');
+        }
+        const uid = `new${Object.keys(w.accounts).length}`;
+        w.accounts[uid] = { uid, email, emailVerified: true, disabled: false, providers: ['password'], password, displayName };
+        return uid;
       },
+      deleteUser: async (uid) => { delete w.accounts[uid]; },
     },
     mailer: () => {
       if (!w.env.GMAIL_USER || !w.env.GMAIL_APP_PASSWORD) {
@@ -141,97 +177,127 @@ async function call(handler: (r: Request) => Promise<Response>, request: Request
   return { status: res.status, body: await res.json() as Record<string, any> };
 }
 
-describe('POST /api/email/verify', () => {
+const askCode = (w: World, email: string, ip?: string, extra: Record<string, unknown> = {}) =>
+  call(signupCodeHandler(depsFor(w)), post('signup/code', undefined, { email, ...extra }, ip));
+const finish = (w: World, body: Record<string, unknown>) =>
+  call(signupFinishHandler(depsFor(w)), post('signup/finish', undefined, { password: 'secret123', name: 'Juan', ...body }));
+const byEmail = (w: World, email: string) => Object.values(w.accounts).find(a => a.email === email);
+
+describe('POST /api/signup/code', () => {
   test('only POST', async () => {
     const w = newWorld();
-    const res = await verifyEmailHandler(depsFor(w))(new Request('https://x.test/api/email/verify'));
+    const res = await signupCodeHandler(depsFor(w))(new Request('https://x.test/api/signup/code'));
     assert.equal(res.status, 405);
   });
 
-  test('needs a sign-in', async () => {
+  test('needs a real email address', async () => {
     const w = newWorld();
-    const h = verifyEmailHandler(depsFor(w));
-    assert.equal((await call(h, post('email/verify'))).status, 401);
-    assert.equal((await call(h, post('email/verify', 'forged'))).status, 401);
-    assert.equal((await call(h, post('email/verify', 'ok:nobody'))).status, 401);
-    assert.equal((await call(h, post('email/verify', 'down'))).status, 503);
+    for (const email of ['', 'nope', 'a@b', 'two@a.test,three@b.test', `${'x'.repeat(250)}@a.test`, 42]) {
+      const r = await askCode(w, email as string);
+      assert.equal(r.status, 400, String(email));
+      assert.equal(r.body.error.code, 'invalid_email');
+    }
     assert.equal(w.sent.length, 0);
   });
 
-  test("sends one email to the account's own address, whatever the request says", async () => {
+  test('emails a 6-digit code; no account is made yet', async () => {
     const w = newWorld();
-    const r = await call(verifyEmailHandler(depsFor(w)), post('email/verify', 'ok:juan', { email: 'victim@other.test', to: 'victim@other.test' }));
+    const r = await askCode(w, '  New.Owner@Gmail.test ');
     assert.equal(r.status, 200);
     assert.deepEqual(r.body, { sent: true });
     assert.equal(w.sent.length, 1);
-    assert.deepEqual(w.sent[0].to, ['juan@shop.test']);
-    assert.equal(w.sent[0].subject, 'Confirm your email for JPOS');
+    assert.deepEqual(w.sent[0].to, ['new.owner@gmail.test']);
+    assert.equal(w.sent[0].subject, 'Your JPOS code: 000001');
+    assert.ok(w.sent[0].text.includes('000001'));
+    assert.ok(w.sent[0].html.includes('000001'));
+    assert.equal(byEmail(w, 'new.owner@gmail.test'), undefined, 'the login waits for the code');
   });
 
-  test('the link opens JPOS (fixed address) with the one-time code', async () => {
+  test('the code email has no links (links to a free web address look like spam)', async () => {
     const w = newWorld();
-    await call(verifyEmailHandler(depsFor(w)), post('email/verify', 'ok:juan'));
-    const link = `${APP}/verify-email?oobCode=${encodeURIComponent('CODE-1-juan@shop.test')}`;
-    assert.ok(w.sent[0].text.includes(link), w.sent[0].text);
-    assert.ok(!w.sent[0].text.includes('anything.test'), 'must not link to the host the request came from');
-    assert.ok(!w.sent[0].text.includes('firebaseapp.com'));
+    await askCode(w, 'new@shop.test');
+    const { html, text } = w.sent[0];
+    assert.ok(!/href=|https?:\/\/|www\./i.test(html + text), 'no links in the code email');
+    assert.ok(html.startsWith('<!doctype html><html lang="en"><head><meta charset="utf-8">'));
   });
 
-  test("carries no text from the sign-up form (it could be a stranger's message)", async () => {
+  test('only a hash of the code is kept', async () => {
     const w = newWorld();
-    await call(verifyEmailHandler(depsFor(w)), post('email/verify', 'ok:juan'));
-    assert.ok(!w.sent[0].html.includes('Dela Cruz'));
-    assert.ok(!w.sent[0].text.includes('Dela Cruz'));
+    await askCode(w, 'new@shop.test');
+    const stored = w.codes.get(emailId('new@shop.test'));
+    assert.ok(stored);
+    assert.ok(!JSON.stringify(stored).includes('000001'));
+    assert.equal(stored.hash, codeHash(emailId('new@shop.test'), '000001'));
+    assert.equal(stored.expiresAt, START.getTime() + CODE_TTL_MS);
   });
 
-  test('already confirmed: nothing is sent', async () => {
+  test("carries no text from the request (it could be a stranger's message)", async () => {
     const w = newWorld();
-    const r = await call(verifyEmailHandler(depsFor(w)), post('email/verify', 'ok:done'));
-    assert.deepEqual(r.body, { sent: false, alreadyVerified: true });
+    await askCode(w, 'new@shop.test', undefined, { name: 'Visit evil.test now', shopName: '<b>Win a prize</b>' });
+    assert.ok(!w.sent[0].html.includes('evil.test') && !w.sent[0].text.includes('evil.test'));
+    assert.ok(!w.sent[0].html.includes('prize') && !w.sent[0].text.includes('prize'));
+  });
+
+  test('an email that already has an account gets no code', async () => {
+    const w = newWorld();
+    for (const email of ['juan@shop.test', 'cashier@shop.test', 'gina@gmail.test', 'off@shop.test']) {
+      const r = await askCode(w, email);
+      assert.equal(r.status, 409, email);
+      assert.equal(r.body.error.code, 'email_taken');
+    }
     assert.equal(w.sent.length, 0);
-    assert.equal(w.links, 0);
   });
 
-  test('a turned-off account gets nothing', async () => {
+  test('a never-confirmed login without a shop (old sign-up) can sign up again', async () => {
     const w = newWorld();
-    assert.equal((await call(verifyEmailHandler(depsFor(w)), post('email/verify', 'ok:off'))).status, 403);
-    assert.equal(w.sent.length, 0);
+    assert.equal((await askCode(w, 'old@shop.test')).status, 200);
+    // ...unless it runs JPOS or belongs to a shop
+    w.inUse.add('old');
+    assert.equal((await askCode(w, 'old@shop.test')).status, 409);
   });
 
-  test('once a minute, five a day per account', async () => {
+  test('once a minute, five a day per address', async () => {
     const w = newWorld();
-    const h = verifyEmailHandler(depsFor(w));
-    assert.equal((await call(h, post('email/verify', 'ok:juan'))).status, 200);
-    const again = await call(h, post('email/verify', 'ok:juan'));
+    assert.equal((await askCode(w, 'new@shop.test')).status, 200);
+    const again = await askCode(w, 'NEW@shop.test');
     assert.equal(again.status, 429);
     assert.equal(again.body.error.code, 'too_soon');
-    // Another account isn't held up
-    assert.equal((await call(h, post('email/verify', 'ok:maria'))).status, 200);
+    // Another address isn't held up
+    assert.equal((await askCode(w, 'other@shop.test')).status, 200);
     for (let i = 1; i < 5; i++) {
       w.now = new Date(START.getTime() + i * 61_000);
-      assert.equal((await call(h, post('email/verify', 'ok:juan'))).status, 200, `email ${i + 1}`);
+      assert.equal((await askCode(w, 'new@shop.test')).status, 200, `email ${i + 1}`);
     }
     w.now = new Date(START.getTime() + 10 * 61_000);
-    const sixth = await call(h, post('email/verify', 'ok:juan'));
+    const sixth = await askCode(w, 'new@shop.test');
     assert.equal(sixth.status, 429);
     assert.equal(sixth.body.error.code, 'too_many');
     // A day later it works again
     w.now = new Date(START.getTime() + 25 * 60 * 60 * 1000);
-    assert.equal((await call(h, post('email/verify', 'ok:juan'))).status, 200);
-    assert.equal(w.sent.filter(s => s.to[0] === 'juan@shop.test').length, 6);
+    assert.equal((await askCode(w, 'new@shop.test')).status, 200);
+    assert.equal(w.sent.filter(s => s.to[0] === 'new@shop.test').length, 6);
+  });
+
+  test('a new code replaces the old one', async () => {
+    const w = newWorld();
+    await askCode(w, 'new@shop.test');
+    w.now = new Date(START.getTime() + 61_000);
+    await askCode(w, 'new@shop.test');
+    assert.equal((await finish(w, { email: 'new@shop.test', code: nth(1) })).status, 400);
+    assert.equal((await finish(w, { email: 'new@shop.test', code: nth(2) })).status, 200);
   });
 
   test('stops when the hourly or 24-hour share is used up', async () => {
     const w = newWorld();
     w.log.set(`hour_verify_${hourKey(START)}`, { count: BUDGET.verify.perHour });
-    const r = await call(verifyEmailHandler(depsFor(w)), post('email/verify', 'ok:juan'));
+    const r = await askCode(w, 'new@shop.test');
     assert.equal(r.status, 503);
     assert.equal(r.body.error.code, 'email_busy');
     // Spread over the past day (not this hour) still counts
     const w2 = newWorld();
     const hours = last24Hours(START);
     for (let i = 1; i < hours.length; i++) w2.log.set(`hour_verify_${hours[i]}`, { count: Math.ceil(BUDGET.verify.perDay / 23) });
-    assert.equal((await call(verifyEmailHandler(depsFor(w2)), post('email/verify', 'ok:juan'))).status, 503);
+    assert.equal((await askCode(w2, 'new@shop.test')).status, 503);
     assert.equal(w.sent.length + w2.sent.length, 0);
   });
 
@@ -242,70 +308,204 @@ describe('POST /api/email/verify', () => {
     assert.deepEqual(r.body, { sent: true });
   });
 
-  test('ten accounts a day from one network, however many accounts they make', async () => {
+  test('ten addresses a day from one network', async () => {
     const w = newWorld();
-    const h = verifyEmailHandler(depsFor(w));
-    for (let i = 0; i < 11; i++) w.users[`throwaway${i}`] = { email: `victim${i}@example.com`, emailVerified: false, disabled: false };
     for (let i = 0; i < 11; i++) {
-      const r = await call(h, post('email/verify', `ok:throwaway${i}`, {}, '203.0.113.7'));
-      assert.equal(r.status, i < 10 ? 200 : 429, `account ${i + 1}`);
+      const r = await askCode(w, `victim${i}@example.com`, '203.0.113.7');
+      assert.equal(r.status, i < 10 ? 200 : 429, `address ${i + 1}`);
     }
     // Someone on another network is not held up
-    assert.equal((await call(h, post('email/verify', 'ok:juan', {}, '198.51.100.2'))).status, 200);
+    assert.equal((await askCode(w, 'new@shop.test', '198.51.100.2')).status, 200);
     assert.equal(w.sent.length, 11);
   });
 
   test("a failed send doesn't use up the day's emails", async () => {
     const w = newWorld();
-    const h = verifyEmailHandler(depsFor(w));
     w.mailFails = true;
-    assert.equal((await call(h, post('email/verify', 'ok:juan', {}, '203.0.113.7'))).status, 502);
+    assert.equal((await askCode(w, 'new@shop.test', '203.0.113.7')).status, 502);
     w.mailFails = false;
     for (let i = 1; i <= 5; i++) {
       w.now = new Date(START.getTime() + i * 61_000);
-      assert.equal((await call(h, post('email/verify', 'ok:juan', {}, '203.0.113.7'))).status, 200, `email ${i}`);
+      assert.equal((await askCode(w, 'new@shop.test', '203.0.113.7')).status, 200, `email ${i}`);
     }
   });
 
-  test('Gmail not set up: a clear message, and nothing is counted', async () => {
+  test('Gmail not set up: nothing is counted', async () => {
     const w = newWorld();
     w.env = { APP_URL: APP };
-    const r = await call(verifyEmailHandler(depsFor(w)), post('email/verify', 'ok:juan'));
+    const r = await askCode(w, 'new@shop.test');
     assert.equal(r.status, 500); // the fake mailer throws a plain error...
     w.env = { APP_URL: APP, GMAIL_USER: 'a@gmail.com', GMAIL_APP_PASSWORD: 'x' };
     // ...and no quota was used, so the next try right away still works
-    assert.equal((await call(verifyEmailHandler(depsFor(w)), post('email/verify', 'ok:juan'))).status, 200);
+    assert.equal((await askCode(w, 'new@shop.test')).status, 200);
   });
 
   test('Gmail refuses: a friendly error, no secret in it', async () => {
     const w = newWorld();
     w.mailFails = true;
-    const r = await call(verifyEmailHandler(depsFor(w)), post('email/verify', 'ok:juan'));
+    const r = await askCode(w, 'new@shop.test');
     assert.equal(r.status, 502);
     assert.equal(r.body.error.code, 'email_failed');
     assert.ok(!JSON.stringify(r.body).includes('abcd'));
   });
+});
+
+describe('POST /api/signup/finish', () => {
+  test('the right code makes the login, with the email already confirmed', async () => {
+    const w = newWorld();
+    await askCode(w, 'new@shop.test');
+    const r = await finish(w, { email: 'New@Shop.test', code: nth(1), password: 'secret123', name: '  Juan\nDela Cruz ' });
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { created: true });
+    const a = byEmail(w, 'new@shop.test');
+    assert.ok(a);
+    assert.equal(a.emailVerified, true);
+    assert.equal(a.password, 'secret123');
+    assert.equal(a.displayName, 'Juan Dela Cruz');
+  });
+
+  test('a code works once', async () => {
+    const w = newWorld();
+    await askCode(w, 'new@shop.test');
+    assert.equal((await finish(w, { email: 'new@shop.test', code: nth(1) })).status, 200);
+    delete w.accounts[byEmail(w, 'new@shop.test')!.uid];
+    const again = await finish(w, { email: 'new@shop.test', code: nth(1) });
+    assert.equal(again.status, 400);
+    assert.equal(again.body.error.code, 'code_missing');
+  });
+
+  test("a code only works for the address it was sent to", async () => {
+    const w = newWorld();
+    await askCode(w, 'new@shop.test');
+    const r = await finish(w, { email: 'other@shop.test', code: nth(1) });
+    assert.equal(r.status, 400);
+    assert.equal(byEmail(w, 'other@shop.test'), undefined);
+  });
+
+  test('wrong codes count down, then the code stops working', async () => {
+    const w = newWorld();
+    await askCode(w, 'new@shop.test');
+    for (let i = 1; i < CODE_TRIES; i++) {
+      const r = await finish(w, { email: 'new@shop.test', code: '999999' });
+      assert.equal(r.status, 400);
+      assert.equal(r.body.error.code, 'code_wrong');
+      assert.ok(r.body.error.message.includes(`${CODE_TRIES - i} ${CODE_TRIES - i === 1 ? 'try' : 'tries'} left`), r.body.error.message);
+    }
+    const last = await finish(w, { email: 'new@shop.test', code: '999999' });
+    assert.equal(last.status, 429);
+    assert.equal(last.body.error.code, 'code_locked');
+    // Even the right code is refused now: send a new one
+    assert.equal((await finish(w, { email: 'new@shop.test', code: nth(1) })).status, 400);
+    assert.equal(byEmail(w, 'new@shop.test'), undefined);
+  });
+
+  test('an old code has expired', async () => {
+    const w = newWorld();
+    await askCode(w, 'new@shop.test');
+    w.now = new Date(START.getTime() + CODE_TTL_MS);
+    const r = await finish(w, { email: 'new@shop.test', code: nth(1) });
+    assert.equal(r.status, 400);
+    assert.equal(r.body.error.code, 'code_expired');
+  });
+
+  test('bad input is refused before the code is tried', async () => {
+    const w = newWorld();
+    await askCode(w, 'new@shop.test');
+    assert.equal((await finish(w, { email: 'new@shop.test', code: '12345' })).body.error.code, 'invalid_code');
+    assert.equal((await finish(w, { email: 'new@shop.test', code: 'abcdef' })).body.error.code, 'invalid_code');
+    assert.equal((await finish(w, { email: 'new@shop.test', code: nth(1), password: '12345' })).body.error.code, 'weak_password');
+    assert.equal((await finish(w, { email: 'new@shop.test', code: nth(1), password: 42 })).body.error.code, 'weak_password');
+    assert.equal((await finish(w, { email: 'nope', code: nth(1) })).body.error.code, 'invalid_email');
+    // None of those used up a try
+    assert.equal(w.codes.get(emailId('new@shop.test'))?.tries, 0);
+    assert.equal((await finish(w, { email: 'new@shop.test', code: ' 000 001 ' })).status, 200);
+  });
+
+  test('an email taken in the meantime is refused, and the code is kept', async () => {
+    const w = newWorld();
+    await askCode(w, 'new@shop.test');
+    w.accounts.sneaky = { uid: 'sneaky', email: 'new@shop.test', emailVerified: true, disabled: false, providers: ['google.com'] };
+    const r = await finish(w, { email: 'new@shop.test', code: nth(1) });
+    assert.equal(r.status, 409);
+    assert.equal(r.body.error.code, 'email_taken');
+    assert.ok(w.codes.has(emailId('new@shop.test')));
+  });
+
+  test("replaces the old sign-up's leftover login", async () => {
+    const w = newWorld();
+    await askCode(w, 'old@shop.test');
+    assert.equal((await finish(w, { email: 'old@shop.test', code: nth(1), password: 'new-password' })).status, 200);
+    assert.equal(w.accounts.old, undefined);
+    const a = byEmail(w, 'old@shop.test');
+    assert.equal(a?.password, 'new-password');
+    assert.equal(a?.emailVerified, true);
+  });
+
+  test('never replaces a login that belongs to a shop', async () => {
+    const w = newWorld();
+    await askCode(w, 'old@shop.test');
+    w.inUse.add('old'); // e.g. it became a staff account in the meantime
+    assert.equal((await finish(w, { email: 'old@shop.test', code: nth(1) })).status, 409);
+    assert.equal(w.accounts.old.password, 'old-password');
+  });
+
+  test('if the login cannot be made: a clear message, nothing half-done', async () => {
+    const w = newWorld();
+    await askCode(w, 'new@shop.test');
+    w.createFails = true;
+    const r = await finish(w, { email: 'new@shop.test', code: nth(1) });
+    assert.equal(r.status, 503);
+    assert.equal(r.body.error.code, 'signup_failed');
+    assert.equal(byEmail(w, 'new@shop.test'), undefined);
+  });
+});
+
+describe('checkCode', () => {
+  const id = emailId('a@shop.test');
+  const stored = (more: Partial<StoredCode> = {}): StoredCode => ({ hash: codeHash(id, '123456'), expiresAt: START.getTime() + 1000, tries: 0, ...more });
+  const t = START.getTime();
+
+  test('right, wrong, expired, out of tries, missing', () => {
+    assert.deepEqual(checkCode(stored(), codeHash(id, '123456'), t), { result: { ok: true }, next: null });
+    assert.deepEqual(checkCode(stored(), codeHash(id, '000000'), t).result, { ok: false, reason: 'wrong', triesLeft: CODE_TRIES - 1 });
+    assert.equal(checkCode(stored(), codeHash(id, '000000'), t).next?.tries, 1);
+    assert.deepEqual(checkCode(stored(), codeHash(id, '123456'), t + 1000).result, { ok: false, reason: 'expired' });
+    assert.deepEqual(checkCode(stored({ tries: CODE_TRIES }), codeHash(id, '123456'), t).result, { ok: false, reason: 'locked' });
+    assert.deepEqual(checkCode(undefined, codeHash(id, '123456'), t).result, { ok: false, reason: 'missing' });
+  });
+
+  test('a code is tied to its address', () => {
+    assert.notEqual(codeHash(emailId('a@shop.test'), '123456'), codeHash(emailId('b@shop.test'), '123456'));
+    assert.equal(emailId('A@Shop.test '), emailId('a@shop.test'));
+  });
+
+  test('codes are six digits', () => {
+    for (let i = 0; i < 200; i++) assert.match(newCode(), /^\d{6}$/);
+  });
+});
+
+describe('email links (appUrl)', () => {
+  const pay = (w: World) => call(paymentNoticeHandler(depsFor(w)), post('email/payment', 'ok:juan', { requestId: REQ_ID }));
 
   test('without APP_URL: uses the Vercel production address, never the request host', async () => {
     const w = newWorld();
     w.env = { ...w.env, APP_URL: undefined, VERCEL: '1', VERCEL_PROJECT_PRODUCTION_URL: 'jpos.vercel.app' };
-    await call(verifyEmailHandler(depsFor(w)), post('email/verify', 'ok:juan'));
-    assert.ok(w.sent[0].text.includes('https://jpos.vercel.app/verify-email?oobCode='));
+    await pay(w);
+    assert.ok(w.sent[0].text.includes('https://jpos.vercel.app/admin/platform'));
+    assert.ok(!w.sent[0].text.includes('anything.test'));
   });
 
   test('no address configured at all: refuses instead of guessing', async () => {
     const w = newWorld();
     w.env = { ...w.env, APP_URL: undefined, VERCEL: '1' };
-    const r = await call(verifyEmailHandler(depsFor(w)), post('email/verify', 'ok:juan'));
-    assert.equal(r.status, 503);
+    assert.equal((await pay(w)).status, 503);
     assert.equal(w.sent.length, 0);
   });
 
   test('a local-test setting is ignored on Vercel', async () => {
     const w = newWorld();
     w.env = { ...w.env, APP_URL: undefined, VERCEL: '1', FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9099', FIREBASE_PROJECT_ID: 'demo-jpos' };
-    const r = await call(verifyEmailHandler(depsFor(w)), post('email/verify', 'ok:juan'));
-    assert.equal(r.status, 503, 'must not fall back to the request host on Vercel');
+    assert.equal((await pay(w)).status, 503, 'must not fall back to the request host on Vercel');
   });
 });
 

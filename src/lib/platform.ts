@@ -27,13 +27,20 @@ export const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = {
 
 const settingsRef = () => doc(db, 'platform', 'settings');
 
+/** The saved settings, or null when the Super Admin's setup was never run on this database. */
+export async function getSavedPlatformSettings(): Promise<PlatformSettings | null> {
+  const snap = await getDoc(settingsRef());
+  return snap.exists() ? (snap.data() as PlatformSettings) : null;
+}
+
 export async function getPlatformSettings(): Promise<PlatformSettings> {
   const snap = await getDoc(settingsRef());
   return snap.exists() ? (snap.data() as PlatformSettings) : DEFAULT_PLATFORM_SETTINGS;
 }
 
-export function subscribePlatformSettings(cb: (s: PlatformSettings) => void, onError?: (e: Error) => void): Unsubscribe {
-  return onSnapshot(settingsRef(), snap => cb(snap.exists() ? (snap.data() as PlatformSettings) : DEFAULT_PLATFORM_SETTINGS), e => onError?.(e));
+/** `saved` is false when the settings were never set up (the defaults are passed instead). */
+export function subscribePlatformSettings(cb: (s: PlatformSettings, saved: boolean) => void, onError?: (e: Error) => void): Unsubscribe {
+  return onSnapshot(settingsRef(), snap => cb(snap.exists() ? (snap.data() as PlatformSettings) : DEFAULT_PLATFORM_SETTINGS, snap.exists()), e => onError?.(e));
 }
 
 /** Enabled payment channels, in display order. */

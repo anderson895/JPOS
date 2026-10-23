@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Check, Clock, ImagePlus, Loader2, Sparkles, X, Hourglass, Ban, CheckCircle2, XCircle, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -10,7 +10,6 @@ import { enabledChannels } from '@/lib/platform';
 import { daysLeft, periodEnd, PLAN_IDS, PLAN_LABEL, shopState } from '@/lib/entitlements';
 import { cancelPaymentRequest, paymentMessage, startTrial, submitPaymentRequest, watchShopRequests } from '@/lib/subscriptions';
 import { normalizeReference } from '@/lib/eWallet';
-import { AUTO_TRIAL_KEY } from '@/pages/SubscribePage';
 import { cn } from '@/lib/utils';
 import type { PlanId, SubscriptionRequest } from '@/types';
 
@@ -36,31 +35,11 @@ export default function Billing() {
   const [proofPreview, setProofPreview] = useState('');
   const [sending, setSending] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [requests, setRequests] = useState<SubscriptionRequest[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { if (!channelId && channels[0]) setChannelId(channels[0].id); }, [channels, channelId]);
-  // Picked "Start free trial" at sign-up: start it right away, then open the shop
-  const navigate = useNavigate();
-  const autoTrial = useRef(false);
-  useEffect(() => {
-    if (autoTrial.current || params.get('start') !== 'trial' || !tenant || isSuperAdmin) return;
-    if (tenant.status !== 'setup' || tenant.trialUsed) return;
-    autoTrial.current = true;
-    let fresh = false;
-    try { fresh = sessionStorage.getItem(AUTO_TRIAL_KEY) === '1'; sessionStorage.removeItem(AUTO_TRIAL_KEY); } catch { /* ignore */ }
-    // Anything else (an old or shared link) asks first: the trial is one-time only
-    if (!fresh && !confirm(`Start your ${tenant.trialDays}-day free trial now? You can use it only once.`)) {
-      navigate('/admin/billing', { replace: true });
-      return;
-    }
-    startTrial(tenant)
-      .then(() => {
-        toast.success(`Your free trial has started. Enjoy JPOS for ${tenant.trialDays} days!`);
-        navigate('/admin', { replace: true });
-      })
-      .catch(err => toast.error(err instanceof Error ? err.message : 'Could not start the trial.'));
-  }, [params, tenant, isSuperAdmin, navigate]);
   useEffect(() => (tenant ? watchShopRequests(tenant.id, setRequests, () => { /* rules */ }) : undefined), [tenant?.id]);
   useEffect(() => () => { if (proofPreview) URL.revokeObjectURL(proofPreview); }, [proofPreview]);
 
@@ -159,13 +138,16 @@ export default function Billing() {
             <ContactOwner message={paymentMessage(pending)} />
             <button
               className="btn-ghost text-sm"
+              disabled={cancelling}
               onClick={async () => {
                 if (!confirm('Take back this payment? Use this if you sent the wrong receipt. The same reference number can\'t be used again.')) return;
+                setCancelling(true);
                 try { await cancelPaymentRequest(tenant, pending); toast.success('Payment taken back.'); }
                 catch { toast.error('Could not take it back. Please contact us.'); }
+                finally { setCancelling(false); }
               }}
             >
-              <X className="w-4 h-4" aria-hidden="true" /> Take back this payment
+              {cancelling ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <X className="w-4 h-4" aria-hidden="true" />} Take back this payment
             </button>
           </div>
         </div>

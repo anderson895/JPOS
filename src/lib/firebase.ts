@@ -33,6 +33,8 @@ export const storage = getStorage(app);
  * emulators on this computer, with fake data. Production is never touched.
  */
 export const USE_EMULATORS = import.meta.env.VITE_USE_EMULATORS === 'true';
+/** Which data this page uses: fake data on this computer, or the real JPOS database. */
+export const DATA_MODE: 'local' | 'live' | 'demo' = USE_EMULATORS ? 'local' : 'live';
 // The usual emulator ports; the automated tests use their own so they can run alongside
 const AUTH_EMULATOR = `http://${import.meta.env.VITE_AUTH_EMULATOR_HOST || '127.0.0.1:9099'}`;
 const [FIRESTORE_HOST, FIRESTORE_PORT] = (import.meta.env.VITE_FIRESTORE_EMULATOR_HOST || '127.0.0.1:8085').split(':');

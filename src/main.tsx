@@ -5,6 +5,7 @@ import { Toaster } from 'react-hot-toast';
 import App from './App';
 import { AuthProvider } from './contexts/AuthContext';
 import { CartProvider } from './contexts/CartContext';
+import DevModeBadge from './components/shared/DevModeBadge';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -13,6 +14,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <AuthProvider>
         <CartProvider>
           <App />
+          {/* Which data this computer's dev server uses (never in the live app) */}
+          {import.meta.env.DEV && <DevModeBadge />}
           <Toaster
             position="top-right"
             toastOptions={{

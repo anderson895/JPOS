@@ -1,4 +1,5 @@
 import type { PaymentRequestDoc } from './store.js';
+import { CODE_TTL_MS } from './signupCode.js';
 
 export interface Message {
   subject: string;
@@ -26,8 +27,13 @@ export function isReceiptUrl(url: unknown, cloudName: string | undefined): url i
   }
 }
 
+/**
+ * A complete, plain HTML page (charset, language, title): half-made HTML is one
+ * of the things spam filters look at. No images, no tracking.
+ */
 function layout(heading: string, inner: string): string {
-  return `<!doctype html><html><body style="margin:0;background:#f6efe6;font-family:Arial,Helvetica,sans-serif;color:#2b1a10">
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(heading)}</title></head>
+<body style="margin:0;background:#f6efe6;font-family:Arial,Helvetica,sans-serif;color:#2b1a10">
 <div style="max-width:520px;margin:0 auto;padding:24px 16px">
 <p style="margin:0 0 16px;font-size:20px;font-weight:bold;color:#3b2314">JPOS</p>
 <div style="background:#ffffff;border:1px solid #eadccb;border-radius:16px;padding:24px">
@@ -42,30 +48,31 @@ const button = (href: string, label: string) =>
   `<p style="margin:20px 0"><a href="${esc(href)}" style="display:inline-block;background:#3b2314;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:bold">${esc(label)}</a></p>`;
 
 /**
- * Sent when a new shop owner signs up (and on "Send the email again"). Nobody
- * has confirmed this address yet, so the email carries no text from the
- * sign-up form: it can't be used to send someone else's message.
+ * The 6-digit code a new shop owner types to finish signing up (and on "Send a
+ * new code"). Nobody has confirmed this address yet, so the email carries no
+ * text from the sign-up form: it can't be used to send someone else's message.
  */
-export function verifyEmailMessage({ link }: { link: string }): Message {
-  const hi = 'Hi,';
+export function signupCodeMessage({ code }: { code: string }): Message {
+  const minutes = Math.round(CODE_TTL_MS / 60_000);
   return {
-    subject: 'Confirm your email for JPOS',
+    subject: `Your JPOS code: ${code}`,
     text: [
-      hi,
+      'Hi,',
       '',
-      'Open this link to confirm your email and finish setting up your shop:',
-      link,
+      'Enter this code on the JPOS sign-up page to finish creating your account:',
       '',
+      code,
+      '',
+      `It works for ${minutes} minutes.`,
       "If you didn't sign up for JPOS, you can ignore this email.",
       '',
       'JPOS',
     ].join('\n'),
-    html: layout('Confirm your email', `
-<p style="margin:0 0 8px">${esc(hi)}</p>
-<p style="margin:0">Tap the button to confirm your email and finish setting up your shop.</p>
-${button(link, 'Confirm my email')}
-<p style="margin:0;font-size:13px;color:#6b5444">If the button doesn't work, copy this link into your browser:<br>
-<a href="${esc(link)}" style="color:#9a5b2a;word-break:break-all">${esc(link)}</a></p>
+    html: layout('Your sign-up code', `
+<p style="margin:0 0 8px">Hi,</p>
+<p style="margin:0">Enter this code on the JPOS sign-up page to finish creating your account:</p>
+<p style="margin:20px 0;font-size:34px;font-weight:bold;letter-spacing:8px;color:#3b2314">${esc(code)}</p>
+<p style="margin:0;font-size:13px;color:#6b5444">It works for ${minutes} minutes.</p>
 <p style="margin:16px 0 0;font-size:13px;color:#6b5444">If you didn't sign up for JPOS, you can ignore this email.</p>`),
   };
 }

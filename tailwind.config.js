@@ -23,6 +23,8 @@ export default {
         caramel: palette('caramel'),
         cream: palette('cream'),
         bark: palette('bark'),
+        // Fixed (not themed): the soft green of the landing's retail photo, for its round shapes
+        sage: { 100: '#f0f2e4', 200: '#e2e7cf', 300: '#d4dcbc', 400: '#bccaa0', 500: '#9fb07f' },
       },
       boxShadow: {
         card: '0 1px 2px rgb(var(--espresso-800) / 0.04), 0 12px 32px -14px rgb(var(--espresso-800) / 0.22)',

@@ -4,6 +4,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import nodemailer, { type Transporter } from 'nodemailer';
 import { ApiError } from './http.js';
 import { firestoreStore, type Store } from './store.js';
+import { newCode } from './signupCode.js';
 import type { Message } from './mail.js';
 
 export type Env = Record<string, string | undefined>;
@@ -13,17 +14,22 @@ export interface Mailer {
 }
 
 export interface AuthUser {
+  uid: string;
   email?: string;
   emailVerified: boolean;
-  displayName?: string;
   disabled: boolean;
+  /** How it signs in: 'password', 'google.com'… */
+  providers: string[];
 }
 
 /** The parts of Firebase Auth (Admin SDK) the handlers use. */
 export interface AuthLike {
   verifyIdToken(token: string): Promise<{ uid: string }>;
-  getUser(uid: string): Promise<AuthUser>;
-  generateEmailVerificationLink(email: string): Promise<string>;
+  /** The login with this email, or null when there is none. */
+  getUserByEmail(email: string): Promise<AuthUser | null>;
+  /** Makes a login whose email is already confirmed. Returns its uid. */
+  createUser(user: { email: string; password: string; displayName?: string }): Promise<string>;
+  deleteUser(uid: string): Promise<void>;
 }
 
 /** Everything the handlers touch outside their own code, so tests can swap it out. */
@@ -34,12 +40,24 @@ export interface Deps {
   /** Built on first use, so a missing Gmail setting only fails the calls that send email. */
   mailer: () => Mailer;
   now: () => Date;
+  /** A new 6-digit sign-up code. */
+  newCode: () => string;
 }
 
-/** The visitor sees a plain message; the Vercel logs say which setting is missing. */
+/** This computer's dev server (npm run dev / dev:live), never Vercel. */
+const devServer = (env: Env) => env.JPOS_DEV_API === '1' && !env.VERCEL;
+/** Where a missing server setting goes. */
+const putIt = (env: Env) => (devServer(env) ? 'put it in .env, then restart npm run dev:live' : 'Vercel: Settings > Environment Variables, for Production, then Redeploy');
+
+/**
+ * The visitor sees a plain message; the Vercel logs say which setting is
+ * missing. On this computer's dev server the page says it too.
+ */
 export const notSetUp = (missing?: string) => {
   if (missing) console.error(`[api] not set up: ${missing}`);
-  return new ApiError(503, 'not_configured', "Email isn't set up on the server yet. Please contact us.");
+  return new ApiError(503, 'not_configured', missing && devServer(process.env)
+    ? `This computer's server is missing a setting: ${missing}`
+    : "Email isn't set up on the server yet. Please contact us.");
 };
 
 /**
@@ -74,7 +92,7 @@ function adminApp(env: Env): App {
   }
   // This computer, against production: a key file path in GOOGLE_APPLICATION_CREDENTIALS
   if (env.GOOGLE_APPLICATION_CREDENTIALS) return initializeApp({ credential: applicationDefault() });
-  throw notSetUp('FIREBASE_SERVICE_ACCOUNT is missing (Vercel: Settings > Environment Variables, for Production, then Redeploy)');
+  throw notSetUp(`FIREBASE_SERVICE_ACCOUNT is missing (${putIt(env)})`);
 }
 
 // Module scope so a warm serverless instance reuses the open Gmail connection settings
@@ -83,7 +101,7 @@ let gmail: Transporter | undefined;
 function gmailMailer(env: Env): Mailer {
   const user = env.GMAIL_USER?.trim();
   const pass = env.GMAIL_APP_PASSWORD?.replace(/\s+/g, '');
-  if (!user || !pass) throw notSetUp('GMAIL_USER or GMAIL_APP_PASSWORD is missing (Vercel: Settings > Environment Variables, then Redeploy)');
+  if (!user || !pass) throw notSetUp(`GMAIL_USER or GMAIL_APP_PASSWORD is missing (${putIt(env)})`);
   // Time limits well inside the function's own, so a stalled Gmail fails fast and cleanly
   gmail ??= nodemailer.createTransport({
     host: 'smtp.gmail.com', port: 465, secure: true, auth: { user, pass },
@@ -150,11 +168,30 @@ export function defaultDeps(env: Env = process.env): Deps {
     env,
     auth: {
       verifyIdToken: token => auth.verifyIdToken(token),
-      getUser: uid => auth.getUser(uid),
-      generateEmailVerificationLink: email => auth.generateEmailVerificationLink(email),
+      async getUserByEmail(email) {
+        try {
+          const u = await auth.getUserByEmail(email);
+          return { uid: u.uid, email: u.email, emailVerified: u.emailVerified, disabled: u.disabled, providers: u.providerData.map(p => p.providerId) };
+        } catch (err) {
+          if ((err as { code?: unknown } | null)?.code === 'auth/user-not-found') return null;
+          throw err;
+        }
+      },
+      async createUser({ email, password, displayName }) {
+        try {
+          return (await auth.createUser({ email, password, emailVerified: true, ...(displayName ? { displayName } : {}) })).uid;
+        } catch (err) {
+          if ((err as { code?: unknown } | null)?.code === 'auth/email-already-exists') {
+            throw new ApiError(409, 'email_taken', 'This email already has an account. Sign in instead.', 'email');
+          }
+          throw err;
+        }
+      },
+      deleteUser: uid => auth.deleteUser(uid),
     },
     store: firestoreStore(getFirestore(app)),
     mailer: () => (isLocalTest(env) ? localTestMailer(env) : gmailMailer(env)),
     now: () => new Date(),
+    newCode,
   };
 }

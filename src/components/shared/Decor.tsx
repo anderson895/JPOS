@@ -1,24 +1,12 @@
-import { useId, type CSSProperties } from 'react';
 import { cn } from '@/lib/utils';
 
-/** A roasted coffee bean (SVG) — used as floating decoration. */
-export function CoffeeBean({ className, style }: { className?: string; style?: CSSProperties }) {
-  // Unique per bean: a shared id breaks when the first bean is display:none.
-  const gradId = `bean-${useId().replace(/:/g, '')}`;
-  return (
-    <svg viewBox="0 0 40 56" className={className} style={style} aria-hidden="true">
-      <defs>
-        <radialGradient id={gradId} cx="35%" cy="30%" r="75%">
-          <stop offset="0%" stopColor="#8a5531" />
-          <stop offset="55%" stopColor="#4a2a16" />
-          <stop offset="100%" stopColor="#24130a" />
-        </radialGradient>
-      </defs>
-      <ellipse cx="20" cy="28" rx="18" ry="26" fill={`url(#${gradId})`} />
-      <path d="M20 4 C 10 18, 30 36, 20 52" fill="none" stroke="#1a0d06" strokeWidth="3" strokeLinecap="round" opacity="0.85" />
-      <ellipse cx="13" cy="17" rx="4" ry="8" fill="#fff" opacity="0.12" transform="rotate(-18 13 17)" />
-    </svg>
-  );
+/**
+ * A soft sage circle, like the round shapes in the landing's retail photo.
+ * Place it with `className` (position, size); the parent needs `relative`
+ * and usually `overflow-hidden`.
+ */
+export function SageBubble({ className }: { className?: string }) {
+  return <span aria-hidden="true" className={cn('pointer-events-none absolute rounded-full bg-sage-300/50', className)} />;
 }
 
 /** Hand-drawn caramel underline swash (under "Simplified", script headings). */
@@ -60,9 +48,4 @@ export function SectionTitle({ title, subtitle, tone = 'light' }: { title: strin
       {subtitle && <p className={cn('mt-2 text-sm sm:text-base', tone === 'dark' ? 'text-cream-200/75' : 'text-bark-600')}>{subtitle}</p>}
     </div>
   );
-}
-
-/** Line-art coffee branch from reference_UI (transparent PNG). */
-export function CoffeeBranch({ className, style }: { className?: string; style?: CSSProperties }) {
-  return <img src="/images/coffee-branch.png" alt="" aria-hidden="true" draggable={false} className={cn('pointer-events-none select-none', className)} style={style} />;
 }

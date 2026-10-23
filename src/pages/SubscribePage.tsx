@@ -1,358 +1,170 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
-import { FirebaseError } from 'firebase/app';
-import { BadgeCheck, Check, Sparkles, Eye, EyeOff, Loader2, Mail, Store, User as UserIcon, Lock, ArrowLeft, RefreshCw } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { ArrowLeft, Headphones, Loader2, ShieldCheck, Zap } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { applyTheme } from '@/components/shared/theme';
 import BrandMark from '@/components/shared/BrandMark';
-import ContactOwner, { usePlatformSettings } from '@/components/shared/ContactOwner';
-import { getAuthErrorMessage, CANCELLED_SIGN_IN_CODES } from '@/lib/authErrors';
-import { createShop, isSlugAvailable, slugify, slugProblem, SlugTakenError } from '@/lib/subscriptions';
-import { PLAN_LABEL } from '@/lib/entitlements';
-import PlanCards, { isPlanChoice, type PlanChoice } from '@/components/shared/PlanCards';
-import { USE_EMULATORS } from '@/lib/firebase';
+import CreamCard from '@/components/shared/CreamCard';
+import ContactOwner from '@/components/shared/ContactOwner';
+import { SageBubble } from '@/components/shared/Decor';
+import PlanCards, { isPlanChoice } from '@/components/shared/PlanCards';
+import { useSignUp } from '@/components/signup/useSignUp';
+import { CodeStep, SignInLine, SignUpForm, Working } from '@/components/signup/SignUpParts';
 import { cn } from '@/lib/utils';
-import type { PlanId } from '@/types';
 
-const DRAFT_KEY = 'jpos-signup-draft';
-const RESEND_KEY = 'jpos-resend-at';
-/** Set by this tab right before it creates the shop with "Start free trial" picked (read by Billing). */
-export const AUTO_TRIAL_KEY = 'jpos-auto-trial';
-/** Local test only: real addresses also get a real email (VITE_LOCAL_REAL_EMAIL=true in .env) */
-const LOCAL_REAL_EMAIL = import.meta.env.VITE_LOCAL_REAL_EMAIL === 'true';
-interface Draft { shopName: string; slug: string; ownerName: string; plan: PlanChoice | null; email?: string }
+/** Three reasons to sign up (icons from reference_UI/Illustration Asset Kit.png). */
+const HIGHLIGHTS = [
+  { icon: Zap, line1: 'Fast & Easy', line2: 'Setup' },
+  { icon: ShieldCheck, line1: 'Secure &', line2: 'Reliable' },
+  { icon: Headphones, line1: 'Dedicated', line2: 'Support' },
+];
 
-/**
- * Kept in this browser (not just this tab): Gmail opens the confirm link in a
- * new tab, and the shop name and package must still be there.
- */
-function loadDraft(): Partial<Draft> {
-  try { return JSON.parse(localStorage.getItem(DRAFT_KEY) ?? '{}'); } catch { return {}; }
-}
-function saveDraft(d: Draft) {
-  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch { /* storage blocked */ }
-}
-function clearDraft() {
-  try { localStorage.removeItem(DRAFT_KEY); } catch { /* storage blocked */ }
-}
+const backLinkClass = 'inline-flex items-center gap-1.5 text-sm font-medium text-bark-500 hover:text-espresso-800 transition-colors';
 
 /**
- * Sign-up for a new shop: create the account (email or Google), verify the
- * email, then the shop is created and the owner goes to Billing to start the
- * free trial or pay. Anyone signed in with a shop goes straight to the app.
+ * Sign-up for a new shop ("Get Started", the package buttons and "Create
+ * account" on the landing page all lead here): fill in the shop and account,
+ * type the 6-digit code from the email, and the account and shop are made
+ * together, then the owner lands in the app. Looks like the landing page
+ * (About-style heading, the cream sign-in card) with the POS pictures.
  */
 export default function SubscribePage() {
-  const { currentUser, firebaseUser, noShop, loading, signUp, loginWithGoogle, checkEmailVerified, resendVerification, logout } = useAuth();
-  const { settings } = usePlatformSettings();
+  const { currentUser, loading } = useAuth();
   const [params] = useSearchParams();
   const fromLink = params.get('plan');
-  // Only this account's draft (a different sign-up on this computer starts fresh)
-  const draft = useMemo(() => {
-    const d = loadDraft();
-    return !d.email || !firebaseUser?.email || d.email === firebaseUser.email ? d : {};
-  }, [firebaseUser?.email]);
-
-  // The free trial or a package; null = show the cards first
-  const [choice, setChoice] = useState<PlanChoice | null>(isPlanChoice(fromLink) ? fromLink : isPlanChoice(draft.plan) ? draft.plan : null);
-  const plan: PlanId = !choice || choice === 'trial' ? 'starter' : choice;
-  const [shopName, setShopName] = useState(draft.shopName ?? '');
-  const [slug, setSlug] = useState(draft.slug ?? '');
-  const [slugTouched, setSlugTouched] = useState(!!draft.slug);
-  const [slugFree, setSlugFree] = useState<boolean | null>(null);
-  const [ownerName, setOwnerName] = useState(draft.ownerName ?? '');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPass, setShowPass] = useState(false);
-  const [busy, setBusy] = useState(false);
-  // This tab created the shop (not another tab that finished the sign-up)
-  const createdHere = useRef(false);
-  // "Send the email again" waits a minute between emails (the server's limit too)
-  // Kept in this tab's storage and read on every render: the page reloads right
-  // after signing up, so the time must outlive this component.
-  const [now, setNow] = useState(() => Date.now());
-  let resendAt = 0;
-  try { resendAt = Number(sessionStorage.getItem(RESEND_KEY)) || 0; } catch { /* storage blocked */ }
-  const waitSec = Math.max(0, Math.ceil((resendAt - now) / 1000));
-  const startResendWait = () => {
-    try { sessionStorage.setItem(RESEND_KEY, String(Date.now() + 60_000)); } catch { /* storage blocked */ }
-    setNow(Date.now());
-  };
-
-  // Waiting for the email to be confirmed: check every few seconds (and when the
-  // tab comes back into view), so the page moves on by itself, even when the
-  // link was opened on another device.
-  const [confirmed, setConfirmed] = useState(false);
-  const waitingForEmail = !!firebaseUser && noShop && !firebaseUser.emailVerified && !confirmed;
-  const checkRef = useRef(checkEmailVerified);
-  checkRef.current = checkEmailVerified;
-  useEffect(() => {
-    if (!waitingForEmail) return;
-    const check = () => { checkRef.current().then(ok => { if (ok) setConfirmed(true); }).catch(() => { /* try again next time */ }); };
-    const timer = setInterval(check, 4000);
-    // The countdown on "Send the email again"
-    const clock = setInterval(() => setNow(Date.now()), 1000);
-    window.addEventListener('focus', check);
-    return () => { clearInterval(timer); clearInterval(clock); window.removeEventListener('focus', check); };
-  }, [waitingForEmail]);
+  const s = useSignUp(isPlanChoice(fromLink) ? fromLink : null);
 
   useEffect(() => { applyTheme(null); }, []);
-  // The shop link follows the shop name until the owner edits it
-  useEffect(() => { if (!slugTouched) setSlug(slugify(shopName)); }, [shopName, slugTouched]);
-  // Is the link free? (checked shortly after typing stops)
-  useEffect(() => {
-    setSlugFree(null);
-    if (slugProblem(slug)) return;
-    const timer = setTimeout(() => { isSlugAvailable(slug).then(setSlugFree).catch(() => setSlugFree(null)); }, 400);
-    return () => clearTimeout(timer);
-  }, [slug]);
 
-  if (loading) return <Shell><Loader2 className="w-8 h-8 animate-spin mx-auto text-caramel-500" /></Shell>;
-  // Already has a shop: start the free trial they picked, or go pay
-  if (currentUser) {
-    // Only the tab that just created the shop starts the free trial by itself
-    const billing = choice === 'trial' && createdHere.current ? '/admin/billing?start=trial'
-      : choice && choice !== 'trial' ? `/admin/billing?plan=${choice}` : '/admin/billing';
-    return <Navigate to={currentUser.role === 'admin' ? billing : '/staff'} replace />;
+  // Already has a shop (and not in the middle of making one here): straight in
+  if (currentUser && !s.working && !s.target) {
+    const home = currentUser.role !== 'admin' ? '/staff'
+      : s.choice && s.choice !== 'trial' ? `/admin/billing?plan=${s.choice}` : '/admin';
+    return <Navigate to={home} replace />;
   }
+  if (s.waitText) return <PageFrame variant="split" short><CreamCard><Working text={s.waitText} /></CreamCard></PageFrame>;
+  if (loading) return <PageFrame variant="split" short><CreamCard><Working text="Loading…" /></CreamCard></PageFrame>;
 
-  const signedIn = !!firebaseUser && noShop;
-  const verified = !!firebaseUser?.emailVerified || confirmed;
-  const shopProblem = !shopName.trim() || shopName.trim().length < 2 ? 'Enter your shop name.'
-    : slugProblem(slug) ?? (slugFree === false ? 'That shop link is taken. Try another one.' : null)
-    ?? (!ownerName.trim() ? 'Enter your name.' : null);
-
-  const finishShop = async () => {
-    if (shopProblem) { toast.error(shopProblem); return; }
-    setBusy(true);
-    try {
-      // Set first: the new shop can show up before createShop returns
-      createdHere.current = true;
-      if (choice === 'trial') { try { sessionStorage.setItem(AUTO_TRIAL_KEY, '1'); } catch { /* ignore */ } }
-      await createShop({ shopName, slug, ownerName, desiredPlan: plan });
-      clearDraft();
-      toast.success('Your shop is ready! Choose how to start.');
-      // AuthContext picks up the new profile and the redirect above takes over
-    } catch (err) {
-      createdHere.current = false;
-      try { sessionStorage.removeItem(AUTO_TRIAL_KEY); } catch { /* ignore */ }
-      toast.error(err instanceof SlugTakenError ? err.message : getAuthErrorMessage(err, 'Could not create your shop. Please try again.'));
-      if (err instanceof SlugTakenError) setSlugFree(false);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const createAccount = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (shopProblem) { toast.error(shopProblem); return; }
-    if (password.length < 6) { toast.error('Use a password with at least 6 characters.'); return; }
-    saveDraft({ shopName, slug, ownerName, plan: choice, email: email.trim() });
-    setBusy(true);
-    try {
-      const { emailSent, problem } = await signUp(email, password, ownerName);
-      if (emailSent) { toast.success('Account created. Check your email to confirm it.'); startResendWait(); }
-      else toast.error(`Account created, but ${problem ?? 'the email was not sent.'} Press "Send the email again".`, { duration: 8000 });
-    } catch (err) {
-      toast.error(getAuthErrorMessage(err, 'Could not create the account.'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const google = async () => {
-    if (shopProblem) { toast.error(shopProblem); return; }
-    saveDraft({ shopName, slug, ownerName, plan: choice });
-    setBusy(true);
-    try {
-      await loginWithGoogle();
-    } catch (err) {
-      if (!(err instanceof FirebaseError && CANCELLED_SIGN_IN_CODES.includes(err.code))) toast.error(getAuthErrorMessage(err, 'Google sign-in failed.'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // ── Step 2: verify the email ────────────────────────────────────────────
-  if (signedIn && !verified) {
-    return (
-      <Shell>
-        <div className="text-center">
-          <Mail className="w-12 h-12 mx-auto text-caramel-600" aria-hidden="true" />
-          <h1 className="mt-3 font-display text-2xl text-espresso-900">Check your email</h1>
-          <p className="mt-2 text-sm text-bark-600">
-            {USE_EMULATORS && !LOCAL_REAL_EMAIL
-              ? <>Local test: no real email is sent to <strong>{firebaseUser?.email}</strong>. Open it with the button below.</>
-              : <>We sent a link to <strong>{firebaseUser?.email}</strong>. Tap <strong>Confirm my email</strong> in it.</>}
-          </p>
-          <p className="mt-4 inline-flex items-center gap-2 text-xs text-bark-500">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> This page moves on by itself once you confirm.
-          </p>
-        </div>
-        <div className="mt-6 space-y-3">
-          {USE_EMULATORS && <LocalVerifyHelper email={firebaseUser?.email ?? ''} />}
-          <button
-            className="btn-secondary w-full"
-            disabled={waitSec > 0}
-            onClick={() => resendVerification()
-              .then(() => { toast.success('Email sent again.'); startResendWait(); })
-              .catch(e => toast.error(getAuthErrorMessage(e)))}
-          >
-            <RefreshCw className="w-4 h-4" aria-hidden="true" /> {waitSec > 0 ? `Send again in ${waitSec}s` : 'Send the email again'}
-          </button>
-          <button className="btn-ghost w-full text-sm" onClick={() => { clearDraft(); logout(); }}>Use a different account</button>
-        </div>
-      </Shell>
-    );
-  }
+  const backButton = s.signedIn ? (
+    <button type="button" onClick={s.leave} disabled={!!s.busy} className={backLinkClass}>
+      {s.busy === 'leave' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <ArrowLeft className="h-4 w-4" aria-hidden="true" />} Back
+    </button>
+  ) : (
+    <Link to="/login" className={backLinkClass}>
+      <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Back
+    </Link>
+  );
 
   // ── Pick the free trial or a package (skipped when the link already says) ───
-  if (!choice) {
+  if (!s.choice) {
     return (
-      <Shell wide="xl">
-        <Link to="/login" className="inline-flex items-center gap-1 text-sm text-bark-500 hover:text-espresso-800">
-          <ArrowLeft className="w-4 h-4" aria-hidden="true" /> Back
-        </Link>
-        <h1 className="mt-2 text-center font-display text-3xl sm:text-4xl text-espresso-900">Try JPOS free for {settings.trialDays} days</h1>
-        <p className="mt-2 mb-8 text-center text-sm text-bark-600">Free to sign up. Pay only when you're ready.</p>
-        <PlanCards onChoose={setChoice} />
-        {!signedIn && (
-          <p className="mt-6 text-center text-sm text-bark-500">
-            Already have an account? <Link to="/login" className="font-semibold text-espresso-800 underline">Sign in</Link>
-          </p>
-        )}
-      </Shell>
+      <PageFrame variant="wide">
+        {backButton}
+        <h1 className="mt-2 text-center font-display text-3xl font-semibold text-espresso-900 sm:text-4xl">Try JPOS free for {s.settings.trialDays} days</h1>
+        <p className="mb-8 mt-2 text-center text-sm text-bark-600">Free to sign up. Pay only when you're ready.</p>
+        <PlanCards onChoose={s.setChoice} />
+        {!s.signedIn && <div className="mt-6"><SignInLine /></div>}
+      </PageFrame>
     );
   }
 
-  // ── Step 1 (signed out) and step 3 (verified, create the shop) ─────────────
+  // ── Step 2: type the code from the email (same page, the card changes) ────
+  if (!s.signedIn && s.codeSentTo) {
+    return <PageFrame variant="split" short><CreamCard><CodeStep s={s} /></CreamCard></PageFrame>;
+  }
+
+  // ── Step 1 (signed out) and finishing a shop for a signed-in account ───────
   return (
-    <Shell wide>
-      <Link to="/login" className="inline-flex items-center gap-1 text-sm text-bark-500 hover:text-espresso-800">
-        <ArrowLeft className="w-4 h-4" aria-hidden="true" /> Back
-      </Link>
-      <h1 className="mt-3 font-display text-3xl text-espresso-900">{signedIn ? 'Set up your shop' : 'Create your JPOS account'}</h1>
-      <p className="mt-1 text-sm text-bark-600">
-        {signedIn ? 'Almost done! Tell us about your shop.' : 'It only takes a few minutes.'}
-      </p>
-
-      {/* Signing up is free: make that impossible to miss */}
-      <div className="mt-5 flex items-center gap-3 rounded-3xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-        <BadgeCheck className="w-6 h-6 shrink-0 text-emerald-700" aria-hidden="true" />
-        <p className="font-semibold text-emerald-900">Free to sign up. You won't pay anything today.</p>
-      </div>
-
-      {/* What they picked, with a way back to the cards */}
-      <div className="mt-4 flex items-center justify-between gap-3 rounded-full border border-cream-300 bg-white/70 py-2 pl-4 pr-2 text-sm">
-        <span className="flex items-center gap-2 font-semibold text-espresso-900">
-          {choice === 'trial'
-            ? <><Sparkles className="w-4 h-4 text-caramel-600" aria-hidden="true" /> Free trial · {settings.trialDays} days</>
-            : <>{settings.plans[plan]?.name ?? PLAN_LABEL[plan]} · ₱{(settings.plans[plan]?.price ?? 0).toLocaleString('en-PH')}/month <span className="font-normal text-bark-500">(pay later)</span></>}
-        </span>
-        <button type="button" onClick={() => setChoice(null)} className="btn-ghost px-3 py-1.5 text-sm">Change</button>
-      </div>
-
-      <form onSubmit={signedIn ? (e) => { e.preventDefault(); finishShop(); } : createAccount} className="mt-6 grid gap-4 sm:grid-cols-2">
-        <Field icon={Store} label="Shop name">
-          <input className="input pl-11" value={shopName} onChange={e => setShopName(e.target.value)} placeholder="e.g. Kape ni Juan" maxLength={60} required />
-        </Field>
-        <Field icon={UserIcon} label="Your name">
-          <input className="input pl-11" value={ownerName} onChange={e => setOwnerName(e.target.value)} placeholder="e.g. Juan Dela Cruz" maxLength={60} required />
-        </Field>
-        <div className="sm:col-span-2">
-          <label className="label" htmlFor="shop-link">Your shop's sign-in page</label>
-          <div className="flex items-center rounded-full border border-cream-400 bg-white/80 pl-4 text-sm focus-within:ring-2 focus-within:ring-caramel-300">
-            <span className="text-bark-400 whitespace-nowrap">{window.location.host}/s/</span>
-            <input
-              id="shop-link"
-              className="flex-1 min-w-0 bg-transparent py-2.5 pr-4 focus:outline-none"
-              value={slug}
-              onChange={e => { setSlugTouched(true); setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')); }}
-              maxLength={40}
-            />
-          </div>
-          <p className={cn('text-xs mt-1 px-1', slugFree === false || (slug && slugProblem(slug)) ? 'text-red-600' : 'text-bark-500')}>
-            {slug && slugProblem(slug) ? slugProblem(slug)
-              : slugFree === false ? 'That link is taken. Try another one.'
-              : slugFree ? 'Available. Your staff will open this page on your POS devices.'
-              : 'Your staff will open this page on your POS devices.'}
-          </p>
+    <PageFrame variant="split">
+      <CreamCard>
+        {backButton}
+        <h1 className="mt-4 font-display text-3xl font-semibold leading-tight text-espresso-900 sm:text-4xl">
+          {s.signedIn ? 'Set up your shop' : 'Create your JPOS account'}
+        </h1>
+        <p className="mb-6 mt-1.5 text-bark-600">
+          {s.signedIn ? 'Almost done! Tell us about your shop.' : 'It only takes a few minutes.'}
+        </p>
+        <SignUpForm s={s} onChangePlan={() => s.setChoice(null)} />
+        {!s.signedIn && <div className="mt-4"><SignInLine /></div>}
+        <div className="mt-6 border-t border-cream-400/70 pt-5">
+          <p className="mb-3 text-sm text-bark-600">Questions before you sign up? Talk to us:</p>
+          <ContactOwner message="Hi! I have a question about JPOS." />
         </div>
-
-        {!signedIn && (
-          <>
-            <Field icon={Mail} label="Email">
-              <input className="input pl-11" type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" required />
-            </Field>
-            <Field icon={Lock} label="Password">
-              <input className="input pl-11 pr-11" type={showPass ? 'text' : 'password'} autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 6 characters" required />
-              <button type="button" onClick={() => setShowPass(s => !s)} className="absolute right-4 top-1/2 -translate-y-1/2 text-bark-500" aria-label={showPass ? 'Hide password' : 'Show password'}>
-                {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </Field>
-          </>
-        )}
-
-        <div className="sm:col-span-2 flex flex-col gap-3">
-          <button type="submit" disabled={busy || !!shopProblem} className="btn-primary w-full py-3">
-            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-            {signedIn ? 'Create my shop for free' : 'Create free account'}
-          </button>
-          {!signedIn && (
-            <button type="button" onClick={google} disabled={busy || !!shopProblem} className="btn w-full py-3 bg-white text-espresso-900 border border-cream-400/80">
-              Continue with Google
-            </button>
-          )}
-          {signedIn && <button type="button" className="btn-ghost text-sm" onClick={() => { clearDraft(); logout(); }}>Use a different account</button>}
-          {!signedIn && (
-            <p className="text-center text-sm text-bark-500">
-              Already have an account? <Link to="/login" className="font-semibold text-espresso-800 underline">Sign in</Link>
-            </p>
-          )}
-        </div>
-      </form>
-
-      <div className="mt-8 border-t border-cream-300 pt-5">
-        <p className="text-sm text-bark-600 mb-3">Questions before you sign up? Talk to us:</p>
-        <ContactOwner message="Hi! I have a question about JPOS." />
-      </div>
-    </Shell>
-  );
-}
-
-export function Shell({ children, wide }: { children: React.ReactNode; wide?: boolean | 'xl' }) {
-  return (
-    <div data-theme="espresso" className="min-h-dvh bg-cream-100 px-4 py-8 sm:py-12">
-      <div className={cn('mx-auto', wide === 'xl' ? 'max-w-5xl' : wide ? 'max-w-2xl' : 'max-w-md')}>
-        <div className="mb-6 flex justify-center"><BrandMark /></div>
-        {/* The package cards are cards themselves: no box around them */}
-        {wide === 'xl' ? children : <div className="card-glass p-6 sm:p-8">{children}</div>}
-      </div>
-    </div>
-  );
-}
-
-function Field({ icon: Icon, label, children }: { icon: typeof Mail; label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="label">{label}</label>
-      <div className="relative">
-        <Icon className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-bark-500 pointer-events-none" aria-hidden="true" />
-        {children}
-      </div>
-    </div>
+      </CreamCard>
+    </PageFrame>
   );
 }
 
 /**
- * Local test mode only: emails aren't really sent. This opens the newest email
- * the local server "sent" to this address, shown the way it looks in an inbox,
- * so the owner taps "Confirm my email" just like in Gmail.
+ * The page around every sign-up step, in the landing page's style.
+ * - split: the welcome side ("Join JPOS", highlights, the POS pictures) + the
+ *   card. The form, the email code and "please wait" all use it, so only the
+ *   card changes between steps. `short` cards sit level with the welcome side.
+ * - wide: the package cards
  */
-function LocalVerifyHelper({ email }: { email: string }) {
+function PageFrame({ variant, short, children }: { variant: 'split' | 'wide'; short?: boolean; children: React.ReactNode }) {
   return (
-    <button className="btn-caramel w-full" onClick={() => window.location.assign(`/__dev/mail?to=${encodeURIComponent(email)}`)}>
-      <Mail className="w-4 h-4" aria-hidden="true" /> Local test: open the email here
-    </button>
+    <div data-theme="espresso" className="relative isolate min-h-dvh overflow-hidden bg-cream-100">
+      {/* Soft sage circles, like the landing's retail photo */}
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+        <SageBubble className="-right-40 -top-48 h-[520px] w-[520px]" />
+        <SageBubble className="-right-6 -top-24 h-72 w-72 bg-sage-200/60" />
+        <SageBubble className="-bottom-56 -left-40 h-[520px] w-[520px] bg-sage-200/60" />
+        <SageBubble className="-bottom-24 left-[22%] hidden h-64 w-64 bg-sage-200/50 lg:block" />
+      </div>
+
+      <header className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 pt-6 sm:px-6 lg:px-10">
+        <Link to="/login" aria-label="JPOS home"><BrandMark subtitle="Point of Sale" /></Link>
+        <p className="hidden items-center gap-3 text-[11px] font-semibold tracking-[0.2em] text-caramel-600 sm:flex">
+          <span className="h-px w-16 bg-gradient-to-r from-transparent to-caramel-500/70" />
+          GOOD SERVICE <span className="text-caramel-400">•</span> GREAT BUSINESS
+        </p>
+      </header>
+
+      {variant === 'split' && (
+        <div className="mx-auto grid max-w-7xl items-start gap-12 px-4 pb-14 pt-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)] lg:gap-14 lg:px-10 lg:pt-12">
+          <Welcome />
+          <main className={cn('mx-auto w-full min-w-0', short ? 'max-w-[560px] lg:max-w-none lg:self-center' : 'max-w-[600px] lg:max-w-none')}>{children}</main>
+        </div>
+      )}
+      {variant === 'wide' && (
+        <main className="mx-auto max-w-5xl px-4 pb-14 pt-8 sm:px-6">{children}</main>
+      )}
+    </div>
   );
 }
+
+/** The welcome side: like the landing's "About JPOS", with the POS pictures. */
+function Welcome() {
+  return (
+    <aside className="hidden min-w-0 lg:block">
+      <h2 className="flex items-end gap-3">
+        <span className="font-script text-7xl leading-none text-caramel-500">Join</span>
+        <span className="pb-1 font-display text-6xl font-semibold leading-none text-espresso-900">JPOS</span>
+      </h2>
+      <p className="mt-4 text-lg font-semibold text-espresso-800">A smart start for your small business</p>
+      <p className="mt-3 max-w-md leading-relaxed text-bark-600">
+        Set up your shop, add your staff and start selling in minutes. Free to sign up: you pay only when you're ready.
+      </p>
+      <ul className="mt-7 flex flex-wrap gap-x-7 gap-y-4">
+        {HIGHLIGHTS.map(({ icon: Icon, line1, line2 }) => (
+          <li key={line1} className="flex items-center gap-3">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full border border-caramel-400/60 bg-cream-50 text-caramel-600 shadow-[inset_0_0_12px_rgba(221,161,94,0.2)]">
+              <Icon className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <span className="text-sm font-medium leading-tight text-espresso-800">{line1}<br />{line2}</span>
+          </li>
+        ))}
+      </ul>
+
+      {/* The counter: POS terminal in front, receipt printer beside it */}
+      <div className="relative mt-12 h-[330px] max-w-[560px]" aria-hidden="true">
+        <div className="absolute left-[10%] top-[18%] h-[240px] w-[440px] rounded-full bg-caramel-300/30 blur-3xl" />
+        <div className="absolute inset-x-[4%] bottom-3 h-6 rounded-[50%] bg-espresso-900/15 blur-xl" />
+        <img src="/images/pos/receipt-printer.webp" alt="" width={308} height={308} className="absolute bottom-6 right-[4%] w-[36%] drop-shadow-[0_20px_26px_rgba(40,30,20,0.28)]" />
+        <img src="/images/pos/terminal.webp" alt="" width={512} height={453} className="absolute bottom-3 left-0 w-[64%] drop-shadow-[0_26px_32px_rgba(40,30,20,0.3)]" />
+      </div>
+    </aside>
+  );
+}
+

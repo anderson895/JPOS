@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { ApiError, handle, json, readJsonBody, requireMethod } from './http.js';
 import { defaultDeps, isLocalTest, notSetUp, type Deps, type Mailer } from './deps.js';
-import { paymentNoticeMessage, verifyEmailMessage, type Message } from './mail.js';
+import { paymentNoticeMessage, signupCodeMessage, type Message } from './mail.js';
+import { CODE_TTL_MS, codeHash, emailId, type CodeCheck } from './signupCode.js';
 import type { Reserve } from './store.js';
 
 type GetDeps = () => Deps;
@@ -70,43 +71,107 @@ async function send(mailer: Mailer, to: string[], message: Message): Promise<voi
   }
 }
 
+/** The email from a request, trimmed and lowercased; a 400 when it isn't one. */
+function readEmail(body: Record<string, unknown>): string {
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  if (email.length > 254 || !EMAIL.test(email)) throw new ApiError(400, 'invalid_email', 'Enter a valid email address.', 'email');
+  return email;
+}
+
 /**
- * POST /api/email/verify: emails the signed-in owner a link to confirm their
- * email. Always to the account's own address (never one from the request),
- * and limited per account and per day so it can't be used to send spam.
+ * Can a new owner sign up with this email? Returns the uid of a login to
+ * replace, if any: one an older sign-up left behind (never confirmed, password
+ * only, no shop). Any other login with this email means it's taken.
  */
-export function verifyEmailHandler(getDeps: GetDeps = defaultDeps) {
+async function freeEmail(deps: Deps, email: string): Promise<string | null> {
+  const existing = await deps.auth.getUserByEmail(email);
+  if (!existing) return null;
+  const leftover = !existing.emailVerified && !existing.disabled
+    && existing.providers.every(p => p === 'password')
+    && !(await deps.store.accountInUse(existing.uid));
+  if (!leftover) throw new ApiError(409, 'email_taken', 'This email already has an account. Sign in instead.', 'email');
+  return existing.uid;
+}
+
+const CODE_ERRORS: Record<Exclude<CodeCheck, { ok: true }>['reason'], [number, string, string]> = {
+  missing: [400, 'code_missing', "This code doesn't work anymore. Send a new code."],
+  expired: [400, 'code_expired', 'This code has expired. Send a new code.'],
+  locked: [429, 'code_locked', 'Too many wrong tries. Send a new code.'],
+  wrong: [400, 'code_wrong', "That code isn't right."],
+};
+
+function codeError(check: Exclude<CodeCheck, { ok: true }>): ApiError {
+  const [status, code, message] = CODE_ERRORS[check.reason];
+  const left = check.reason === 'wrong' ? ` ${check.triesLeft} ${check.triesLeft === 1 ? 'try' : 'tries'} left.` : '';
+  return new ApiError(status, code, message + left, 'code');
+}
+
+/**
+ * POST /api/signup/code { email }: emails a new shop owner a 6-digit code.
+ * No account is made yet: that waits until the code comes back (signup/finish).
+ * Limited per address, per network and per day, so it can't be used for spam.
+ */
+export function signupCodeHandler(getDeps: GetDeps = defaultDeps) {
   return handle(async (request) => {
     requireMethod(request, 'POST');
     const deps = getDeps();
-    const uid = await verifyCaller(request, deps);
-    const user = await deps.auth.getUser(uid).catch(() => {
-      throw new ApiError(401, 'unauthenticated', 'Sign in again, then try once more.');
-    });
-    if (user.disabled) throw new ApiError(403, 'forbidden', 'This account is turned off.');
-    if (!user.email) throw new ApiError(400, 'no_email', 'This account has no email address.');
-    if (user.emailVerified) return json({ sent: false, alreadyVerified: true });
+    const email = readEmail(await readJsonBody(request));
+    await freeEmail(deps, email);
 
-    const base = appUrl(deps, request);
     const mailer = deps.mailer(); // fails before anything is counted if Gmail isn't set up
+    const id = emailId(email);
     const ipId = networkId(request);
     const reservedAt = deps.now();
-    const quota = await deps.store.reserveVerifyEmail(uid, ipId, reservedAt);
+    const quota = await deps.store.reserveVerifyEmail(id, ipId, reservedAt);
     if (!quota.ok) throw limitError(quota);
 
     try {
-      // Firebase makes the one-time code; the link opens JPOS's own confirm page
-      const firebaseLink = await deps.auth.generateEmailVerificationLink(user.email);
-      const oobCode = new URL(firebaseLink).searchParams.get('oobCode');
-      if (!oobCode) throw new Error('The verification link has no code');
-      const link = `${base}/verify-email?oobCode=${encodeURIComponent(oobCode)}`;
-      await send(mailer, [user.email], verifyEmailMessage({ link }));
+      const code = deps.newCode();
+      await deps.store.saveSignupCode(id, { hash: codeHash(id, code), expiresAt: reservedAt.getTime() + CODE_TTL_MS, tries: 0 });
+      await send(mailer, [email], signupCodeMessage({ code }));
     } catch (err) {
       // Nothing went out: don't count it against the owner
-      await deps.store.releaseVerifyEmail(uid, ipId, reservedAt).catch(() => { /* best effort */ });
+      await deps.store.releaseVerifyEmail(id, ipId, reservedAt).catch(() => { /* best effort */ });
       throw err;
     }
     return json({ sent: true });
+  });
+}
+
+/**
+ * POST /api/signup/finish { email, code, password, name }: a right code makes
+ * the owner's login, with the email already confirmed. The app then signs in
+ * with the same password and creates the shop.
+ */
+export function signupFinishHandler(getDeps: GetDeps = defaultDeps) {
+  return handle(async (request) => {
+    requireMethod(request, 'POST');
+    const deps = getDeps();
+    const body = await readJsonBody(request);
+    const email = readEmail(body);
+    const code = typeof body.code === 'string' ? body.code.replace(/\s+/g, '') : '';
+    if (!/^\d{6}$/.test(code)) throw new ApiError(400, 'invalid_code', 'Enter the 6-digit code from the email.', 'code');
+    const password = typeof body.password === 'string' ? body.password : '';
+    if (password.length < 6 || password.length > 100) {
+      throw new ApiError(400, 'weak_password', 'Use a password with at least 6 characters.', 'password');
+    }
+    const name = typeof body.name === 'string' ? body.name.replace(/[\r\n\t]+/g, ' ').trim().slice(0, 60) : '';
+
+    // Checked before the code, so a taken email doesn't use up a try
+    const leftover = await freeEmail(deps, email);
+    const id = emailId(email);
+    const check = await deps.store.checkSignupCode(id, codeHash(id, code), deps.now());
+    if (!check.ok) throw codeError(check);
+
+    try {
+      if (leftover) await deps.auth.deleteUser(leftover);
+      await deps.auth.createUser({ email, password, displayName: name });
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
+      console.error('[api] account not created:', err instanceof Error ? err.message : err);
+      throw new ApiError(503, 'signup_failed', "We couldn't create your account right now. Send a new code and try again.");
+    }
+    return json({ created: true });
   });
 }
 

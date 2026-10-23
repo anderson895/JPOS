@@ -127,7 +127,9 @@ function Payments({ pending, settings }: { pending: SubscriptionRequest[]; setti
               </div>
               <div className="modal-footer">
                 <button className="btn-secondary flex-1" onClick={() => { setRejecting(null); setReason(''); }}>Cancel</button>
-                <button className="btn-danger flex-1" disabled={!reason.trim() || busy === rejecting.id} onClick={reject}>Reject</button>
+                <button className="btn-danger flex-1" disabled={!reason.trim() || busy === rejecting.id} onClick={reject}>
+                  {busy === rejecting.id && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />} Reject
+                </button>
               </div>
             </div>
           </div>
@@ -145,12 +147,15 @@ const STATE_BADGE = {
 
 function Shops() {
   const [shops, setShops] = useState<Tenant[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
   useEffect(() => watchShops(setShops, () => toast.error('Could not load shops.')), []);
   const toggle = async (t: Tenant) => {
     const reason = prompt(t.suspended ? `Restore "${t.name}"? Write a short note:` : `Suspend "${t.name}"? It will become view-only. Write the reason:`);
     if (reason === null) return;
+    setBusy(t.id);
     try { await setSuspended(t.id, !t.suspended, reason || '-'); toast.success(t.suspended ? 'Shop restored.' : 'Shop suspended.'); }
     catch { toast.error('Could not update the shop.'); }
+    finally { setBusy(null); }
   };
   return (
     <div className="card overflow-x-auto">
@@ -175,8 +180,10 @@ function Shops() {
                 <td className="table-cell">{end ? `${format(end, 'MMM d, yyyy')} (${daysLeft(t)}d)` : '-'}</td>
                 <td className="table-cell">{t.staffCount}{t.entitlements?.staffLimit != null ? ` / ${t.entitlements.staffLimit}` : ''}</td>
                 <td className="table-cell text-right">
-                  <button className="btn-ghost text-sm" onClick={() => toggle(t)}>
-                    {t.suspended ? <><RotateCcw className="w-4 h-4" aria-hidden="true" /> Restore</> : <><Ban className="w-4 h-4" aria-hidden="true" /> Suspend</>}
+                  <button className="btn-ghost text-sm" disabled={busy === t.id} onClick={() => toggle(t)}>
+                    {busy === t.id ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                      : t.suspended ? <RotateCcw className="w-4 h-4" aria-hidden="true" /> : <Ban className="w-4 h-4" aria-hidden="true" />}
+                    {t.suspended ? 'Restore' : 'Suspend'}
                   </button>
                 </td>
               </tr>

@@ -2,23 +2,14 @@ import { useState, useEffect, useRef } from 'react';
 import { FirebaseError } from 'firebase/app';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthErrorMessage, CANCELLED_SIGN_IN_CODES } from '@/lib/authErrors';
-import { CreditCard, KeyRound, Eye, EyeOff, Loader2, Wifi, Mail, Lock, LogIn } from 'lucide-react';
-import { CoffeeBranch } from '@/components/shared/Decor';
+import { CreditCard, KeyRound, Eye, EyeOff, Loader2, Wifi, Mail, Lock, LogIn, UserPlus } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import CreamCard from '@/components/shared/CreamCard';
+import GoogleIcon from '@/components/shared/GoogleIcon';
 import toast from 'react-hot-toast';
 
 // RFID readers "type" a tag at roughly 10–30 ms per character; people are far slower.
 const SCANNER_MS_PER_CHAR = 50;
-
-function GoogleIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 48 48" aria-hidden="true">
-      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-    </svg>
-  );
-}
 
 /**
  * Sign-in card shown in the landing-page hero (Password / RFID / Google).
@@ -134,12 +125,7 @@ export default function LoginCard({ terminalSlug }: {
 
   return (
     <div id="login" className="relative w-full max-w-[420px] mx-auto scroll-mt-28">
-      <div
-        className="relative overflow-hidden rounded-4xl border border-white/70 px-6 py-7 sm:px-8 sm:py-8 shadow-[0_40px_80px_-30px_rgba(0,0,0,0.8)]"
-        style={{ background: 'linear-gradient(165deg, #fffaf2 0%, #faf0e2 55%, #f3e3cc 100%)' }}
-      >
-        {/* Leaf decoration, top-right corner */}
-        <CoffeeBranch className="absolute -top-10 -right-24 w-64 opacity-40 rotate-[-38deg]" />
+      <CreamCard>
 
         {/* Header */}
         <div className="relative text-center">
@@ -153,6 +139,20 @@ export default function LoginCard({ terminalSlug }: {
             <span className="h-px w-8 sm:w-12 bg-gradient-to-l from-transparent to-caramel-500" />
           </div>
         </div>
+
+        {/* Sign in here, or open the sign-up page (the public page) */}
+        {!terminalSlug && (
+          <nav className="segmented relative mt-6" aria-label="Sign in or create an account">
+            <span className="segmented-item active" aria-current="page">
+              <LogIn className="w-4 h-4" />
+              Sign in
+            </span>
+            <Link to="/subscribe?plan=trial" className="segmented-item">
+              <UserPlus className="w-4 h-4" />
+              Create account
+            </Link>
+          </nav>
+        )}
 
         {/* Mode Toggle (terminal only) */}
         {terminalSlug && (
@@ -327,7 +327,7 @@ export default function LoginCard({ terminalSlug }: {
         <p className="relative text-center text-bark-500 text-[11px] mt-6">
           JPOS v1.0 · <span className="text-espresso-700">Business Management System</span>
         </p>
-      </div>
+      </CreamCard>
     </div>
   );
 }
