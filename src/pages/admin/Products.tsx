@@ -12,9 +12,10 @@ import {
 } from '@/lib/productDetails';
 import Portal from '@/components/shared/Portal';
 import PageHeader from '@/components/shared/PageHeader';
+import DiscountsModal from '@/components/admin/DiscountsModal';
 import type { Product, Category } from '@/types';
 import {
-  Plus, Search, Edit2, Trash2, X, Upload, ToggleLeft, ToggleRight, Loader2, Tag, Pencil, Package, ChevronDown, ScanBarcode,
+  Plus, Search, Edit2, Trash2, X, Upload, ToggleLeft, ToggleRight, Loader2, Tag, Pencil, Package, ChevronDown, ScanBarcode, BadgePercent,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -40,6 +41,7 @@ export default function AdminProducts() {
   const [saving, setSaving]           = useState(false);
   const [imgUploading, setImgUploading] = useState(false);
   const [catModalOpen, setCatModalOpen] = useState(false);
+  const [discountsOpen, setDiscountsOpen] = useState(false);
   const [newCatName, setNewCatName]   = useState('');
   // Category edit/delete state
   const [editCatId, setEditCatId]     = useState<string | null>(null);
@@ -274,6 +276,9 @@ export default function AdminProducts() {
             <button onClick={() => setCatModalOpen(true)} className="btn-secondary flex-1 sm:flex-none">
               <Tag className="w-4 h-4" /> Categories
             </button>
+            <button onClick={() => setDiscountsOpen(true)} className="btn-secondary flex-1 sm:flex-none">
+              <BadgePercent className="w-4 h-4" /> Discounts
+            </button>
             <button onClick={openNew} className="btn-primary flex-1 sm:flex-none">
               <Plus className="w-4 h-4" /> Add Product
             </button>
@@ -463,6 +468,8 @@ export default function AdminProducts() {
         </div>
         </Portal>
       )}
+
+      {discountsOpen && <DiscountsModal onClose={() => setDiscountsOpen(false)} />}
 
       {/* Category Modal */}
       {catModalOpen && (

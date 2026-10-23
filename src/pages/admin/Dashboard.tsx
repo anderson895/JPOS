@@ -271,8 +271,10 @@ export default function AdminDashboard() {
                     <p className="text-xs text-bark-400 truncate">{formatDateTime(order.createdAt)} · {order.cashierName}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className="text-sm font-semibold text-espresso-800">{formatCurrency(order.total)}</p>
-                    <span className="badge-info uppercase text-[10px]">{order.paymentMethod}</span>
+                    <p className={`text-sm font-semibold ${order.status === 'voided' ? 'text-bark-400 line-through' : 'text-espresso-800'}`}>{formatCurrency(order.total)}</p>
+                    {order.status === 'voided'
+                      ? <span className="badge bg-red-100 text-red-700 text-[10px]">VOID</span>
+                      : <span className="badge-info uppercase text-[10px]">{order.paymentMethod}</span>}
                   </div>
                 </div>
               ))}

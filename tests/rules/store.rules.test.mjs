@@ -1,5 +1,6 @@
 // Store Settings Firestore rules: what the shop sells (chosen at sign-up), its
 // name, logo and colors (public, for its sign-in page), and its receipt details.
+// Also the store's saved discounts and voiding a sale.
 // Run with the emulator (see package.json test:rules).
 import { readFileSync } from 'node:fs';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
@@ -43,6 +44,12 @@ async function seed() {
     await setDoc(doc(db, 'tenants/X'), shopDoc('adminX', { suspended: true }));
     for (const id of ['A', 'S', 'X']) await setDoc(doc(db, `users/admin${id}`), user(id, 'admin'));
     await setDoc(doc(db, 'users/staffA'), user('A'));
+    await setDoc(doc(db, 'users/adminE'), user('E', 'admin'));
+    await setDoc(doc(db, 'tenants/E'), shopDoc('adminE', { status: 'active', currentPeriodEnd: ts(now - DAY) }));
+    await setDoc(doc(db, 'tenants/A/orders/o1'), { orderNumber: 'ORD-1', status: 'completed', total: 100, cashierId: 'staffA', createdAt: iso, updatedAt: iso });
+    await setDoc(doc(db, 'tenants/A/orders/v1'), { orderNumber: 'ORD-2', status: 'voided', total: 50, cashierId: 'staffA', createdAt: iso, updatedAt: iso, voidReason: 'mistake' });
+    await setDoc(doc(db, 'tenants/E/orders/o1'), { orderNumber: 'ORD-1', status: 'completed', total: 100, cashierId: 'adminE', createdAt: iso, updatedAt: iso });
+    await setDoc(doc(db, 'tenants/A/discounts/d1'), { name: 'Employee', kind: 'percent', value: 10, active: true, createdAt: iso, updatedAt: iso });
     await setDoc(doc(db, 'tenants/A/settings/branding'), { name: 'Shop', logoUrl: '', theme: 'espresso', updatedAt: ts(now - DAY), updatedBy: 'adminA' });
   });
 }
@@ -136,6 +143,37 @@ await t('admin deletes the public look', 'deny', () => deleteDoc(doc(as('adminA'
 await t('admin of a shop with no look yet adds it', 'allow', () => setDoc(doc(as('adminS'), 'tenants/S/settings/branding'), { name: 'Shop', logoUrl: '', theme: 'espresso', updatedAt: serverTimestamp(), updatedBy: 'adminS' }));
 await t('cashier reads the receipt details', 'allow', () => getDoc(doc(as('staffA'), 'tenants/A')));
 await t('a rename without the time it was saved', 'deny', () => updateDoc(doc(as('adminA'), 'tenants/A'), { name: 'New Name' }));
+
+// ── Saved discounts ──────────────────────────────────────────────────────────
+const disc = (extra = {}) => ({ name: 'Promo', kind: 'fixed', value: 50, active: true, createdAt: iso, updatedAt: iso, ...extra });
+await t('admin adds a saved discount', 'allow', () => setDoc(doc(as('adminA'), 'tenants/A/discounts/d2'), disc()));
+await t('admin adds 12.5%', 'allow', () => setDoc(doc(as('adminA'), 'tenants/A/discounts/d2'), disc({ kind: 'percent', value: 12.5 })));
+await t('admin switches a discount off', 'allow', () => updateDoc(doc(as('adminA'), 'tenants/A/discounts/d1'), { active: false, updatedAt: iso }));
+await t('cashier reads the discounts', 'allow', () => getDocs(collection(as('staffA'), 'tenants/A/discounts')));
+await t('cashier adds a discount', 'deny', () => setDoc(doc(as('staffA'), 'tenants/A/discounts/d2'), disc()));
+await t('another shop reads the discounts', 'deny', () => getDocs(collection(as('adminS'), 'tenants/A/discounts')));
+await t('a 150% discount', 'deny', () => setDoc(doc(as('adminA'), 'tenants/A/discounts/d2'), disc({ kind: 'percent', value: 150 })));
+await t('a zero discount', 'deny', () => setDoc(doc(as('adminA'), 'tenants/A/discounts/d2'), disc({ value: 0 })));
+await t('an unknown kind of discount', 'deny', () => setDoc(doc(as('adminA'), 'tenants/A/discounts/d2'), disc({ kind: 'free' })));
+await t('a discount with an extra field', 'deny', () => setDoc(doc(as('adminA'), 'tenants/A/discounts/d2'), disc({ cashierOnly: true })));
+await t('a discount with no name', 'deny', () => setDoc(doc(as('adminA'), 'tenants/A/discounts/d2'), disc({ name: '' })));
+await t('admin deletes a discount', 'allow', () => deleteDoc(doc(as('adminA'), 'tenants/A/discounts/d1')));
+
+// ── Void a sale ──────────────────────────────────────────────────────────────
+const voidIt = (uid, path = 'tenants/A/orders/o1', extra = {}) => updateDoc(doc(as(uid), path), {
+  status: 'voided', voidedBy: uid, voidedByName: 'Owner', voidedAt: new Date().toISOString(), voidReason: 'Wrong item', updatedAt: iso, ...extra,
+});
+await t('admin voids a sale with a reason', 'allow', () => voidIt('adminA'));
+await t('cashier voids a sale', 'deny', () => voidIt('staffA'));
+await t('another shop\'s admin voids it', 'deny', () => voidIt('adminS'));
+await t('void without a reason', 'deny', () => voidIt('adminA', undefined, { voidReason: '' }));
+await t('void in someone else\'s name', 'deny', () => voidIt('adminA', undefined, { voidedBy: 'staffA' }));
+await t('void and change the total', 'deny', () => voidIt('adminA', undefined, { total: 0 }));
+await t('void an already voided sale', 'deny', () => voidIt('adminA', 'tenants/A/orders/v1'));
+await t('un-void a sale', 'deny', () => updateDoc(doc(as('adminA'), 'tenants/A/orders/v1'), { status: 'completed', updatedAt: iso }));
+await t('admin edits a sale\'s total', 'deny', () => updateDoc(doc(as('adminA'), 'tenants/A/orders/o1'), { total: 1, updatedAt: iso }));
+await t('admin deletes a sale', 'deny', () => deleteDoc(doc(as('adminA'), 'tenants/A/orders/o1')));
+await t('void after the subscription ended', 'deny', () => voidIt('adminE', 'tenants/E/orders/o1'));
 
 await env.cleanup();
 for (const [s, e, n] of results) console.log(`${s}  [${e.padEnd(5)}]  ${n}`);

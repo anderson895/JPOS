@@ -1,3 +1,5 @@
+import type { DiscountKind, DiscountPick, SeniorInfo, VatBreakdown } from '@/lib/pricing';
+
 export type UserRole = 'admin' | 'staff';
 
 export interface User {
@@ -192,10 +194,14 @@ export interface OrderItem {
   /** "Nestlé · 300 g", frozen at the sale (later product edits don't change it). */
   details?: string;
   unit?: string;
+  /** price × quantity, before any discount. */
   subtotal: number;
+  /** Pesos off this line (an item discount) and the discount's name. */
+  discount?: number;
+  discountName?: string;
 }
 
-export type OrderStatus = 'pending' | 'preparing' | 'ready' | 'completed';
+export type OrderStatus = 'pending' | 'preparing' | 'ready' | 'completed' | 'voided';
 export type PaymentMethod = 'cash' | 'card' | 'gcash' | 'maya';
 
 export interface Order {
@@ -204,14 +210,28 @@ export interface Order {
   items: OrderItem[];
   subtotal: number;
   /**
-   * Peso amount actually deducted — already converted when `discountType` is
-   * 'percent', and never more than `subtotal`. `total = subtotal - discount`.
+   * Every peso given away as a discount: item discounts, the order discount and
+   * the Senior/PWD 20% (src/lib/pricing.ts). `total = subtotal - discount - (lessVat ?? 0)`.
    */
   discount: number;
-  /** How the cashier entered the discount; `discount` is always in pesos. */
+  /** How the order discount was entered; `discount` is always in pesos. */
   discountType?: 'percent' | 'fixed';
+  /** The VAT inside the total (VAT-registered stores; 0 otherwise). */
   tax: number;
   total: number;
+  /** VAT-registered stores: VATable sales, VAT and VAT-exempt sales, for the receipt. */
+  vat?: VatBreakdown;
+  /** Senior/PWD in a VAT-registered store: the VAT taken off before the 20%. */
+  lessVat?: number;
+  /** Order-level discounts for the receipt: "Senior citizen 20%", "Employee 10%". */
+  discounts?: { name: string; amount: number }[];
+  /** Senior citizen / PWD sale: the ID number and name printed on the receipt. */
+  senior?: SeniorInfo;
+  /** Voided by an admin (with a reason): kept for the record, left out of every sales total. */
+  voidedBy?: string;
+  voidedByName?: string;
+  voidedAt?: string;
+  voidReason?: string;
   paymentMethod: PaymentMethod;
   amountTendered?: number;
   change?: number;
@@ -287,4 +307,17 @@ export interface CartItem {
   imageUrl?: string;
   details?: string;
   unit?: string;
+  /** A discount on this line only. */
+  discount?: DiscountPick | null;
+}
+
+/** tenants/{T}/discounts/{id}: a discount the store set up to pick at the POS. */
+export interface SavedDiscount {
+  id: string;
+  name: string;
+  kind: DiscountKind;
+  value: number;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
 }

@@ -13,7 +13,9 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
 } from 'recharts';
-import { TrendingUp, ShoppingBag, CreditCard, Download, Calendar, Loader2, Lock } from 'lucide-react';
+import { TrendingUp, ShoppingBag, CreditCard, Download, Calendar, Loader2, Lock, Ban, Receipt as ReceiptText } from 'lucide-react';
+import VoidOrderModal from '@/components/admin/VoidOrderModal';
+import ReceiptModal from '@/components/pos/ReceiptModal';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/shared/PageHeader';
@@ -51,6 +53,9 @@ export default function AdminReports() {
   const pdfExport = !!tenant?.entitlements?.pdfExport;
   const locked = (r: Range) => !fullReports && (r === 'month' || r === 'custom');
   const [orders, setOrders]         = useState<Order[]>([]);
+  // The sale being voided, or whose receipt is open
+  const [voiding, setVoiding]       = useState<Order | null>(null);
+  const [viewing, setViewing]       = useState<Order | null>(null);
   const [loading, setLoading]       = useState(true);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [customStart, setCustomStart] = useState(format(subDays(new Date(), 7), 'yyyy-MM-dd'));
@@ -347,7 +352,7 @@ export default function AdminReports() {
           format(new Date(toIso(o.createdAt)), 'yyyy-MM-dd HH:mm'),
           o.cashierName,
           String(o.items.reduce((s, i) => s + i.quantity, 0)),
-          peso(o.total),
+          o.status === 'voided' ? `VOID ${peso(o.total)}` : peso(o.total),
           o.paymentMethod.toUpperCase(),
           paymentRefLabel(o, '-'),
         ]),
@@ -549,7 +554,14 @@ export default function AdminReports() {
 
       {/* Orders Table */}
       <div className="card p-6">
-        <h2 className="font-display text-xl text-espresso-900 mb-4">Order Details</h2>
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <h2 className="font-display text-xl text-espresso-900">Order Details</h2>
+          {orders.some(o => o.status === 'voided') && (
+            <span className="badge bg-red-50 text-red-700 normal-case">
+              {orders.filter(o => o.status === 'voided').length} voided, not counted in sales
+            </span>
+          )}
+        </div>
         {/* No orders: a plain message (inside the wide table it was cut off on phones) */}
         {orders.length === 0 ? (
           <p className="py-8 text-center text-sm text-bark-400">No orders in selected period</p>
@@ -564,17 +576,37 @@ export default function AdminReports() {
               <th className="table-header">Total</th>
               <th className="table-header">Payment</th>
               <th className="table-header">Ref</th>
+              <th className="table-header"><span className="sr-only">Actions</span></th>
             </tr></thead>
             <tbody>
               {orders.slice(0, 50).map(o => (
-                <tr key={o.id} className="table-row">
-                  <td className="table-cell font-mono text-xs text-bark-600">{o.orderNumber}</td>
+                <tr key={o.id} className={`table-row ${o.status === 'voided' ? 'bg-red-50/40' : ''}`}>
+                  <td className="table-cell font-mono text-xs text-bark-600">
+                    {o.orderNumber}
+                    {o.status === 'voided' && (
+                      <span className="mt-1 block w-fit rounded-full bg-red-100 px-2 py-0.5 font-body text-[10px] font-bold text-red-700" title={o.voidReason}>
+                        VOID{o.voidReason ? ` · ${o.voidReason}` : ''}
+                      </span>
+                    )}
+                  </td>
                   <td className="table-cell text-xs text-bark-500">{formatDateTime(o.createdAt)}</td>
                   <td className="table-cell">{o.cashierName}</td>
                   <td className="table-cell">{o.items.reduce((s, i) => s + i.quantity, 0)} items</td>
-                  <td className="table-cell font-semibold">{formatCurrency(o.total)}</td>
+                  <td className={`table-cell font-semibold ${o.status === 'voided' ? 'text-bark-400 line-through' : ''}`}>{formatCurrency(o.total)}</td>
                   <td className="table-cell"><span className="badge-info uppercase text-[10px]">{o.paymentMethod}</span></td>
                   <td className="table-cell font-mono text-xs">{paymentRefLabel(o)}</td>
+                  <td className="table-cell">
+                    <div className="flex justify-end gap-1">
+                      <button onClick={() => setViewing(o)} className="icon-btn w-8 h-8" title="See the receipt" aria-label={`See the receipt of ${o.orderNumber}`}>
+                        <ReceiptText className="w-4 h-4" />
+                      </button>
+                      {o.status === 'completed' && (
+                        <button onClick={() => setVoiding(o)} className="icon-btn w-8 h-8 hover:text-red-600" title="Void this sale" aria-label={`Void ${o.orderNumber}`}>
+                          <Ban className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -582,6 +614,15 @@ export default function AdminReports() {
         </div>
         )}
       </div>
+
+      {voiding && (
+        <VoidOrderModal
+          order={voiding}
+          onClose={() => setVoiding(null)}
+          onVoided={change => setOrders(prev => prev.map(o => (o.id === voiding.id ? { ...o, ...change } : o)))}
+        />
+      )}
+      {viewing && <ReceiptModal order={viewing} onClose={() => setViewing(null)} />}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import {
   paymentSettingsProblem, referenceProblem, walletReady, withPaymentDefaults,
 } from '@/lib/eWallet';
 import { buildOrder, type OrderSnapshot } from '@/lib/orders';
+import { price } from '@/lib/pricing';
 import type { PaymentSettings } from '@/types';
 
 const QR = 'https://res.cloudinary.com/demo/image/upload/qr.png';
@@ -77,7 +78,7 @@ describe('payment settings', () => {
 describe('buildOrder with a manual payment', () => {
   const snapshot = (paymentMethod: OrderSnapshot['paymentMethod']): OrderSnapshot => ({
     items: [{ productId: 'p1', productName: 'Latte', price: 140, quantity: 2 }],
-    subtotal: 280, discountAmount: 0, discountType: 'percent', total: 280,
+    pricing: price({ lines: [{ price: 140, quantity: 2 }], vatRegistered: false }), orderDiscount: null, senior: null,
     paymentMethod, amountTendered: 280, change: 0,
     cashierId: 'staff1', cashierName: 'Juan',
   });

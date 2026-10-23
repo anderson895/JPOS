@@ -1,13 +1,14 @@
 import { roundMoney } from '@/lib/utils';
+import { SENIOR_LABEL, SENIOR_RATE, type DiscountPick, type PriceResult, type SeniorInfo } from '@/lib/pricing';
 import type { CartItem, Order, PaymentMethod } from '@/types';
 
 /** Everything an order needs, frozen at the moment the cashier checks out. */
 export interface OrderSnapshot {
   items: CartItem[];
-  subtotal: number;
-  discountAmount: number;
-  discountType: 'percent' | 'fixed';
-  total: number;
+  /** The money of the sale, from the cart (src/lib/pricing.ts). */
+  pricing: PriceResult;
+  orderDiscount: DiscountPick | null;
+  senior: SeniorInfo | null;
   paymentMethod: PaymentMethod;
   /** Pesos handed over for cash; the total for every other method. */
   amountTendered: number;
@@ -38,25 +39,38 @@ export interface ManualPayment {
 export function buildOrder(s: OrderSnapshot, orderNumber: string, payment?: ManualPayment): Omit<Order, 'id'> {
   const now = new Date().toISOString();
   const isWallet = s.paymentMethod === 'gcash' || s.paymentMethod === 'maya';
+  const p = s.pricing;
+  // Order-level discounts, as the receipt lists them
+  const discounts: { name: string; amount: number }[] = [];
+  if (s.senior && p.seniorDiscount > 0) discounts.push({ name: `${SENIOR_LABEL[s.senior.type]} ${SENIOR_RATE * 100}%`, amount: p.seniorDiscount });
+  if (s.orderDiscount && p.orderDiscount > 0) discounts.push({ name: s.orderDiscount.name.trim() || 'Discount', amount: p.orderDiscount });
   return {
     orderNumber,
-    items: s.items.map(i => ({
-      productId: i.productId,
-      productName: i.productName,
-      price: i.price,
-      quantity: i.quantity,
-      subtotal: roundMoney(i.price * i.quantity),
-      ...(i.variantId   ? { variantId: i.variantId }     : {}),
-      ...(i.variantName ? { variantName: i.variantName } : {}),
-      ...(i.notes       ? { notes: i.notes }             : {}),
-      ...(i.details     ? { details: i.details }         : {}),
-      ...(i.unit        ? { unit: i.unit }               : {}),
-    })),
-    subtotal: s.subtotal,
-    discount: s.discountAmount,
-    discountType: s.discountType,
-    tax: 0,
-    total: s.total,
+    items: s.items.map((i, n) => {
+      const line = p.lines[n];
+      return {
+        productId: i.productId,
+        productName: i.productName,
+        price: i.price,
+        quantity: i.quantity,
+        subtotal: roundMoney(i.price * i.quantity),
+        ...(i.variantId   ? { variantId: i.variantId }     : {}),
+        ...(i.variantName ? { variantName: i.variantName } : {}),
+        ...(i.notes       ? { notes: i.notes }             : {}),
+        ...(i.details     ? { details: i.details }         : {}),
+        ...(i.unit        ? { unit: i.unit }               : {}),
+        ...(line && line.discount > 0 && i.discount ? { discount: line.discount, discountName: i.discount.name.trim() || 'Discount' } : {}),
+      };
+    }),
+    subtotal: p.subtotal,
+    discount: p.discount,
+    discountType: s.orderDiscount?.kind ?? 'percent',
+    tax: p.vat?.vat ?? 0,
+    total: p.total,
+    ...(p.vat ? { vat: p.vat } : {}),
+    ...(p.lessVat > 0 ? { lessVat: p.lessVat } : {}),
+    ...(discounts.length ? { discounts } : {}),
+    ...(s.senior ? { senior: { type: s.senior.type, idNumber: s.senior.idNumber.trim(), name: s.senior.name.trim() } } : {}),
     paymentMethod: s.paymentMethod,
     amountTendered: s.amountTendered,
     change: s.change,
@@ -73,3 +87,4 @@ export function buildOrder(s: OrderSnapshot, orderNumber: string, payment?: Manu
     updatedAt: now,
   };
 }
+

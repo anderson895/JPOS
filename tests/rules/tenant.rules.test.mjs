@@ -148,7 +148,7 @@ await t('admin writes categories', 'allow', () => setDoc(doc(as('ownerA'), 'tena
 await t('staff sells (cash) as self', 'allow', () => addDoc(collection(as('staffA'), 'tenants/A/orders'), order('staffA')));
 await t('staff sells as someone else', 'deny', () => addDoc(collection(as('staffA'), 'tenants/A/orders'), order('ownerA')));
 await t('staff edits an order', 'deny', () => updateDoc(doc(as('staffA'), 'tenants/A/orders/o1'), { total: 1 }));
-await t('admin deletes an order', 'allow', () => deleteDoc(doc(as('ownerA'), 'tenants/A/orders/o1')));
+await t('admin deletes an order (sales are voided, never deleted)', 'deny', () => deleteDoc(doc(as('ownerA'), 'tenants/A/orders/o1')));
 await t('inactive staff reads products', 'deny', () => getDocs(collection(as('offA'), 'tenants/A/products')));
 await t('inactive staff sells', 'deny', () => addDoc(collection(as('offA'), 'tenants/A/orders'), order('offA')));
 await t('staff lists people', 'deny', () => getDocs(query(collection(as('staffA'), 'users'), where('tenantId', '==', 'A'))));

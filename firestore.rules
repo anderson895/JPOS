@@ -324,6 +324,19 @@ service cloud.firestore {
         allow read: if memberOf(t);
         allow write: if adminOf(t) && hasAccess(t);
       }
+      // The store's saved discounts ("Employee 10%", "Promo ₱50"), picked at the POS
+      match /discounts/{id} {
+        allow read: if memberOf(t);
+        allow create, update: if adminOf(t) && hasAccess(t)
+          && d().keys().hasOnly(['name', 'kind', 'value', 'active', 'createdAt', 'updatedAt'])
+          && d().name is string && d().name.size() >= 1 && d().name.size() <= 40
+          && d().kind in ['percent', 'fixed']
+          && (d().value is int || d().value is float) && d().value > 0
+          && d().value <= (d().kind == 'percent' ? 100 : 100000)
+          && d().active is bool
+          && d().updatedAt is string;
+        allow delete: if adminOf(t);
+      }
 
       // GCash/Maya through the shop's own QR: the e-wallet reference must be valid,
       // the cashier vouches they saw the money arrive (verifiedBy), and the
@@ -348,7 +361,19 @@ service cloud.firestore {
         allow create: if memberOf(t) && hasAccess(t)
           && request.resource.data.cashierId == request.auth.uid
           && eWalletOk(id, request.resource.data) && cardOk(request.resource.data);
-        allow update, delete: if adminOf(t) && hasAccess(t);
+        // Void: an admin marks a completed sale VOID with a reason. It stays for
+        // the record (left out of every sales total); nothing else changes, and
+        // sales are never deleted.
+        allow update: if adminOf(t) && hasAccess(t)
+          && resource.data.status == 'completed'
+          && changed().hasOnly(['status', 'voidedBy', 'voidedByName', 'voidedAt', 'voidReason', 'updatedAt'])
+          && d().status == 'voided'
+          && d().voidedBy == request.auth.uid
+          && d().voidedByName is string && d().voidedByName.size() <= 60
+          && d().voidedAt is string && d().voidedAt.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$')
+          && d().voidReason is string && d().voidReason.size() >= 3 && d().voidReason.size() <= 200
+          && d().updatedAt is string;
+        allow delete: if false;
       }
 
       // One e-wallet reference = one order (created in the order's batch)

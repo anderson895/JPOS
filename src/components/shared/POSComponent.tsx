@@ -8,16 +8,18 @@ import { findByCode, matchesSearch, productDetails } from '@/lib/productDetails'
 import { useCart } from '@/contexts/CartContext';
 import { formatCurrency, generateOrderNumber, roundMoney } from '@/lib/utils';
 import Portal from '@/components/shared/Portal';
-import type { Product, Category, Order, PaymentMethod, PaymentSettings } from '@/types';
+import type { Product, Category, Order, PaymentMethod, PaymentSettings, SavedDiscount } from '@/types';
 import type { DocumentReference } from 'firebase/firestore';
 import { buildOrder, type OrderSnapshot } from '@/lib/orders';
-import { receiptQrPayload } from '@/lib/receiptQr';
 import { subscribePaymentSettings } from '@/lib/storeSettings';
 import { DEFAULT_PAYMENT_SETTINGS, WALLET_LABEL, approvalCodeProblem, normalizeReference, referenceProblem, walletReady, type WalletMethod } from '@/lib/eWallet';
 import { saveOrderAtomically, ReferenceUsedError } from '@/lib/saveOrder';
-import { QRCodeSVG } from 'qrcode.react';
+import { watchSavedDiscounts } from '@/lib/discounts';
+import { SENIOR_LABEL, SENIOR_RATE, VAT_RATE } from '@/lib/pricing';
+import DiscountSheet from '@/components/pos/DiscountSheet';
+import Receipt from '@/components/pos/Receipt';
 import {
-  Search, ShoppingCart, Plus, Minus, Trash2, X, CreditCard, Banknote, Smartphone, CheckCircle, Printer, Tag, Loader2, Maximize2, AlertTriangle, Package, LayoutGrid,
+  Search, ShoppingCart, Plus, Minus, Trash2, X, CreditCard, Banknote, Smartphone, CheckCircle, Printer, Tag, Loader2, Maximize2, Package, LayoutGrid,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Lock } from 'lucide-react';
@@ -34,7 +36,18 @@ export default function POSComponent() {
   const { currentUser, tenant } = useAuth();
   const brand = useStoreBrand();
   const shopInfo = receiptInfo(tenant);
-  const { items: cartItems, addItem, removeItem, updateQuantity, clearCart, subtotal, total, discount, setDiscount, discountType, setDiscountType, discountAmount, itemCount } = useCart();
+  const {
+    items: cartItems, addItem, removeItem, updateQuantity, clearCart, subtotal, total, itemCount,
+    pricing, setItemDiscount, orderDiscount, setOrderDiscount, senior, setSenior,
+  } = useCart();
+  // The store's saved discounts (live; only the ones switched on)
+  const [savedDiscounts, setSavedDiscounts] = useState<SavedDiscount[]>([]);
+  useEffect(() => watchSavedDiscounts(list => setSavedDiscounts(list.filter(d => d.active)), err => console.warn('[POS] discounts', err)), []);
+  // The discount window: for one cart line, or the whole order
+  const [discountFor, setDiscountFor] = useState<null | 'order' | { productId: string; variantId?: string }>(null);
+  const discountLine = discountFor && discountFor !== 'order'
+    ? cartItems.find(i => i.productId === discountFor.productId && i.variantId === discountFor.variantId) ?? null
+    : null;
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [search, setSearch] = useState('');
@@ -110,7 +123,7 @@ export default function POSComponent() {
   function takeSnapshot(): OrderSnapshot {
     return {
       items: cartItems.map(i => ({ ...i })),
-      subtotal, discountAmount, discountType, total, paymentMethod,
+      pricing, orderDiscount, senior, paymentMethod,
       amountTendered: isCash && amountTendered ? roundMoney(tendered) : total,
       change,
       cashierId: currentUser?.id || '',
@@ -149,6 +162,24 @@ export default function POSComponent() {
       setPlacing(false);
     }
   }
+
+  // Item discounts, the order discount, and Senior/PWD (VAT off, then 20%)
+  const MoneyLines = () => (
+    <>
+      {pricing.itemDiscounts > 0 && (
+        <div className="flex justify-between text-sm text-emerald-700"><span>Item discounts</span><span>-{formatCurrency(pricing.itemDiscounts)}</span></div>
+      )}
+      {pricing.orderDiscount > 0 && orderDiscount && (
+        <div className="flex justify-between gap-3 text-sm text-emerald-700"><span className="truncate">{orderDiscount.name}</span><span>-{formatCurrency(pricing.orderDiscount)}</span></div>
+      )}
+      {pricing.lessVat > 0 && (
+        <div className="flex justify-between text-sm text-emerald-700"><span>Less VAT {VAT_RATE * 100}%</span><span>-{formatCurrency(pricing.lessVat)}</span></div>
+      )}
+      {pricing.seniorDiscount > 0 && senior && (
+        <div className="flex justify-between text-sm text-emerald-700"><span>{SENIOR_LABEL[senior.type]} {SENIOR_RATE * 100}%</span><span>-{formatCurrency(pricing.seniorDiscount)}</span></div>
+      )}
+    </>
+  );
 
   // No sales until the free trial starts or a payment is approved (the rules enforce it too)
   const locked = !!tenant && !hasAccess(tenant);
@@ -344,7 +375,7 @@ export default function POSComponent() {
               <p className="text-sm font-medium text-bark-500">Cart is empty</p>
               <p className="text-xs mt-1">Select items from the menu</p>
             </div>
-          ) : cartItems.map(item => (
+          ) : cartItems.map((item, n) => (
             <div key={`${item.productId}-${item.variantId || ''}`} className="flex items-center gap-3 p-2.5 bg-cream-100 border border-cream-300/60 rounded-2xl">
               <div className="w-11 h-11 rounded-xl overflow-hidden bg-cream-200 flex-shrink-0 flex items-center justify-center">
                 {item.imageUrl
@@ -354,7 +385,15 @@ export default function POSComponent() {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-espresso-800 truncate">{item.productName}</p>
                 {(item.variantName || item.details) && <p className="text-xs text-bark-400 truncate">{[item.variantName, item.details].filter(Boolean).join(' · ')}</p>}
-                <p className="text-sm text-caramel-700 font-semibold">{formatCurrency(item.price * item.quantity)}</p>
+                {(pricing.lines[n]?.discount ?? 0) > 0 ? (
+                  <p className="text-sm font-semibold">
+                    <span className="text-caramel-700">{formatCurrency(pricing.lines[n].net)}</span>{' '}
+                    <span className="text-xs font-normal text-bark-400 line-through">{formatCurrency(pricing.lines[n].gross)}</span>
+                    <span className="block truncate text-[11px] font-medium text-emerald-700">{item.discount?.name}</span>
+                  </p>
+                ) : (
+                  <p className="text-sm text-caramel-700 font-semibold">{formatCurrency(item.price * item.quantity)}</p>
+                )}
               </div>
               <div className="flex items-center gap-1 flex-shrink-0">
                 <div className="flex items-center rounded-full bg-cream-50 border border-cream-400/70 p-0.5">
@@ -375,6 +414,14 @@ export default function POSComponent() {
                   </button>
                 </div>
                 <button
+                  onClick={() => setDiscountFor({ productId: item.productId, variantId: item.variantId })}
+                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${item.discount ? 'text-emerald-700 bg-emerald-50' : 'text-bark-300 hover:text-caramel-700 hover:bg-cream-200'}`}
+                  aria-label={`Discount on ${item.productName}`}
+                  title="Discount on this item"
+                >
+                  <Tag className="w-3.5 h-3.5" />
+                </button>
+                <button
                   onClick={() => removeItem(item.productId, item.variantId)}
                   className="w-7 h-7 rounded-full flex items-center justify-center text-bark-300 hover:text-red-500 hover:bg-red-50 transition-colors"
                   aria-label="Remove item"
@@ -389,31 +436,28 @@ export default function POSComponent() {
         {/* Discount */}
         {cartItems.length > 0 && (
           <div className="px-4 py-3 border-t border-cream-300/70">
+            {/* A discount on the whole order, or Senior citizen / PWD */}
             <div className="flex items-center gap-2">
-              <Tag className="w-4 h-4 text-caramel-600" />
-              <span className="text-sm text-bark-600 flex-1">Discount</span>
-              <div className="flex items-center gap-0.5 bg-cream-200 rounded-full p-0.5 border border-cream-400/60">
-                <button onClick={() => { setDiscountType('percent'); setDiscount(Math.min(discount, 100)); }}
-                  className={`w-7 h-6 rounded-full text-xs font-semibold transition-all ${discountType === 'percent' ? 'bg-espresso-800 text-cream-50 shadow-sm' : 'text-bark-500'}`}>
-                  %
+              <Tag className="w-4 h-4 text-caramel-600 shrink-0" aria-hidden="true" />
+              {senior || orderDiscount ? (
+                <span className="flex-1 min-w-0 truncate text-sm font-semibold text-emerald-700">
+                  {senior ? `${SENIOR_LABEL[senior.type]} · ${senior.name}` : orderDiscount?.name}
+                </span>
+              ) : (
+                <span className="text-sm text-bark-600 flex-1">Discount</span>
+              )}
+              <button onClick={() => setDiscountFor('order')} className="btn-secondary px-3.5 py-1.5 text-xs">
+                {senior || orderDiscount ? 'Change' : 'Add discount'}
+              </button>
+              {(senior || orderDiscount) && (
+                <button
+                  onClick={() => { setSenior(null); setOrderDiscount(null); }}
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-bark-400 hover:text-red-500 hover:bg-red-50"
+                  aria-label="Remove the discount" title="Remove the discount"
+                >
+                  <X className="w-3.5 h-3.5" />
                 </button>
-                <button onClick={() => setDiscountType('fixed')}
-                  className={`w-7 h-6 rounded-full text-xs font-semibold transition-all ${discountType === 'fixed' ? 'bg-espresso-800 text-cream-50 shadow-sm' : 'text-bark-500'}`}>
-                  ₱
-                </button>
-              </div>
-              <input
-                type="number"
-                min="0"
-                max={discountType === 'percent' ? 100 : undefined}
-                className="w-20 px-3 py-1 text-sm text-right border border-cream-400/70 rounded-full bg-white focus:outline-none focus:ring-2 focus:ring-caramel-300"
-                value={discount || ''}
-                onChange={e => {
-                  // A negative discount would raise the total; over 100% makes no sense.
-                  const value = Math.max(0, Number(e.target.value) || 0);
-                  setDiscount(discountType === 'percent' ? Math.min(value, 100) : value);
-                }}
-              />
+              )}
             </div>
           </div>
         )}
@@ -424,12 +468,7 @@ export default function POSComponent() {
             <span>Subtotal</span>
             <span>{formatCurrency(subtotal)}</span>
           </div>
-          {discountAmount > 0 && (
-            <div className="flex justify-between text-sm text-emerald-600">
-              <span>Discount</span>
-              <span>-{formatCurrency(discountAmount)}</span>
-            </div>
-          )}
+          <MoneyLines />
           <div className="flex justify-between items-baseline font-display text-espresso-900 pt-2 border-t border-dashed border-cream-400">
             <span className="text-lg">Total</span>
             <span className="text-2xl font-semibold">{formatCurrency(total)}</span>
@@ -465,6 +504,21 @@ export default function POSComponent() {
         </button>
       )}
 
+      {/* Discount window: one item, or the whole order (with Senior / PWD) */}
+      {discountFor && (discountFor === 'order' || discountLine) && (
+        <DiscountSheet
+          itemName={discountLine?.productName}
+          saved={savedDiscounts}
+          current={discountFor === 'order' ? orderDiscount : discountLine?.discount ?? null}
+          senior={discountFor === 'order' ? senior : undefined}
+          vatRegistered={shopInfo.vatRegistered}
+          onApply={d => (discountLine ? setItemDiscount(discountLine.productId, discountLine.variantId, d) : setOrderDiscount(d))}
+          onRemove={() => (discountLine ? setItemDiscount(discountLine.productId, discountLine.variantId, null) : setOrderDiscount(null))}
+          onSenior={discountFor === 'order' ? setSenior : undefined}
+          onClose={() => setDiscountFor(null)}
+        />
+      )}
+
       {/* Checkout Modal */}
       {checkoutOpen && (
         <Portal>
@@ -480,17 +534,14 @@ export default function POSComponent() {
             <div className="p-6 space-y-5">
               {/* Order Summary */}
               <div className="bg-cream-200/60 border border-cream-300 rounded-2xl p-4 space-y-1.5">
-                {cartItems.map(i => (
+                {cartItems.map((i, n) => (
                   <div key={`${i.productId}-${i.variantId}`} className="flex justify-between text-sm">
                     <span className="text-bark-700">{i.productName} × {i.quantity}</span>
-                    <span className="text-espresso-800">{formatCurrency(i.price * i.quantity)}</span>
+                    <span className="text-espresso-800">{formatCurrency(pricing.lines[n]?.net ?? i.price * i.quantity)}</span>
                   </div>
                 ))}
-                {discountAmount > 0 && (
-                  <div className="flex justify-between text-sm text-emerald-600 pt-1 border-t border-cream-400/70">
-                    <span>Discount</span>
-                    <span>-{formatCurrency(discountAmount)}</span>
-                  </div>
+                {(pricing.discount > 0 || pricing.lessVat > 0) && (
+                  <div className="pt-1 border-t border-cream-400/70"><MoneyLines /></div>
                 )}
                 <div className="flex justify-between items-baseline pt-2 border-t border-dashed border-cream-500">
                   <span className="font-semibold text-espresso-900">Total</span>
@@ -670,43 +721,8 @@ export default function POSComponent() {
               <p className="text-bark-500 text-sm mt-1 font-mono">{receipt.orderNumber}</p>
             </div>
 
-            {/* Receipt Content — id="receipt" is what the @media print rules print */}
-            <div ref={receiptRef} id="receipt" className="mx-6 my-5 p-5 bg-white rounded-2xl border border-dashed border-cream-500 font-mono text-xs space-y-1 text-espresso-900 print:m-0 print:p-0 print:border-0 print:rounded-none">
-              {/* The shop's own name and details (Store Settings): every shop prints its own receipts */}
-              <p className="text-center font-bold text-base font-body uppercase break-words">{brand.name}</p>
-              {shopInfo.address && <p className="text-center break-words">{shopInfo.address}</p>}
-              {shopInfo.phone && <p className="text-center">{shopInfo.phone}</p>}
-              {(shopInfo.vatRegistered || shopInfo.tin) && (
-                <p className="text-center">{shopInfo.vatRegistered ? 'VAT REG TIN' : 'NON-VAT REG TIN'} {shopInfo.tin}</p>
-              )}
-              <p className="text-center text-bark-500 mt-2 mb-3">{new Date(receipt.createdAt).toLocaleString()}</p>
-              <div className="border-t border-dashed border-bark-300 pt-2 space-y-1">
-                {receipt.items.map((item, i) => (
-                  <div key={i} className="flex justify-between gap-3">
-                    <span className="min-w-0 break-words">
-                      {item.productName}{item.details ? ` (${item.details})` : ''} ×{item.quantity}{item.unit ? ` ${item.unit}` : ''}
-                    </span>
-                    <span className="shrink-0">{formatCurrency(item.subtotal)}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="border-t border-dashed border-bark-300 pt-2 space-y-1">
-                <div className="flex justify-between"><span>Subtotal</span><span>{formatCurrency(receipt.subtotal)}</span></div>
-                {receipt.discount > 0 && <div className="flex justify-between"><span>Discount</span><span>-{formatCurrency(receipt.discount)}</span></div>}
-                <div className="flex justify-between font-bold text-sm"><span>TOTAL</span><span>{formatCurrency(receipt.total)}</span></div>
-                <div className="flex justify-between"><span>{receipt.paymentMethod.toUpperCase()}</span><span>{formatCurrency(receipt.amountTendered || receipt.total)}</span></div>
-                {receipt.paymentReference && <div className="flex justify-between gap-2"><span>{receipt.paymentMethod === 'card' ? 'Approval' : 'Ref'}</span><span className="break-all text-right">{receipt.paymentReference}</span></div>}
-                {receipt.paymentNote && <p className="flex items-start gap-1 text-amber-700"><AlertTriangle className="w-3.5 h-3.5 mt-px flex-shrink-0" aria-hidden="true" />{receipt.paymentNote}</p>}
-                {(receipt.change || 0) > 0 && <div className="flex justify-between"><span>Change</span><span>{formatCurrency(receipt.change || 0)}</span></div>}
-              </div>
-              {/* Order QR on every receipt (cash too): plain order details staff can scan */}
-              <div className="flex flex-col items-center pt-3">
-                <QRCodeSVG value={receiptQrPayload(receipt)} size={128} level="M" marginSize={2} />
-                <p className="mt-1 text-[10px]">{receipt.orderNumber}</p>
-              </div>
-              <p className="text-center text-bark-500 mt-2 break-words">{shopInfo.footer || 'Thank you for your order!'}</p>
-              <p className="text-center text-bark-400">Cashier: {receipt.cashierName}</p>
-            </div>
+            {/* The receipt (id="receipt" is what the @media print rules print) */}
+            <Receipt ref={receiptRef} order={receipt} shopName={brand.name} info={shopInfo} />
 
             <div className="modal-footer">
               <button onClick={printReceipt} className="btn-secondary flex-1">
