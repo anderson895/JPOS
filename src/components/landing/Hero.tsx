@@ -1,4 +1,4 @@
-import { ArrowRight, Store } from 'lucide-react';
+import { ArrowRight, BarChart3, ShieldCheck, Store, Zap } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import LoginCard from './LoginCard';
 import { Swash, Wave } from '@/components/shared/Decor';
@@ -6,9 +6,9 @@ import { scrollToSection } from './scroll';
 import { BUILT_FOR } from './content';
 
 const HIGHLIGHTS = [
-  { line1: 'Fast & Easy', line2: 'Transactions' },
-  { line1: 'Real-time', line2: 'Sales Reports' },
-  { line1: 'Secure &', line2: 'Reliable' },
+  { icon: Zap, line1: 'Fast & Easy', line2: 'Transactions' },
+  { icon: BarChart3, line1: 'Real-time', line2: 'Sales Reports' },
+  { icon: ShieldCheck, line1: 'Secure &', line2: 'Reliable' },
 ];
 
 /**
@@ -48,11 +48,14 @@ export default function Hero() {
             <br className="hidden sm:block" /> Track sales, orders, and staff — all in one place.
           </p>
 
-          {/* Three short points, words only, with a thin caramel line between them */}
-          <ul className="mx-auto lg:mx-0 mt-10 sm:mt-12 grid max-w-md grid-cols-3 divide-x divide-caramel-400/40 lg:max-w-lg">
-            {HIGHLIGHTS.map(({ line1, line2 }) => (
-              <li key={line1} className="px-3 text-center first:pl-0 lg:px-6 lg:text-left lg:first:pl-0">
-                <span className="text-sm sm:text-[15px] font-semibold leading-snug text-espresso-900">{line1}<br />{line2}</span>
+          {/* Three even columns on phones (icon above the words); a row on wide screens */}
+          <ul className="mx-auto lg:mx-0 mt-10 sm:mt-12 grid max-w-md grid-cols-3 gap-2 lg:flex lg:max-w-none lg:flex-wrap lg:gap-x-10 lg:gap-y-4">
+            {HIGHLIGHTS.map(({ icon: Icon, line1, line2 }) => (
+              <li key={line1} className="flex flex-col items-center gap-2 lg:flex-row lg:gap-3">
+                <span className="w-11 h-11 sm:w-12 sm:h-12 shrink-0 rounded-full border border-caramel-300 bg-white/70 flex items-center justify-center text-caramel-600 shadow-sm backdrop-blur-sm">
+                  <Icon className="w-5 h-5" aria-hidden="true" />
+                </span>
+                <span className="text-xs sm:text-sm font-medium leading-tight text-espresso-800">{line1}<br />{line2}</span>
               </li>
             ))}
           </ul>
@@ -84,11 +87,12 @@ export default function Hero() {
               <span className="h-px w-10 bg-gradient-to-l from-transparent to-caramel-500/60 lg:hidden" />
             </p>
             <ul className="mx-auto lg:mx-0 mt-4 flex max-w-xl flex-wrap justify-center lg:justify-start gap-2.5" aria-label="Built for">
-              {BUILT_FOR.map(label => (
+              {BUILT_FOR.map(({ icon: Icon, label }) => (
                 <li
                   key={label}
-                  className="rounded-full border border-cream-400/70 bg-white/65 px-4 py-1.5 text-[13px] text-espresso-800 backdrop-blur-sm"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-cream-400/70 bg-white/65 px-3.5 py-1.5 text-[13px] text-espresso-800 backdrop-blur-sm"
                 >
+                  <Icon className="w-3.5 h-3.5 text-caramel-600" aria-hidden="true" />
                   {label}
                 </li>
               ))}
