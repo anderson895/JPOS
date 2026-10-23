@@ -439,7 +439,7 @@ export default function POSComponent() {
       {itemCount > 0 && !cartOpen && (
         <button
           onClick={() => setCartOpen(true)}
-          className="lg:hidden fixed bottom-3 left-3 right-3 z-30 flex items-center gap-3 px-5 py-3.5 rounded-full espresso-surface text-cream-50 shadow-lift active:brightness-110"
+          className="lg:hidden fixed bottom-[calc(var(--tabbar-h,0px)+0.75rem)] left-3 right-3 z-30 flex items-center gap-3 px-5 py-3.5 rounded-full espresso-surface text-cream-50 shadow-lift active:brightness-110"
         >
           <span className="relative">
             <ShoppingCart className="w-6 h-6 text-caramel-300" />

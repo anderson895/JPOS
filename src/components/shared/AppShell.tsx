@@ -12,8 +12,13 @@ export interface ShellNavItem {
   to: string;
   icon: LucideIcon;
   label: string;
+  /** The label in the phone tab bar (short: "POS", "Home"). */
+  short?: string;
   end?: boolean;
 }
+
+/** Phones and tablets: this many pages get their own tab; the rest are under "More". */
+const TABS = 4;
 
 interface AppShellProps {
   navItems: ShellNavItem[];
@@ -71,9 +76,15 @@ export default function AppShell({
     </div>
   );
 
-  // h-dvh: on phones 100vh is taller than the visible area (the toolbar would cover the bottom)
+  // Phones and tablets: the first pages are tabs at the bottom, the rest open from "More"
+  const tabs = navItems.slice(0, TABS);
+  const isOn = (t: ShellNavItem) => (t.end ? pathname === t.to : pathname === t.to || pathname.startsWith(t.to + '/'));
+  const onATab = tabs.some(isOn);
+
+  // h-dvh: on phones 100vh is taller than the visible area (the toolbar would cover the bottom).
+  // --tabbar-h: the bottom tab bar's height, so bars fixed at the bottom (the POS "View Order") sit above it.
   return (
-    <div className="flex h-dvh app-bg overflow-hidden">
+    <div className="flex h-dvh app-bg overflow-hidden [--tabbar-h:calc(4rem+env(safe-area-inset-bottom))] lg:[--tabbar-h:0px]">
       {/* Mobile backdrop */}
       {mobileOpen && (
         <div
@@ -188,15 +199,6 @@ export default function AppShell({
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Mobile top bar */}
         <header className="lg:hidden flex items-center gap-3 px-4 h-14 espresso-surface text-cream-50 flex-shrink-0 shadow-md">
-          <button
-            // The drawer must open expanded: if the desktop rail was left collapsed
-            // (e.g. tablet rotated), it would show no labels and no logout/settings.
-            onClick={() => { setCollapsed(false); setMobileOpen(true); }}
-            className="w-9 h-9 -ml-1 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors"
-            title="Open menu"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
           <BrandMark tone="dark" size="sm" subtitle={panelLabel} />
           {/* The avatar opens Account Settings and Logout (on phones the sidebar is hidden) */}
           <AccountMenu
@@ -212,6 +214,48 @@ export default function AppShell({
           <SubscriptionBanner />
           <Outlet />
         </main>
+
+        {/* Phones and tablets: tabs at the bottom, like a phone app. "More" opens the full menu. */}
+        <nav
+          aria-label="Main"
+          className="lg:hidden relative z-30 flex-shrink-0 grid espresso-surface border-t border-caramel-300/15 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_-16px_rgb(var(--espresso-950)/0.7)]"
+          style={{ gridTemplateColumns: `repeat(${tabs.length + 1}, minmax(0, 1fr))` }}
+        >
+          {tabs.map(t => (
+            <NavLink
+              key={t.to} to={t.to} end={t.end}
+              className={({ isActive }) => cn(
+                'flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors',
+                isActive ? 'text-caramel-200' : 'text-cream-200/65 hover:text-cream-50',
+              )}
+            >
+              {({ isActive }) => (
+                <>
+                  <span className={cn('flex h-7 w-12 items-center justify-center rounded-full transition-colors', isActive && 'bg-caramel-300/20')}>
+                    <t.icon className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <span className="max-w-full truncate px-1">{t.short ?? t.label}</span>
+                </>
+              )}
+            </NavLink>
+          ))}
+          <button
+            type="button"
+            // The menu opens expanded: if the desktop rail was left collapsed (a
+            // rotated tablet), it would show no labels and no logout or settings.
+            onClick={() => { setCollapsed(false); setMobileOpen(true); }}
+            aria-expanded={mobileOpen}
+            className={cn(
+              'flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors',
+              !onATab ? 'text-caramel-200' : 'text-cream-200/65 hover:text-cream-50',
+            )}
+          >
+            <span className={cn('flex h-7 w-12 items-center justify-center rounded-full transition-colors', !onATab && 'bg-caramel-300/20')}>
+              <Menu className="h-5 w-5" aria-hidden="true" />
+            </span>
+            More
+          </button>
+        </nav>
       </div>
 
       {children}

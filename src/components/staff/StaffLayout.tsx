@@ -6,8 +6,8 @@ import AppShell, { type ShellNavItem } from '@/components/shared/AppShell';
 import toast from 'react-hot-toast';
 
 const navItems: ShellNavItem[] = [
-  { to: '/staff',     icon: LayoutDashboard, label: 'Dashboard', end: true },
-  { to: '/staff/pos', icon: ShoppingCart,    label: 'Point of Sale' },
+  { to: '/staff',     icon: LayoutDashboard, label: 'Dashboard', short: 'Home', end: true },
+  { to: '/staff/pos', icon: ShoppingCart,    label: 'Point of Sale', short: 'POS' },
 ];
 
 export default function StaffLayout() {

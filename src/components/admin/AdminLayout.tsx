@@ -9,8 +9,8 @@ import AccountSettingsModal from '@/components/admin/AccountSettingsModal';
 import toast from 'react-hot-toast';
 
 const navItems: ShellNavItem[] = [
-  { to: '/admin',          icon: LayoutDashboard, label: 'Dashboard',    end: true },
-  { to: '/admin/pos',      icon: ShoppingCart,    label: 'Point of Sale' },
+  { to: '/admin',          icon: LayoutDashboard, label: 'Dashboard',    short: 'Home', end: true },
+  { to: '/admin/pos',      icon: ShoppingCart,    label: 'Point of Sale', short: 'POS' },
   { to: '/admin/products', icon: Package,          label: 'Products' },
   { to: '/admin/reports',  icon: BarChart3,       label: 'Reports' },
   { to: '/admin/staff',    icon: Users,           label: 'Manage Staff' },
