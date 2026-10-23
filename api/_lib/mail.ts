@@ -171,6 +171,45 @@ ${small("If you didn't ask for a new password, you can ignore this email. Your p
   };
 }
 
+/** The daily sales email to a shop's owner (Business and up): yesterday, in numbers. */
+export function dailySummaryMessage(input: {
+  shopName: string; date: string; sales: number; orders: number; average: number; voided: number;
+  top: { name: string; qty: number }[]; appUrl: string;
+}): Message {
+  const shop = oneLine(input.shopName, 60) || 'your shop';
+  const day = new Date(`${input.date}T00:00:00Z`).toLocaleDateString('en-PH', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' });
+  const sales = `₱${input.sales.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const avg = `₱${input.average.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const rows: [string, string][] = [
+    ['Sales', sales],
+    ['Number of sales', String(input.orders)],
+    ['Average sale', avg],
+    ...(input.voided ? [['Voided', String(input.voided)] as [string, string]] : []),
+  ];
+  const top = input.top.map(t => `${oneLine(t.name, 60)} (${t.qty})`);
+  return {
+    subject: `${oneLine(shop, 40)} yesterday: ${sales} from ${input.orders} ${input.orders === 1 ? 'sale' : 'sales'}`,
+    text: [
+      `Here's how ${shop} did on ${day}.`,
+      '',
+      ...rows.map(([k, v]) => `${k}: ${v}`),
+      ...(top.length ? ['', `Best sellers: ${top.join(', ')}`] : []),
+      '',
+      `See more in JPOS: ${input.appUrl}/admin/reports`,
+      '',
+      'You get this email every morning. Turn it off in Store Settings.',
+    ].join('\n'),
+    html: layout(`Yesterday at ${shop}`, `
+<p style="margin:0 0 14px;color:${C.muted}">${esc(day)}</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;background:${C.cream};border:1px solid ${C.line};border-radius:14px;font-size:14px">
+${rows.map(([k, v], i) => `<tr><td style="padding:9px 14px;color:${C.muted};width:50%;${i ? `border-top:1px solid ${C.line};` : ''}">${esc(k)}</td><td style="padding:9px 14px;font-weight:bold;${i === 0 ? 'font-size:18px;' : ''}${i ? `border-top:1px solid ${C.line};` : ''}">${esc(v)}</td></tr>`).join('\n')}
+</table>
+${top.length ? `<p style="margin:16px 0 4px;font-weight:bold">Best sellers</p><p style="margin:0">${top.map(esc).join('<br>')}</p>` : ''}
+${button(`${input.appUrl}/admin/reports`, 'See your reports')}
+${small('You get this email every morning. Turn it off in Store Settings.')}`, `${sales} from ${input.orders} ${input.orders === 1 ? 'sale' : 'sales'}`),
+  };
+}
+
 /** Sent to the Super Admin when a shop sends a payment and receipt. */
 export function paymentNoticeMessage(request: PaymentRequestDoc, adminUrl: string, cloudName?: string): Message {
   const plan = PLAN_LABEL[request.plan] ?? oneLine(request.plan, 20);

@@ -5,8 +5,9 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   emailChangeCodeHandler, emailChangeFinishHandler, passwordCodeHandler, passwordResetHandler, paymentNoticeHandler,
-  signupCodeHandler, signupFinishHandler, usageHandler,
+  signupCodeHandler, signupFinishHandler, usageHandler, dailySummaryHandler,
 } from '../_lib/handlers.js';
+import { phYesterday, summarize, wantsSummary, type OrderLite, type SummaryShop } from '../_lib/summary.js';
 import { computeUsage, storageLimitBytes, BASE_DATA_BYTES, EST_ORDER_BYTES, EST_PICTURE_BYTES, EST_PRODUCT_BYTES, MB, type UsageCounts } from '../_lib/usage.js';
 import { ApiError } from '../_lib/http.js';
 import {
@@ -48,6 +49,9 @@ interface World {
   profiles: Map<string, { tenantId: string; role: string; isActive: boolean }>;
   /** What each shop stores */
   shops: Map<string, UsageCounts>;
+  /** Shops for the daily email, and their orders */
+  summaryShops: SummaryShop[];
+  orders: Map<string, (OrderLite & { createdAt: string })[]>;
 }
 
 /** In-memory version of firestoreStore, using the same limits. */
@@ -90,6 +94,10 @@ function memoryStore(w: World): Store {
     setProfileEmail: async (uid, email) => { if (w.profileEmail.has(uid)) w.profileEmail.set(uid, email); },
     setCardPassword: async (uid, password) => { if (w.cards.has(uid)) w.cards.set(uid, password); },
     profile: async (uid) => w.profiles.get(uid) ?? null,
+    summaryShops: async () => w.summaryShops,
+    ordersBetween: async (tenantId, startIso, endIso) => (w.orders.get(tenantId) ?? []).filter(o => o.createdAt >= startIso && o.createdAt < endIso),
+    reserveSummary: async (tenantId, date, now) => reserve('summary', `summary_${tenantId}`, { cooldownMs: 0, max: 1, windowMs: 20 * 3600_000 }, now, null, `sum_${tenantId}_${date}`),
+    releaseSummary: async (tenantId, date, now) => release('summary', `summary_${tenantId}`, now, null, `sum_${tenantId}_${date}`),
     shopUsage: async (tenantId) => w.shops.get(tenantId) ?? null,
     reservePaymentNotice: async (id, uid, now) => reserve('payment', `pay_${uid}`, PAYMENT_LIMIT, now, null, `paid_${id}`),
     releasePaymentNotice: async (id, uid, now) => release('payment', `pay_${uid}`, now, null, `paid_${id}`),
@@ -143,6 +151,8 @@ function newWorld(): World {
       ['cashier', { tenantId: 't1', role: 'staff', isActive: true }],
       ['maria', { tenantId: 't2', role: 'admin', isActive: true }],
     ]),
+    summaryShops: [],
+    orders: new Map(),
     shops: new Map([
       ['t1', { plan: 'starter', products: 40, orders: 1000, productPictures: 30, measuredPictures: 20, measuredBytes: 4 * MB, otherPictures: 2 }],
       ['t2', { plan: 'business', storageMB: null, products: 0, orders: 0, productPictures: 0, measuredPictures: 0, measuredBytes: 0, otherPictures: 0 }],
@@ -775,6 +785,96 @@ describe('Storage (POST /api/usage)', () => {
   });
 });
 
+describe('Daily sales email (GET /api/cron/daily-summary)', () => {
+  // 2026-10-23 08:00 in the Philippines = 00:00 UTC
+  const MORNING = new Date('2026-10-23T00:00:00Z');
+  const LATER = MORNING.getTime() + 10 * 86_400_000;
+  const shop = (id: string, more: Partial<SummaryShop> = {}): SummaryShop => ({
+    tenantId: id, name: `Shop ${id}`, plan: 'business', status: 'active', suspended: false,
+    trialEndsAt: null, periodEndsAt: LATER, ownerEmail: `${id}@shop.test`, ...more,
+  });
+  const order = (total: number, at: string, status = 'completed', items = [{ productName: 'Latte', quantity: 2 }]) => ({ status, total, createdAt: at, items });
+  const yesterday = '2026-10-22T05:00:00.000Z';   // 1 PM on Oct 22 in the Philippines
+  const run = (w: World, secret?: string) => call(dailySummaryHandler(depsFor(w)), new Request('https://jpos.example.com/api/cron/daily-summary', {
+    method: 'GET', headers: secret ? { Authorization: `Bearer ${secret}` } : {},
+  }));
+  const world = () => {
+    const w = newWorld();
+    w.now = MORNING;
+    w.env.CRON_SECRET = 'cron-secret';
+    w.summaryShops = [
+      shop('biz'),
+      shop('starter', { plan: 'starter' }),
+      shop('off', { dailySummary: false }),
+      shop('quiet'),
+      shop('expired', { periodEndsAt: MORNING.getTime() - 1000 }),
+      shop('trial', { status: 'trial', plan: 'business', trialEndsAt: LATER, periodEndsAt: null }),
+    ];
+    for (const id of ['biz', 'starter', 'off', 'expired', 'trial']) {
+      w.orders.set(id, [order(240, yesterday), order(120, yesterday, 'voided'), order(999, '2026-10-23T01:00:00.000Z')]);
+    }
+    w.orders.set('quiet', [order(50, '2026-10-20T05:00:00.000Z')]);
+    return w;
+  };
+
+  test("yesterday in the Philippines, in UTC", () => {
+    assert.deepEqual(phYesterday(MORNING), { date: '2026-10-22', startIso: '2026-10-21T16:00:00.000Z', endIso: '2026-10-22T16:00:00.000Z' });
+    // Late at night PH time (still Oct 23 there): yesterday is still Oct 22
+    assert.equal(phYesterday(new Date('2026-10-23T15:59:00Z')).date, '2026-10-22');
+  });
+
+  test('summary: completed sales only, voided counted apart, best sellers', () => {
+    const s = summarize([order(100, yesterday), order(60.5, yesterday, 'completed', [{ productName: 'Water', quantity: 5 }]), order(80, yesterday, 'voided')]);
+    assert.deepEqual(s, { sales: 160.5, orders: 2, average: 80.25, voided: 1, top: [{ name: 'Water', qty: 5 }, { name: 'Latte', qty: 2 }] });
+  });
+
+  test('only Vercel\'s scheduler can start it', async () => {
+    const w = world();
+    assert.equal((await run(w)).status, 401);
+    assert.equal((await run(w, 'wrong')).status, 401);
+    delete w.env.CRON_SECRET;
+    assert.equal((await run(w, 'anything')).status, 503);
+    assert.equal(w.sent.length, 0);
+  });
+
+  test('Business shops with sales get one email; Starter, switched off, quiet or expired shops none', async () => {
+    const w = world();
+    const r = await run(w, 'cron-secret');
+    assert.equal(r.status, 200);
+    assert.deepEqual(w.sent.map(m => m.to[0]).sort(), ['biz@shop.test', 'trial@shop.test']);
+    const m = w.sent.find(x => x.to[0] === 'biz@shop.test')!;
+    assert.ok(m.subject.includes('₱240.00 from 1 sale'), m.subject);
+    assert.ok(m.text.includes('Voided: 1') && m.text.includes('Latte (2)'));
+    assert.ok(m.html.includes('https://jpos.example.com/admin/reports'));
+    assert.deepEqual(r.body, { date: '2026-10-22', sent: 2, skipped: 4, failed: 0 });
+  });
+
+  test('a second run the same morning sends nothing more', async () => {
+    const w = world();
+    await run(w, 'cron-secret');
+    const again = await run(w, 'cron-secret');
+    assert.equal(w.sent.length, 2);
+    assert.equal((again.body as { sent: number }).sent, 0);
+  });
+
+  test('Gmail down: counted as failed, and a later run can still send it', async () => {
+    const w = world();
+    w.mailFails = true;
+    assert.equal(((await run(w, 'cron-secret')).body as { failed: number }).failed, 2);
+    w.mailFails = false;
+    assert.equal(((await run(w, 'cron-secret')).body as { sent: number }).sent, 2);
+  });
+
+  test('who wants it', () => {
+    assert.ok(wantsSummary(shop('a'), MORNING));
+    assert.ok(!wantsSummary(shop('a', { emailSummary: false }), MORNING));
+    assert.ok(wantsSummary(shop('a', { plan: 'starter', emailSummary: true }), MORNING));
+    assert.ok(!wantsSummary(shop('a', { suspended: true }), MORNING));
+    assert.ok(!wantsSummary(shop('a', { ownerEmail: 'not an email' }), MORNING));
+    assert.ok(!wantsSummary(shop('a', { status: 'setup' }), MORNING));
+  });
+});
+
 describe('checkCode', () => {
   const id = emailId('a@shop.test');
   const stored = (more: Partial<StoredCode> = {}): StoredCode => ({ hash: codeHash(id, '123456'), expiresAt: START.getTime() + 1000, tries: 0, ...more });
@@ -934,7 +1034,7 @@ describe('withinBudget', () => {
     assert.ok(withinBudget('verify', [0]));
     assert.ok(!withinBudget('verify', [BUDGET.verify.perHour]));
     assert.ok(!withinBudget('payment', [0, ...Array(23).fill(Math.ceil(BUDGET.payment.perDay / 23))]));
-    assert.ok(BUDGET.verify.perDay + BUDGET.payment.perDay < 500, "stays under Gmail's daily limit");
+    assert.ok(BUDGET.verify.perDay + BUDGET.payment.perDay + BUDGET.summary.perDay < 500, "stays under Gmail's daily limit");
   });
 });
 

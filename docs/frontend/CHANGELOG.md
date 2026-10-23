@@ -741,3 +741,9 @@ The owner's list (note.txt): logos and colors per shop, the shop's name on its s
 - **Admin → Activity** (`src/pages/admin/Activity.tsx`, `src/lib/activity.ts`): who did what, and when, newest first, with a person filter and Show more. Recorded: sign-ins (once per session), products added / changed (name, price, cost, stock, code: before → after) / deleted / put on or taken off sale, voided sales (amount and reason), discounts, people (added, changed, removed, on/off), Store Settings and Payment Settings changes.
 - Starter sees "The activity list: included in the Business and Enterprise packages." The Business card and the Subscription page list Inventory and Audit trail.
 - **Verified** on the local test app: 5/5.
+
+## 38. Daily sales email (Business and up) (2026-10-23)
+
+- Every morning at 8:00 (Philippine time) the owner of each Business / Enterprise shop gets yesterday's sales by email: total, number of sales, average, voided, best sellers, and a See your reports button. Only when there were sales; once a day.
+- **Store Settings → Daily sales email** switches it off (Starter sees the package note). Package cards: Business lists "Daily sales summary by email"; Enterprise lists Payment gateway integration (soon).
+- **Verified:** API tests (yesterday in PH time, totals, who gets it, once a day, Gmail down) and a local run: 1 email to the test shop, none on a second run.

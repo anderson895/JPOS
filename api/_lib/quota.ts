@@ -20,7 +20,7 @@ export type QuotaCheck =
   | { ok: true; next: QuotaState }
   | { ok: false; reason: 'cooldown' | 'limit'; retryAfterSec: number };
 
-export type MailKind = 'verify' | 'payment';
+export type MailKind = 'verify' | 'payment' | 'summary';
 
 /** "Send the email again": once a minute, 5 a day per account. */
 export const VERIFY_LIMIT: Limit = { cooldownMs: 60_000, max: 5, windowMs: DAY };
@@ -28,6 +28,8 @@ export const VERIFY_LIMIT: Limit = { cooldownMs: 60_000, max: 5, windowMs: DAY }
 export const VERIFY_IP_LIMIT: Limit = { cooldownMs: 0, max: 10, windowMs: DAY };
 /** New-payment emails to the Super Admin: 10 a day per account. */
 export const PAYMENT_LIMIT: Limit = { cooldownMs: 0, max: 10, windowMs: DAY };
+/** The daily sales email: one a day per shop. */
+export const SUMMARY_LIMIT: Limit = { cooldownMs: 0, max: 1, windowMs: 20 * HOUR };
 
 /**
  * Everything the server may send, per kind, over any 24 hours and in one hour.
@@ -37,6 +39,8 @@ export const PAYMENT_LIMIT: Limit = { cooldownMs: 0, max: 10, windowMs: DAY };
 export const BUDGET: Record<MailKind, { perDay: number; perHour: number }> = {
   verify: { perDay: 300, perHour: 40 },
   payment: { perDay: 100, perHour: 30 },
+  // All sent together in the morning, so the hour's share is the day's
+  summary: { perDay: 80, perHour: 80 },
 };
 
 /** The UTC hour an email counts toward, e.g. "2026-10-23T08". */

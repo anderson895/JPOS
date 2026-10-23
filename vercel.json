@@ -4,8 +4,12 @@
     "api/signup/*.ts": { "maxDuration": 30 },
     "api/account/*.ts": { "maxDuration": 30 },
     "api/password/*.ts": { "maxDuration": 30 },
-    "api/usage.ts": { "maxDuration": 30 }
+    "api/usage.ts": { "maxDuration": 30 },
+    "api/cron/*.ts": { "maxDuration": 60 }
   },
+  "crons": [
+    { "path": "/api/cron/daily-summary", "schedule": "0 0 * * *" }
+  ],
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]

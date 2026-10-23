@@ -238,8 +238,9 @@ service cloud.firestore {
       // receipt details. A new name goes to its public name in the same batch.
       function editStore() {
         return adminOf(t) && resource.data.suspended == false
-          && changed().hasOnly(['name', 'businessType', 'receipt', 'updatedAt'])
+          && changed().hasOnly(['name', 'businessType', 'receipt', 'dailySummary', 'updatedAt'])
           && d().updatedAt == request.time
+          && (!('dailySummary' in d()) || d().dailySummary is bool)
           && d().name is string && d().name.size() >= 2 && d().name.size() <= 60
           && (!('businessType' in d()) || validBusinessType(d().businessType))
           && (!('receipt' in d()) || validReceipt(d().receipt))

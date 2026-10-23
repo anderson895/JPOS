@@ -137,6 +137,8 @@ await t('admin renames the store, picks a logo, colors and receipt', 'allow', ()
 await t('a shop that can\'t sell yet saves its name and receipt (JPOS look)', 'allow', () => save('adminS', 'S', { branding: { logoUrl: '', theme: 'espresso' } }));
 await t('admin changes only the logo and colors', 'allow', () => save('adminA', 'A', { withShop: false, branding: { name: 'Shop' } }));
 await t('admin keeps the name, changes the receipt only', 'allow', () => save('adminA', 'A', { withBranding: false, shop: { name: 'Shop' } }));
+await t('admin turns the daily sales email off', 'allow', () => save('adminA', 'A', { withBranding: false, shop: { name: 'Shop', dailySummary: false } }));
+await t('the daily sales email set to a word', 'deny', () => save('adminA', 'A', { withBranding: false, shop: { name: 'Shop', dailySummary: 'off' } }));
 await t('rename without the public name', 'deny', () => save('adminA', 'A', { withBranding: false }));
 await t('public name that isn\'t the shop\'s', 'deny', () => save('adminA', 'A', { withShop: false, branding: { name: 'Other' } }));
 await t('a cashier changes the store', 'deny', () => save('staffA', 'A'));

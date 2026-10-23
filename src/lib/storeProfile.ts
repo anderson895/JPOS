@@ -92,6 +92,8 @@ export function storeProblem(s: { name: string; receipt: ReceiptInfo }): string 
  */
 export async function saveStore(input: {
   tenantId: string; name: string; businessType: BusinessType; receipt: ReceiptInfo; logoUrl: string; theme: ThemeName;
+  /** The daily sales email (only sent when the package has it). */
+  dailySummary: boolean;
 }): Promise<void> {
   const uid = auth.currentUser?.uid;
   if (!uid) throw new Error('Sign in again to save.');
@@ -110,6 +112,7 @@ export async function saveStore(input: {
       phone: r.phone.trim(),
       footer: r.footer.trim(),
     },
+    dailySummary: input.dailySummary,
     updatedAt: serverTimestamp(),
   });
   batch.set(brandingRef(input.tenantId), {

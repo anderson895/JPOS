@@ -1,8 +1,9 @@
 import { AggregateField, type DocumentReference, type Firestore } from 'firebase-admin/firestore';
 import type { UsageCounts } from './usage.js';
+import type { OrderLite, SummaryShop } from './summary.js';
 import {
   checkQuota, last24Hours, withinBudget,
-  PAYMENT_LIMIT, VERIFY_IP_LIMIT, VERIFY_LIMIT,
+  PAYMENT_LIMIT, SUMMARY_LIMIT, VERIFY_IP_LIMIT, VERIFY_LIMIT,
   type Limit, type MailKind, type QuotaState,
 } from './quota.js';
 import { checkCode, type CodeCheck, type StoredCode } from './signupCode.js';
@@ -49,6 +50,13 @@ export interface Store {
   profile(uid: string): Promise<{ tenantId: string; role: string; isActive: boolean } | null>;
   /** What a shop stores, counted (null when there's no such shop). */
   shopUsage(tenantId: string): Promise<UsageCounts | null>;
+  /** Shops on a free trial or a paid package, with their owner's email (the daily sales email). */
+  summaryShops(): Promise<SummaryShop[]>;
+  /** A shop's orders made in [startIso, endIso). */
+  ordersBetween(tenantId: string, startIso: string, endIso: string): Promise<OrderLite[]>;
+  /** Counts this shop's daily email for `date`; refused ('duplicate') when it was already sent. */
+  reserveSummary(tenantId: string, date: string, now: Date): Promise<Reserve>;
+  releaseSummary(tenantId: string, date: string, now: Date): Promise<void>;
   /** Writes the new email into users/{uid}, when that profile exists. */
   setProfileEmail(uid: string, email: string): Promise<void>;
   /**
@@ -156,6 +164,37 @@ export function firestoreStore(db: Firestore): Store {
       const data = (await db.collection('users').doc(uid).get()).data();
       return data ? { tenantId: String(data.tenantId ?? ''), role: String(data.role ?? ''), isActive: data.isActive === true } : null;
     },
+    async summaryShops() {
+      const snap = await db.collection('tenants').where('status', 'in', ['trial', 'active']).get();
+      const shops = snap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) })) as Array<Record<string, any>>;
+      const owners = shops.length ? await db.getAll(...shops.map(s => db.collection('users').doc(String(s.ownerUid || 'none')))) : [];
+      const ms = (v: unknown) => (v && typeof (v as { toMillis?: () => number }).toMillis === 'function' ? (v as { toMillis: () => number }).toMillis() : null);
+      return shops.map((s, i) => {
+        const trialStart = ms(s.trialStartedAt);
+        return {
+          tenantId: s.id,
+          name: String(s.name ?? ''),
+          plan: String(s.plan ?? 'starter'),
+          status: String(s.status ?? ''),
+          suspended: s.suspended === true,
+          trialEndsAt: trialStart != null ? trialStart + Number(s.trialDays ?? 0) * 24 * 60 * 60 * 1000 : null,
+          periodEndsAt: ms(s.currentPeriodEnd),
+          emailSummary: typeof s.entitlements?.emailSummary === 'boolean' ? s.entitlements.emailSummary : undefined,
+          dailySummary: typeof s.dailySummary === 'boolean' ? s.dailySummary : undefined,
+          ownerEmail: String(owners[i]?.data()?.email ?? ''),
+        };
+      });
+    },
+    async ordersBetween(tenantId, startIso, endIso) {
+      const snap = await db.collection('tenants').doc(tenantId).collection('orders')
+        .where('createdAt', '>=', startIso).where('createdAt', '<', endIso)
+        .select('status', 'total', 'items').get();
+      return snap.docs.map(d => d.data() as OrderLite);
+    },
+    reserveSummary: (tenantId, date, now) =>
+      reserve({ kind: 'summary', quotaId: `summary_${tenantId}`, limit: SUMMARY_LIMIT, onceId: `sum_${tenantId}_${date}`, now }),
+    releaseSummary: (tenantId, date, now) =>
+      release({ kind: 'summary', quotaId: `summary_${tenantId}`, onceId: `sum_${tenantId}_${date}`, now }),
     async shopUsage(tenantId) {
       const shop = db.collection('tenants').doc(tenantId);
       const products = shop.collection('products');

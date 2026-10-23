@@ -40,6 +40,8 @@ export interface Entitlements {
   inventory?: boolean;
   /** Audit trail: who did what, and when. */
   auditTrail?: boolean;
+  /** The daily sales email to the owner. */
+  emailSummary?: boolean;
   /** Storage for pictures and sales data, in MB; null = no limit. Missing: the package decides (500 / 2048 / 10240). */
   storageMB?: number | null;
 }
@@ -76,6 +78,8 @@ export interface Tenant {
   businessType?: BusinessType;
   /** What the receipt shows under the shop name (Store Settings). */
   receipt?: ReceiptInfo;
+  /** The daily sales email (Business and up); missing = on. */
+  dailySummary?: boolean;
 }
 
 /** The kinds of store JPOS is set up for (src/lib/storeProfile.ts has the labels). */

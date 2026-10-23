@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { ApiError, handle, json, readJsonBody, requireMethod } from './http.js';
 import { defaultDeps, isLocalTest, notSetUp, type Deps, type Mailer } from './deps.js';
-import { emailChangeCodeMessage, passwordResetCodeMessage, paymentNoticeMessage, signupCodeMessage, type Message } from './mail.js';
+import { dailySummaryMessage, emailChangeCodeMessage, passwordResetCodeMessage, paymentNoticeMessage, signupCodeMessage, type Message } from './mail.js';
+import { phYesterday, summarize, wantsSummary } from './summary.js';
 import { CODE_TTL_MS, codeHash, emailId, type CodeCheck } from './signupCode.js';
 import type { Reserve } from './store.js';
 import { computeUsage } from './usage.js';
@@ -201,6 +202,45 @@ export function usageHandler(getDeps: GetDeps = defaultDeps) {
     const counts = await deps.store.shopUsage(tenantId);
     if (!counts) throw new ApiError(404, 'no_shop', 'This shop was not found.');
     return json(computeUsage(counts));
+  });
+}
+
+/**
+ * GET /api/cron/daily-summary: every morning (Vercel Cron, 8:00 in the
+ * Philippines) each Business and Enterprise shop's owner gets yesterday's
+ * sales by email: once a day, only when there were sales, never for a shop
+ * that switched it off. Only Vercel's scheduler (CRON_SECRET) may start it.
+ */
+export function dailySummaryHandler(getDeps: GetDeps = defaultDeps) {
+  return handle(async (request) => {
+    if (request.method !== 'GET' && request.method !== 'POST') requireMethod(request, 'GET');
+    const deps = getDeps();
+    const secret = deps.env.CRON_SECRET?.trim();
+    if (!isLocalTest(deps.env)) {
+      if (!secret) throw notSetUp('CRON_SECRET is missing');
+      if (request.headers.get('authorization') !== `Bearer ${secret}`) throw new ApiError(401, 'unauthenticated', 'Not allowed.');
+    }
+    const now = deps.now();
+    const { date, startIso, endIso } = phYesterday(now);
+    const base = appUrl(deps, request);
+    const mailer = deps.mailer();
+    let sent = 0, skipped = 0, failed = 0;
+    for (const shop of await deps.store.summaryShops()) {
+      if (!wantsSummary(shop, now)) { skipped++; continue; }
+      const day = summarize(await deps.store.ordersBetween(shop.tenantId, startIso, endIso));
+      if (day.orders === 0) { skipped++; continue; }
+      const quota = await deps.store.reserveSummary(shop.tenantId, date, now);
+      if (!quota.ok) { skipped++; continue; }
+      try {
+        await mailer.send([shop.ownerEmail], dailySummaryMessage({ shopName: shop.name, date, ...day, appUrl: base }));
+        sent++;
+      } catch (err) {
+        failed++;
+        console.error('[api] daily email not sent:', shop.tenantId, err instanceof Error ? err.message : err);
+        await deps.store.releaseSummary(shop.tenantId, date, now).catch(() => { /* best effort */ });
+      }
+    }
+    return json({ date, sent, skipped, failed });
   });
 }
 

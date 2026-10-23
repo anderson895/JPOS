@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FirebaseError } from 'firebase/app';
 import { Link } from 'react-router-dom';
-import { Check, CheckCircle, Copy, Database, Image as ImageIcon, Link2, Loader2, Lock, Palette, Receipt, Store, Trash2, Undo2, Upload } from 'lucide-react';
+import { Check, CheckCircle, Copy, Database, Image as ImageIcon, Link2, Loader2, Lock, Mail, Palette, Receipt, Store, Trash2, Undo2, Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth, useStoreBrand } from '@/contexts/AuthContext';
 import { uploadImage } from '@/lib/cloudinary';
@@ -24,6 +24,7 @@ interface Draft {
   logoUrl: string;
   theme: ThemeName;
   receipt: ReceiptInfo;
+  dailySummary: boolean;
 }
 const same = (a: Draft, b: Draft) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -35,6 +36,7 @@ export default function StoreSettings() {
   const { tenant, brandingReady, isSuperAdmin } = useAuth();
   // Its own logo and colors: Business and up (the rules check it too)
   const canBrand = hasFeature(tenant, 'branding');
+  const canEmail = hasFeature(tenant, 'emailSummary');
   const storage = useStorage();
   const brand = useStoreBrand();
 
@@ -45,6 +47,7 @@ export default function StoreSettings() {
     logoUrl: brand.hasLogo ? brand.logoUrl : '',
     theme: brand.theme,
     receipt: receiptInfo(tenant),
+    dailySummary: tenant.dailySummary !== false,
   } : null), [tenant, brand]);
 
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -112,7 +115,7 @@ export default function StoreSettings() {
     try {
       await saveStore({
         tenantId: tenant.id, name: draft.name, businessType: draft.businessType,
-        receipt: draft.receipt, logoUrl: canBrand ? draft.logoUrl : '', theme: canBrand ? draft.theme : 'espresso',
+        receipt: draft.receipt, logoUrl: canBrand ? draft.logoUrl : '', theme: canBrand ? draft.theme : 'espresso', dailySummary: draft.dailySummary,
       });
       // The saved values come back live; the form keeps what was typed (trimmed)
       setDraft(d => (d ? {
@@ -310,6 +313,26 @@ export default function StoreSettings() {
             <p className="flex justify-between font-bold"><span>TOTAL</span><span>₱100.00</span></p>
             <p className="mt-2 text-center break-words">{r.footer.trim() || 'Thank you!'}</p>
           </div>
+        </div>
+      </section>
+
+      {/* The daily sales email (Business and up) */}
+      <section className="card p-5 sm:p-6">
+        <div className="flex items-center gap-4">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-espresso-800 text-caramel-200">
+            <Mail className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="font-display text-xl text-espresso-900">Daily sales email</h2>
+            <p className="text-sm text-bark-500">
+              {canEmail
+                ? 'Every morning, yesterday\'s sales go to the owner\'s email.'
+                : `${BUSINESS_UP}`}
+            </p>
+          </div>
+          {canEmail
+            ? <Switch checked={draft.dailySummary} onChange={on => set({ dailySummary: on })} label="Daily sales email" disabled={busy} />
+            : <Lock className="h-5 w-5 shrink-0 text-caramel-600" aria-label="Business and Enterprise packages" />}
         </div>
       </section>
 
