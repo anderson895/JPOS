@@ -42,6 +42,8 @@ export interface Entitlements {
   auditTrail?: boolean;
   /** The daily sales email to the owner. */
   emailSummary?: boolean;
+  /** Download a backup of all the shop's data. */
+  backup?: boolean;
   /** Storage for pictures and sales data, in MB; null = no limit. Missing: the package decides (500 / 2048 / 10240). */
   storageMB?: number | null;
 }

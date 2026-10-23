@@ -20,9 +20,9 @@ const auth = getAuth();
 const db = getFirestore();
 const iso = new Date().toISOString();
 const ENT = {
-  starter: { plan: 'starter', staffLimit: 3, rfid: false, fullReports: false, pdfExport: false, trends: false, branding: false, discounts: false, voidSales: true, inventory: false, auditTrail: false, emailSummary: false, storageMB: 500 },
-  business: { plan: 'business', staffLimit: 10, rfid: true, fullReports: true, pdfExport: true, trends: true, branding: true, discounts: true, voidSales: true, inventory: true, auditTrail: true, emailSummary: true, storageMB: 2048 },
-  enterprise: { plan: 'enterprise', staffLimit: 100, rfid: true, fullReports: true, pdfExport: true, trends: true, branding: true, discounts: true, voidSales: true, inventory: true, auditTrail: true, emailSummary: true, storageMB: 10240 },
+  starter: { plan: 'starter', staffLimit: 3, rfid: false, fullReports: false, pdfExport: false, trends: false, branding: false, discounts: false, voidSales: true, inventory: false, auditTrail: false, emailSummary: false, backup: false, storageMB: 500 },
+  business: { plan: 'business', staffLimit: 10, rfid: true, fullReports: true, pdfExport: true, trends: true, branding: true, discounts: true, voidSales: true, inventory: true, auditTrail: true, emailSummary: true, backup: true, storageMB: 2048 },
+  enterprise: { plan: 'enterprise', staffLimit: 100, rfid: true, fullReports: true, pdfExport: true, trends: true, branding: true, discounts: true, voidSales: true, inventory: true, auditTrail: true, emailSummary: true, backup: true, storageMB: 10240 },
 };
 const qr = (text) => `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(text)}`;
 

@@ -747,3 +747,8 @@ The owner's list (note.txt): logos and colors per shop, the shop's name on its s
 - Every morning at 8:00 (Philippine time) the owner of each Business / Enterprise shop gets yesterday's sales by email: total, number of sales, average, voided, best sellers, and a See your reports button. Only when there were sales; once a day.
 - **Store Settings → Daily sales email** switches it off (Starter sees the package note). Package cards: Business lists "Daily sales summary by email"; Enterprise lists Payment gateway integration (soon).
 - **Verified:** API tests (yesterday in PH time, totals, who gets it, once a day, Gmail down) and a local run: 1 email to the test shop, none on a second run.
+
+## 39. Database backup (Business and up) (2026-10-23)
+
+- **Store Settings → Backup → Download backup** (`src/lib/backup.ts`): one file (`jpos-backup-<shop>-<date>.json`) with the shop's details, branding, payment settings, categories, products, discounts, all sales and people. Never passwords or RFID card codes. It shows its progress ("Sales… 1,200") and "Backup saved: N products, N sales." Starter sees the package note. Package cards and the Subscription page list Database backup under Business.
+- **Verified** on the local test app: 6/6.

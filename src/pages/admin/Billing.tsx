@@ -172,6 +172,7 @@ export default function Billing() {
                       {e && hasFeature({ plan: id, entitlements: e }, 'inventory') && <li>Inventory</li>}
                       {e && hasFeature({ plan: id, entitlements: e }, 'auditTrail') && <li>Audit trail</li>}
                       {e && hasFeature({ plan: id, entitlements: e }, 'emailSummary') && <li>Daily sales email</li>}
+                      {e && hasFeature({ plan: id, entitlements: e }, 'backup') && <li>Database backup</li>}
                       {e?.fullReports && <li>Monthly reports + PDF</li>}
                       {e?.trends && <li>Sales trends</li>}
                       {e?.rfid && <li>RFID card login</li>}

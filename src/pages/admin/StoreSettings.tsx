@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FirebaseError } from 'firebase/app';
 import { Link } from 'react-router-dom';
-import { Check, CheckCircle, Copy, Database, Image as ImageIcon, Link2, Loader2, Lock, Mail, Palette, Receipt, Store, Trash2, Undo2, Upload } from 'lucide-react';
+import { Check, CheckCircle, Copy, Database, Download, Image as ImageIcon, Link2, Loader2, Lock, Mail, Palette, Receipt, Store, Trash2, Undo2, Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth, useStoreBrand } from '@/contexts/AuthContext';
 import { uploadImage } from '@/lib/cloudinary';
@@ -16,6 +16,7 @@ import Switch from '@/components/shared/Switch';
 import { cn } from '@/lib/utils';
 import { BUSINESS_UP, hasFeature } from '@/lib/entitlements';
 import { changes, logActivity } from '@/lib/activity';
+import { buildBackup, saveBackupFile } from '@/lib/backup';
 import type { BusinessType, ReceiptInfo } from '@/types';
 
 interface Draft {
@@ -37,6 +38,24 @@ export default function StoreSettings() {
   // Its own logo and colors: Business and up (the rules check it too)
   const canBrand = hasFeature(tenant, 'branding');
   const canEmail = hasFeature(tenant, 'emailSummary');
+  const canBackup = hasFeature(tenant, 'backup');
+  // Backup: what's being read right now (null = not running)
+  const [backingUp, setBackingUp] = useState<string | null>(null);
+  async function downloadBackup() {
+    if (!tenant || backingUp) return;
+    setBackingUp('Starting…');
+    try {
+      const data = await buildBackup(tenant, setBackingUp);
+      saveBackupFile(data, tenant.name);
+      const counts = data.counts as { products: number; orders: number };
+      toast.success(`Backup saved: ${counts.products} products, ${counts.orders} sales.`);
+    } catch (err) {
+      console.error('[Backup]', err);
+      toast.error("Couldn't make the backup. Please try again.");
+    } finally {
+      setBackingUp(null);
+    }
+  }
   const storage = useStorage();
   const brand = useStoreBrand();
 
@@ -333,6 +352,27 @@ export default function StoreSettings() {
           {canEmail
             ? <Switch checked={draft.dailySummary} onChange={on => set({ dailySummary: on })} label="Daily sales email" disabled={busy} />
             : <Lock className="h-5 w-5 shrink-0 text-caramel-600" aria-label="Business and Enterprise packages" />}
+        </div>
+      </section>
+
+      {/* Backup (Business and up): one file with everything */}
+      <section className="card p-5 sm:p-6">
+        <div className="flex flex-wrap items-center gap-4">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-espresso-800 text-caramel-200">
+            <Download className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div className="min-w-[12rem] flex-1">
+            <h2 className="font-display text-xl text-espresso-900">Backup</h2>
+            <p className="text-sm text-bark-500">
+              {canBackup ? 'Save a copy of your products, sales, people and settings on this device.' : BUSINESS_UP}
+            </p>
+          </div>
+          {canBackup ? (
+            <button type="button" onClick={downloadBackup} disabled={!!backingUp} className="btn-secondary">
+              {backingUp ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4" aria-hidden="true" />}
+              {backingUp ?? 'Download backup'}
+            </button>
+          ) : <Lock className="h-5 w-5 shrink-0 text-caramel-600" aria-label="Business and Enterprise packages" />}
         </div>
       </section>
 
