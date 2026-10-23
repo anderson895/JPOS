@@ -1,4 +1,4 @@
-import { getDoc, writeBatch, type DocumentReference } from 'firebase/firestore';
+import { getDoc, increment, writeBatch, type DocumentReference } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
 import { db } from '@/lib/firebase';
 import { tenantDoc } from '@/lib/tenant';
@@ -20,11 +20,36 @@ export class ReferenceUsedError extends Error {
  *
  * - Reused reference → throws ReferenceUsedError with the other order's number.
  * - Saved already (e.g. a retry after a lost response) → resolves as saved.
+ *
+ * Inventory: lines marked `stockTracked` take their quantity off the product's
+ * stock in the same batch. If that part is refused (the product was deleted,
+ * or stopped keeping count), the sale is saved without it: a sale always wins.
  */
 export async function saveOrderAtomically(orderRef: DocumentReference, order: Omit<Order, 'id'>): Promise<void> {
+  const tracked = order.items.filter(i => i.stockTracked);
+  if (tracked.length) {
+    try {
+      await commitOrder(orderRef, order, true);
+      return;
+    } catch (err) {
+      if (!(err instanceof FirebaseError) || !['permission-denied', 'not-found'].includes(err.code)) throw err;
+      console.warn('[POS] stock not updated for this sale', err.code);
+      order = { ...order, items: order.items.map(({ stockTracked: _drop, ...i }) => i) };
+    }
+  }
+  await commitOrder(orderRef, order, false);
+}
+
+async function commitOrder(orderRef: DocumentReference, order: Omit<Order, 'id'>, withStock: boolean): Promise<void> {
   const key = paymentRefKey(order);
   const batch = writeBatch(db);
   batch.set(orderRef, order);
+  if (withStock) {
+    // The same product can be on two lines (sizes): take the total off once
+    const qty = new Map<string, number>();
+    for (const i of order.items) if (i.stockTracked) qty.set(i.productId, (qty.get(i.productId) ?? 0) + i.quantity);
+    for (const [productId, q] of qty) batch.update(tenantDoc('products', productId), { stock: increment(-q) });
+  }
   if (key) {
     batch.set(tenantDoc('paymentRefs', key), {
       orderId: orderRef.id,

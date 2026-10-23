@@ -12,7 +12,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import PageHeader from '@/components/shared/PageHeader';
 import StatCard from '@/components/shared/StatCard';
 import { useChartTheme } from '@/components/shared/chartTheme';
-import type { Order } from '@/types';
+import type { Order, Product } from '@/types';
+import { Link } from 'react-router-dom';
+import { hasFeature } from '@/lib/entitlements';
+import { isOut, runningLow, stockLabel } from '@/lib/inventory';
 import toast from 'react-hot-toast';
 
 type DayStats = { date: string; sales: number; orders: number };
@@ -39,6 +42,16 @@ export default function AdminDashboard() {
   const [weeklyData, setWeeklyData] = useState<DayStats[]>([]);
   const [recentOrders, setRecentOrders] = useState<Order[]>([]);
   const [topItems, setTopItems] = useState<TopItem[]>([]);
+  // Inventory: products at or under their alert number
+  const { tenant } = useAuth();
+  const canInventory = hasFeature(tenant, 'inventory');
+  const [lowStock, setLowStock] = useState<Product[]>([]);
+  useEffect(() => {
+    if (!canInventory) { setLowStock([]); return; }
+    getDocs(query(tenantCol('products'), where('trackStock', '==', true)))
+      .then(snap => setLowStock(runningLow(snap.docs.map(d => ({ id: d.id, ...d.data() } as Product)))))
+      .catch(err => console.warn('[Dashboard] low stock', err));
+  }, [canInventory]);
   const [yesterdaySoFar, setYesterdaySoFar] = useState({ sales: 0, orders: 0 });
   const [loading, setLoading] = useState(true);
 
@@ -236,6 +249,24 @@ export default function AdminDashboard() {
           )}
         </div>
       </div>
+
+      {/* Inventory: what's running low */}
+      {canInventory && lowStock.length > 0 && (
+        <div className="card p-6">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="font-display text-xl text-espresso-900">Running low</h2>
+            <Link to="/admin/products" className="text-sm font-semibold text-caramel-700 hover:underline">See products</Link>
+          </div>
+          <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {lowStock.slice(0, 9).map(p => (
+              <li key={p.id} className="flex items-center justify-between gap-3 rounded-2xl border border-cream-300 bg-cream-100/70 px-4 py-2.5">
+                <span className="truncate text-sm font-medium text-espresso-900">{p.name}</span>
+                <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${isOut(p) ? 'bg-red-600 text-white' : 'bg-amber-400 text-espresso-950'}`}>{stockLabel(p)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Daily orders + recent orders */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

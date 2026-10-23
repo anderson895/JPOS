@@ -5,6 +5,7 @@ import { tenantCol } from '@/lib/tenant';
 import { useAuth, useStoreBrand } from '@/contexts/AuthContext';
 import { receiptInfo } from '@/lib/storeProfile';
 import { findByCode, matchesSearch, productDetails } from '@/lib/productDetails';
+import { isLow, isOut, roomInStock, stockLabel, stockLeft } from '@/lib/inventory';
 import { useCart } from '@/contexts/CartContext';
 import { formatCurrency, generateOrderNumber, roundMoney } from '@/lib/utils';
 import Portal from '@/components/shared/Portal';
@@ -37,6 +38,8 @@ export default function POSComponent() {
   // Saved discounts and discounts on one item: Business and up. Every package
   // has a discount on the whole order and Senior/PWD.
   const canDiscounts = hasFeature(tenant, 'discounts');
+  // Inventory (Business and up): a sale can't take more than what's left
+  const canInventory = hasFeature(tenant, 'inventory');
   const brand = useStoreBrand();
   const shopInfo = receiptInfo(tenant);
   const {
@@ -135,8 +138,26 @@ export default function POSComponent() {
     };
   }
 
+  /** Adds one, unless the product keeps count and none are left beyond what's in the cart. */
+  function addToCart(p: Product): boolean {
+    const counted = canInventory && !!p.trackStock;
+    if (counted) {
+      const inCart = cartItems.filter(i => i.productId === p.id).reduce((n, i) => n + i.quantity, 0);
+      if (roomInStock(p, inCart) <= 0) {
+        toast.error(isOut(p) ? `${p.name} is out of stock.` : `Only ${stockLeft(p)} ${p.name} in stock.`, { id: 'stock' });
+        return false;
+      }
+    }
+    addItem(p, undefined, undefined, undefined, counted);
+    return true;
+  }
+
   async function saveOrder(orderRef: DocumentReference, order: Omit<Order, 'id'>) {
     await saveOrderAtomically(orderRef, order);   // claims the e-wallet reference in the same batch
+    // The tiles show the new counts right away
+    const sold = new Map<string, number>();
+    for (const i of order.items) if (i.stockTracked) sold.set(i.productId, (sold.get(i.productId) ?? 0) + i.quantity);
+    if (sold.size) setProducts(prev => prev.map(p => (sold.has(p.id) ? { ...p, stock: (Number(p.stock) || 0) - (sold.get(p.id) ?? 0) } : p)));
     setReceipt({ id: orderRef.id, ...order });
     clearCart();
     setCheckoutOpen(false);
@@ -248,7 +269,7 @@ export default function POSComponent() {
                 const hit = findByCode(products.filter(p => p.isAvailable), search);
                 if (!hit) return;
                 e.preventDefault();
-                addItem(hit);
+                if (!addToCart(hit)) return;
                 setSearch('');
                 toast.success(`Added ${hit.name}`, { id: 'scan', duration: 1500 });
               }}
@@ -294,11 +315,15 @@ export default function POSComponent() {
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-              {filteredProducts.map(p => (
+              {filteredProducts.map(p => {
+                const counted = canInventory && !!p.trackStock;
+                const out = counted && isOut(p);
+                return (
                 <button
                   key={p.id}
-                  onClick={() => addItem(p)}
-                  className="card p-2 text-left hover:shadow-lift hover:-translate-y-0.5 transition-all duration-200 active:scale-[0.98] group"
+                  onClick={() => addToCart(p)}
+                  aria-disabled={out || undefined}
+                  className={`card p-2 text-left transition-all duration-200 group ${out ? 'opacity-55 cursor-not-allowed' : 'hover:shadow-lift hover:-translate-y-0.5 active:scale-[0.98]'}`}
                 >
                   <div className="h-28 sm:h-32 rounded-2xl overflow-hidden bg-gradient-to-br from-cream-200 to-cream-300 relative">
                     {p.imageUrl ? (
@@ -309,6 +334,11 @@ export default function POSComponent() {
                       </div>
                     )}
                     {p.imageUrl && <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-espresso-950/40 to-transparent" />}
+                    {counted && (
+                      <span className={`absolute left-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-bold shadow-sm ${out ? 'bg-red-600 text-white' : isLow(p) ? 'bg-amber-400 text-espresso-950' : 'bg-cream-50/95 text-espresso-800'}`}>
+                        {stockLabel(p)}
+                      </span>
+                    )}
                   </div>
                   <div className="px-1.5 pt-2.5 pb-1 flex items-end gap-2">
                     <div className="flex-1 min-w-0">
@@ -321,7 +351,8 @@ export default function POSComponent() {
                     </span>
                   </div>
                 </button>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -409,7 +440,11 @@ export default function POSComponent() {
                   </button>
                   <span className="w-7 text-center text-sm font-semibold text-espresso-800">{item.quantity}</span>
                   <button
-                    onClick={() => updateQuantity(item.productId, item.quantity + 1, item.variantId)}
+                    onClick={() => {
+                      const product = products.find(x => x.id === item.productId);
+                      if (product && item.trackStock && !addToCart(product)) return;
+                      if (!product || !item.trackStock) updateQuantity(item.productId, item.quantity + 1, item.variantId);
+                    }}
                     className="w-6 h-6 rounded-full flex items-center justify-center bg-espresso-800 hover:bg-espresso-700 transition-colors"
                     aria-label="Increase quantity"
                   >

@@ -324,7 +324,14 @@ service cloud.firestore {
 
       match /products/{id} {
         allow read: if memberOf(t);
-        allow write: if adminOf(t) && hasAccess(t);
+        allow create, delete: if adminOf(t) && hasAccess(t);
+        // Admins edit products. Inventory (Business and up): anyone selling takes
+        // their sale's quantity off a product that keeps count, and nothing else
+        allow update: if (adminOf(t) && hasAccess(t))
+          || (memberOf(t) && hasAccess(t) && shopCan(t, 'inventory')
+              && resource.data.get('trackStock', false) == true
+              && changed().hasOnly(['stock'])
+              && d().stock is number && d().stock < resource.data.get('stock', 0));
       }
       match /categories/{id} {
         allow read: if memberOf(t);

@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
 import {
-  doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, writeBatch, Timestamp, serverTimestamp,
+  doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, writeBatch, Timestamp, serverTimestamp, increment,
 } from 'firebase/firestore';
 
 const [host, port] = (process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8085').split(':');
@@ -46,6 +46,12 @@ async function seed() {
     await setDoc(doc(db, 'tenants/B'), shopDoc('adminB'));
     await setDoc(doc(db, 'tenants/C'), shopDoc('adminC', { plan: 'business', entitlements: { ...STARTER, plan: 'business', branding: false, discounts: false, voidSales: false } }));
     await setDoc(doc(db, 'tenants/G'), shopDoc('adminG', { entitlements: { ...STARTER, branding: true } }));
+    // Inventory: a counted and an uncounted product in A (Business) and B (Starter)
+    for (const id of ['A', 'B']) {
+      await setDoc(doc(db, `tenants/${id}/products/p1`), { name: 'Water', price: 20, trackStock: true, stock: 10 });
+      await setDoc(doc(db, `tenants/${id}/products/p2`), { name: 'Bread', price: 10, trackStock: false, stock: 10 });
+    }
+    await setDoc(doc(db, 'users/staffB'), user('B'));
     for (const id of ['B', 'C', 'G']) {
       await setDoc(doc(db, `users/admin${id}`), user(id, 'admin'));
       await setDoc(doc(db, `tenants/${id}/orders/o1`), { orderNumber: 'ORD-1', status: 'completed', total: 100, cashierId: `admin${id}`, createdAt: iso, updatedAt: iso });
@@ -199,6 +205,30 @@ await t('Business saved before the new features: all three work', 'allow', async
   await save('adminA', 'A');
   await setDoc(doc(as('adminA'), 'tenants/A/discounts/d9'), disc());
   await voidIt('adminA');
+});
+
+// ── Inventory: a sale takes stock off ──────────────────────────────────────────
+const sell = (uid, shop, product = 'p1', qty = 2, extra = {}) => {
+  const db = as(uid);
+  const b = writeBatch(db);
+  b.set(doc(collection(db, `tenants/${shop}/orders`)), { orderNumber: 'ORD-9', status: 'completed', total: 40, paymentMethod: 'cash', cashierId: uid, createdAt: iso, updatedAt: iso, items: [] });
+  b.update(doc(db, `tenants/${shop}/products/${product}`), { stock: increment(-qty), ...extra });
+  return b.commit();
+};
+await t('cashier sells: the stock comes off', 'allow', () => sell('staffA', 'A'));
+await t('cashier sells more than is left (two counters): still allowed', 'allow', () => sell('staffA', 'A', 'p1', 15));
+await t('cashier adds stock', 'deny', () => sell('staffA', 'A', 'p1', -5));
+await t('cashier changes the price with the stock', 'deny', () => sell('staffA', 'A', 'p1', 1, { price: 1 }));
+await t('cashier takes stock off a product that keeps no count', 'deny', () => sell('staffA', 'A', 'p2'));
+await t('Starter: a sale takes stock off', 'deny', () => sell('staffB', 'B'));
+await t('cashier sets the stock directly', 'deny', () => updateDoc(doc(as('staffA'), 'tenants/A/products/p1'), { stock: 3, trackStock: false }));
+await t('admin restocks', 'allow', () => updateDoc(doc(as('adminA'), 'tenants/A/products/p1'), { stock: 50, lowStockAt: 5 }));
+await t('admin voids a sale and puts the stock back', 'allow', () => {
+  const db = as('adminA');
+  const b = writeBatch(db);
+  b.update(doc(db, 'tenants/A/orders/o1'), { status: 'voided', voidedBy: 'adminA', voidedByName: 'Owner', voidedAt: new Date().toISOString(), voidReason: 'Wrong item', updatedAt: iso });
+  b.update(doc(db, 'tenants/A/products/p1'), { stock: increment(2) });
+  return b.commit();
 });
 
 await env.cleanup();

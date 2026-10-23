@@ -60,6 +60,7 @@ export function buildOrder(s: OrderSnapshot, orderNumber: string, payment?: Manu
         ...(i.details     ? { details: i.details }         : {}),
         ...(i.unit        ? { unit: i.unit }               : {}),
         ...(line && line.discount > 0 && i.discount ? { discount: line.discount, discountName: i.discount.name.trim() || 'Discount' } : {}),
+        ...(i.trackStock ? { stockTracked: true } : {}),
       };
     }),
     subtotal: p.subtotal,

@@ -167,8 +167,7 @@ export default function Billing() {
                     <span className="block font-display text-2xl text-espresso-900">₱{(p?.price ?? 0).toLocaleString('en-PH')}<span className="text-xs font-body text-bark-500">/month</span></span>
                     <ul className="mt-2 space-y-1 text-xs text-bark-600">
                       <li>{e?.staffLimit == null ? 'Unlimited accounts' : `Up to ${e.staffLimit} accounts`}</li>
-                      {e && hasFeature({ plan: id, entitlements: e }, 'branding') && <li>Your logo and colors</li>}
-                      {e && hasFeature({ plan: id, entitlements: e }, 'discounts') && <li>Saved + per-item discounts</li>}
+                      {e && hasFeature({ plan: id, entitlements: e }, 'branding') && <li>Customizable logo and theme</li>}
                       {e && hasFeature({ plan: id, entitlements: e }, 'voidSales') && <li>Void sales</li>}
                       {e?.fullReports && <li>Monthly reports + PDF</li>}
                       {e?.trends && <li>Sales trends</li>}

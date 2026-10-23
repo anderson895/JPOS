@@ -8,6 +8,8 @@ import { STORAGE_FULL, useStorage } from '@/lib/usage';
 import { cn, formatCurrency } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { BUSINESS_UP, hasFeature } from '@/lib/entitlements';
+import { DEFAULT_LOW_STOCK, isLow, isOut, stockLabel } from '@/lib/inventory';
+import Switch from '@/components/shared/Switch';
 import {
   DETAIL_FIELDS, DETAIL_LABEL, DETAIL_MAX, UNITS, UNIT_LABEL, mainDetailFields, matchesSearch, productDetails, sizeExample,
   type DetailField,
@@ -30,6 +32,7 @@ const defaultProduct: Omit<Product, 'id' | 'createdAt' | 'updatedAt'> = {
 export default function AdminProducts() {
   const { tenant } = useAuth();
   const canDiscounts = hasFeature(tenant, 'discounts');
+  const canInventory = hasFeature(tenant, 'inventory');
   // New photos wait when the shop's storage is full (selling never stops)
   const storage = useStorage();
   // The details this kind of store fills in first; the rest are under "More details"
@@ -109,6 +112,12 @@ export default function AdminProducts() {
         color: editProduct.color?.trim() || '',
         unit: editProduct.unit || '',
         sku,
+        // Inventory: only written by a package that has it (a Starter save keeps the old numbers)
+        ...(canInventory ? {
+          trackStock: !!editProduct.trackStock,
+          stock: Math.max(0, Math.floor(Number(editProduct.stock) || 0)),
+          lowStockAt: Math.max(0, Math.floor(Number(editProduct.lowStockAt ?? DEFAULT_LOW_STOCK) || 0)),
+        } : {}),
         updatedAt: new Date().toISOString(),
       };
       if (editId) {
@@ -349,6 +358,12 @@ export default function AdminProducts() {
                     {busyId === p.id ? <Loader2 className="w-3.5 h-3.5 text-red-500 animate-spin" /> : <Trash2 className="w-3.5 h-3.5 text-red-500" />}
                   </button>
                 </div>
+                {canInventory && p.trackStock && (
+                  <span className={cn('absolute left-2 top-2 rounded-full px-2.5 py-0.5 text-[11px] font-bold shadow-sm',
+                    isOut(p) ? 'bg-red-600 text-white' : isLow(p) ? 'bg-amber-400 text-espresso-950' : 'bg-cream-50/95 text-espresso-800')}>
+                    {stockLabel(p)}
+                  </span>
+                )}
                 {!p.isAvailable && (
                   <div className="absolute inset-0 bg-espresso-950/30 flex items-center justify-center">
                     <span className="badge bg-espresso-900/80 text-cream-50 normal-case">Unavailable</span>
@@ -462,6 +477,37 @@ export default function AdminProducts() {
                   </button>
                   {moreDetails && <div className="mt-3 grid grid-cols-2 gap-4">{otherFields.map(detailInput)}</div>}
                 </div>
+              )}
+              {/* Inventory: keep count of the stock (Business and up) */}
+              {canInventory ? (
+                <div className="space-y-3 rounded-3xl border border-cream-300 bg-cream-100/60 p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-espresso-900">Keep count of stock</p>
+                      <p className="text-xs text-bark-500">Each sale takes it off. You'll see when it runs low.</p>
+                    </div>
+                    <Switch checked={!!editProduct.trackStock} onChange={on => setEditProduct(p => ({ ...p, trackStock: on }))} label="Keep count of stock" />
+                  </div>
+                  {editProduct.trackStock && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label htmlFor="product-stock" className="label">In stock</label>
+                        <input id="product-stock" className="input" type="number" min="0" step="1" inputMode="numeric"
+                          value={editProduct.stock ?? ''} onChange={e => setEditProduct(p => ({ ...p, stock: e.target.value === '' ? undefined : Number(e.target.value) }))} />
+                      </div>
+                      <div>
+                        <label htmlFor="product-low" className="label">Alert at</label>
+                        <input id="product-low" className="input" type="number" min="0" step="1" inputMode="numeric"
+                          value={editProduct.lowStockAt ?? DEFAULT_LOW_STOCK} onChange={e => setEditProduct(p => ({ ...p, lowStockAt: Number(e.target.value) }))} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="flex items-center gap-2 rounded-2xl border border-caramel-200 bg-caramel-50 px-4 py-3 text-xs text-espresso-800">
+                  <Lock className="h-4 w-4 shrink-0 text-caramel-600" aria-hidden="true" />
+                  Stock counts: {BUSINESS_UP.charAt(0).toLowerCase() + BUSINESS_UP.slice(1)}
+                </p>
               )}
               <label htmlFor="available" className="flex items-center gap-3 px-4 py-3 rounded-full bg-cream-200/60 border border-cream-300 cursor-pointer">
                 <input type="checkbox" id="available"

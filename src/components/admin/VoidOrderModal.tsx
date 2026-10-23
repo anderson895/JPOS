@@ -25,7 +25,7 @@ export default function VoidOrderModal({ order, onClose, onVoided }: {
     if (!ok || !currentUser) return;
     setBusy(true);
     try {
-      const change = await voidOrder(order.id, reason, currentUser);
+      const change = await voidOrder(order.id, reason, currentUser, order.items);
       onVoided(change);
       toast.success(`${order.orderNumber} is voided.`);
       onClose();

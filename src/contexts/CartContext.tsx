@@ -6,7 +6,8 @@ import type { CartItem, Product } from '@/types';
 
 interface CartContextType {
   items: CartItem[];
-  addItem: (product: Product, variantId?: string, variantName?: string, notes?: string) => void;
+  /** `trackStock`: take this sale's quantity off the product's stock (inventory). */
+  addItem: (product: Product, variantId?: string, variantName?: string, notes?: string, trackStock?: boolean) => void;
   removeItem: (productId: string, variantId?: string) => void;
   updateQuantity: (productId: string, quantity: number, variantId?: string) => void;
   /** A discount on one line (null removes it). */
@@ -50,7 +51,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setSeniorState(null);
   }, [userId]);
 
-  const addItem = useCallback((product: Product, variantId?: string, variantName?: string, notes?: string) => {
+  const addItem = useCallback((product: Product, variantId?: string, variantName?: string, notes?: string, trackStock?: boolean) => {
     const variant = product.variants?.find(v => v.id === variantId);
     const unitPrice = product.price + (variant?.priceModifier || 0);
 
@@ -71,6 +72,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         imageUrl: product.imageUrl,
         details: productDetails(product),
         unit: product.unit || '',
+        ...(trackStock ? { trackStock: true } : {}),
       }];
     });
   }, []);

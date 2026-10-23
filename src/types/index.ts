@@ -36,6 +36,8 @@ export interface Entitlements {
   discounts?: boolean;
   /** Voiding a sale. */
   voidSales?: boolean;
+  /** Stock counts, taken off by sales, with low-stock alerts. */
+  inventory?: boolean;
   /** Storage for pictures and sales data, in MB; null = no limit. Missing: the package decides (500 / 2048 / 10240). */
   storageMB?: number | null;
 }
@@ -188,6 +190,12 @@ export interface Product {
   unit?: string;
   /** Barcode or the shop's own code: a scanner adds the product in the POS. */
   sku?: string;
+  /** Inventory (Business and up): keep count of this product's stock. */
+  trackStock?: boolean;
+  /** How many are left (sales take theirs off; it can go below 0 when two counters sell the last one). */
+  stock?: number;
+  /** Alert when the stock is at or under this (default 5). */
+  lowStockAt?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -214,6 +222,8 @@ export interface OrderItem {
   /** Pesos off this line (an item discount) and the discount's name. */
   discount?: number;
   discountName?: string;
+  /** The sale took this quantity off the product's stock (a void puts it back). */
+  stockTracked?: boolean;
 }
 
 export type OrderStatus = 'pending' | 'preparing' | 'ready' | 'completed' | 'voided';
@@ -324,6 +334,8 @@ export interface CartItem {
   unit?: string;
   /** A discount on this line only. */
   discount?: DiscountPick | null;
+  /** The product keeps count of its stock (inventory). */
+  trackStock?: boolean;
 }
 
 /** tenants/{T}/discounts/{id}: a discount the store set up to pick at the POS. */

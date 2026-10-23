@@ -719,3 +719,12 @@ The owner's list (note.txt): logos and colors per shop, the shop's name on its s
 - **Super Admin → Shops:** a Storage column with each shop's use and bar.
 - Pricing cards: Starter now starts with "Point of sale", no "Cash + GCash/Maya QR" line, and says "Available on mobile and desktop"; Enterprise lists two-step sign-in (2FA) as coming soon.
 - **Verified** on the local test app: 9/9 (+1 test-only mismatch: 50 KB shows as 51 KB).
+
+## 35. Inventory (Business and up), and the package cards trimmed (2026-10-23)
+
+- **Inventory** (`src/lib/inventory.ts`): a product can **keep count of stock** (Products → the product → "Keep count of stock", In stock, Alert at; default 5). Product cards and POS tiles show "12 left", "Only 2 left" (amber) or "Out of stock" (red).
+- **POS:** a sale can't take more than what's left ("Only 3 … in stock"); out-of-stock tiles are off. A sale takes its quantity off in the same save; if that part is refused (product deleted or not counted any more) the sale is still saved.
+- **Void** puts the sale's stock back. **Dashboard → Running low** lists what's at or under its alert number, emptiest first.
+- Starter sees "Stock counts: included in the Business and Enterprise packages."
+- **Package cards (owner):** Starter: Point of sale, Barcode and QR, Today & weekly reports, Available on mobile and desktop (no Cash/GCash, VAT or Senior/PWD lines; those features are still in every package). Business: Customizable logo and theme, Void sales with a reason, Inventory and low-stock alerts, reports, trends, RFID. Enterprise adds Advanced point of sale (soon). The hero lost its icons and got more room.
+- **Verified** on the local test app: inventory 9/9; rules 231/231; unit 41/41.
