@@ -29,7 +29,7 @@ const FEATURES: Record<PlanId, Feature[]> = {
     { label: 'All reports + PDF' }, { label: 'Sales trends' }, { label: 'RFID card login' },
   ],
   enterprise: [
-    { label: 'Everything in Business' }, { label: 'Priority support' },
+    { label: 'Everything in Business' }, { label: 'Priority support' }, { label: 'Advanced point of sale', soon: true },
     { label: 'AI assistant for your sales', soon: true }, { label: 'Two-step sign-in (2FA)', soon: true }, { label: 'Many branches, one account', soon: true },
     { label: 'Sales forecasts', soon: true }, { label: 'Customer rewards', soon: true },
   ],
