@@ -25,7 +25,7 @@ const FEATURES: Record<PlanId, Feature[]> = {
   ],
   business: [
     { label: 'Everything in Starter' }, { label: 'Custom branding (logo and colors)' },
-    { label: 'Void sales' }, { label: 'Inventory and low-stock alerts' },
+    { label: 'Void sales' }, { label: 'Inventory and low-stock alerts' }, { label: 'Audit trail' },
     { label: 'All reports + PDF' }, { label: 'Sales trends' }, { label: 'RFID card login' },
   ],
   enterprise: [

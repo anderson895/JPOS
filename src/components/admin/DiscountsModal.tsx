@@ -8,6 +8,7 @@ import {
 } from '@/lib/discounts';
 import { DISCOUNT_NAME_MAX, discountValueLabel, savedDiscountProblem, type DiscountKind } from '@/lib/pricing';
 import { cn } from '@/lib/utils';
+import { changes, logActivity } from '@/lib/activity';
 import type { SavedDiscount } from '@/types';
 
 const EMPTY = { name: '', kind: 'percent' as DiscountKind, value: '' };
@@ -37,9 +38,11 @@ export default function DiscountsModal({ onClose }: { onClose: () => void }) {
         const was = list?.find(d => d.id === editId);
         await updateSavedDiscount(editId, { ...draft, active: was?.active ?? true });
         toast.success('Discount saved.');
+        logActivity('discount.edit', draft.name, changes([['Name', was?.name, draft.name.trim()], ['Amount', was ? discountValueLabel(was) : '', discountValueLabel(draft)]]));
       } else {
         await addSavedDiscount({ ...draft, active: true });
         toast.success('Discount added.');
+        logActivity('discount.add', draft.name, discountValueLabel(draft));
       }
       setForm(EMPTY);
       setEditId(null);
@@ -63,6 +66,7 @@ export default function DiscountsModal({ onClose }: { onClose: () => void }) {
     setBusyId(d.id);
     try {
       await deleteSavedDiscount(d.id);
+      logActivity('discount.delete', d.name, discountValueLabel(d));
       if (editId === d.id) { setEditId(null); setForm(EMPTY); }
       toast.success('Discount deleted.');
     } catch {

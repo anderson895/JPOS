@@ -337,6 +337,19 @@ service cloud.firestore {
         allow read: if memberOf(t);
         allow write: if adminOf(t) && hasAccess(t);
       }
+      // Audit trail (Business and up): who did what, and when. Every entry carries
+      // the real person and the server's time; nobody can change or delete one
+      match /activity/{id} {
+        allow read: if adminOf(t);
+        allow create: if memberOf(t) && shopCan(t, 'auditTrail')
+          && d().keys().hasOnly(['action', 'by', 'byName', 'at', 'target', 'note'])
+          && d().by == request.auth.uid && d().at == request.time
+          && d().action is string && d().action.size() >= 1 && d().action.size() <= 30
+          && d().byName is string && d().byName.size() <= 60
+          && d().target is string && d().target.size() <= 120
+          && d().note is string && d().note.size() <= 300;
+        allow update, delete: if false;
+      }
       // The store's saved discounts ("Employee 10%", "Promo ₱50"), picked at the POS
       match /discounts/{id} {
         allow read: if memberOf(t);

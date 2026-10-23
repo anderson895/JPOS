@@ -4,6 +4,7 @@ import { getPaymentSettings, savePaymentSettings } from '@/lib/storeSettings';
 import { paymentSettingsProblem, WALLET_LABEL, type WalletMethod } from '@/lib/eWallet';
 import { uploadImage } from '@/lib/cloudinary';
 import { STORAGE_FULL, useStorage } from '@/lib/usage';
+import { changes, logActivity } from '@/lib/activity';
 import { cn, formatDateTime } from '@/lib/utils';
 import PageHeader from '@/components/shared/PageHeader';
 import Portal from '@/components/shared/Portal';
@@ -109,6 +110,13 @@ export default function AdminPaymentSettings() {
       return;
     }
     toast.success('Payment settings saved');
+    logActivity('payment.settings', '', changes([
+      ['GCash', saved?.gcash.enabled ? 'on' : 'off', draft.gcash.enabled ? 'on' : 'off'],
+      ['GCash QR', saved?.gcash.qrImageUrl, draft.gcash.qrImageUrl === saved?.gcash.qrImageUrl ? saved?.gcash.qrImageUrl : 'new QR'],
+      ['Maya', saved?.maya.enabled ? 'on' : 'off', draft.maya.enabled ? 'on' : 'off'],
+      ['Maya QR', saved?.maya.qrImageUrl, draft.maya.qrImageUrl === saved?.maya.qrImageUrl ? saved?.maya.qrImageUrl : 'new QR'],
+      ['Card', saved?.card.enabled ? 'on' : 'off', draft.card.enabled ? 'on' : 'off'],
+    ]).replace(/https?:\/\/\S+/g, 'old QR'));
     setConfirmQr(null);
     try {
       const fresh = await getPaymentSettings();

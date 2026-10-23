@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { signedOutHome } from '@/lib/terminal';
 import { useAuth } from '@/contexts/AuthContext';
-import { LayoutDashboard, BarChart3, ShoppingCart, Users, Wallet, CreditCard, ShieldCheck, Package, Store } from 'lucide-react';
+import { LayoutDashboard, BarChart3, ShoppingCart, Users, Wallet, CreditCard, ShieldCheck, Package, Store, History } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { watchPendingRequests } from '@/lib/platform';
 import { addMissingBranding } from '@/lib/storeProfile';
@@ -16,6 +16,7 @@ const navItems: ShellNavItem[] = [
   { to: '/admin/products', icon: Package,          label: 'Products' },
   { to: '/admin/reports',  icon: BarChart3,       label: 'Reports' },
   { to: '/admin/staff',    icon: Users,           label: 'Manage Staff' },
+  { to: '/admin/activity', icon: History,         label: 'Activity' },
   { to: '/admin/store',    icon: Store,           label: 'Store Settings' },
   { to: '/admin/payments', icon: Wallet,          label: 'Payment Settings' },
   { to: '/admin/billing',  icon: CreditCard,      label: 'Subscription' },

@@ -15,6 +15,7 @@ import PageHeader from '@/components/shared/PageHeader';
 import Switch from '@/components/shared/Switch';
 import { cn } from '@/lib/utils';
 import { BUSINESS_UP, hasFeature } from '@/lib/entitlements';
+import { changes, logActivity } from '@/lib/activity';
 import type { BusinessType, ReceiptInfo } from '@/types';
 
 interface Draft {
@@ -119,6 +120,14 @@ export default function StoreSettings() {
         receipt: { ...d.receipt, tin: d.receipt.tin.trim(), address: d.receipt.address.trim(), phone: d.receipt.phone.trim(), footer: d.receipt.footer.trim() },
       } : d));
       toast.success('Store settings saved.');
+      logActivity('store.settings', '', changes([
+        ['Name', saved?.name, draft.name.trim()],
+        ['Kind', saved?.businessType, draft.businessType],
+        ['Logo', saved?.logoUrl ? 'yes' : 'none', draft.logoUrl ? 'yes' : 'none'],
+        ['Colors', saved?.theme, draft.theme],
+        ['VAT', saved?.receipt.vatRegistered ? 'yes' : 'no', draft.receipt.vatRegistered ? 'yes' : 'no'],
+        ['TIN', saved?.receipt.tin, draft.receipt.tin.trim()],
+      ]));
     } catch (err) {
       console.error('[StoreSettings] save', err);
       const denied = err instanceof FirebaseError && err.code === 'permission-denied';

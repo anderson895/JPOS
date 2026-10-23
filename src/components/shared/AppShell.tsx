@@ -4,7 +4,9 @@ import type { LucideIcon } from 'lucide-react';
 import { Loader2, LogOut, Menu, X, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import BrandMark from '@/components/shared/BrandMark';
 import { applyTheme } from '@/components/shared/theme';
-import { useStoreBrand } from '@/contexts/AuthContext';
+import { useAuth, useStoreBrand } from '@/contexts/AuthContext';
+import { hasFeature } from '@/lib/entitlements';
+import { logActivity, setActivityLogging } from '@/lib/activity';
 import InstallAppButton from '@/components/shared/InstallApp';
 import SubscriptionBanner from '@/components/shared/SubscriptionBanner';
 import type { User } from '@/types';
@@ -56,6 +58,17 @@ export default function AppShell({
   // The shop's own name, logo and colors (Store Settings). Leaving the app
   // (sign-out) puts the JPOS colors back for the public pages.
   const brand = useStoreBrand();
+  // Audit trail (Business and up): actions are recorded with this person's name
+  const { tenant } = useAuth();
+  const auditOn = hasFeature(tenant, 'auditTrail');
+  useEffect(() => {
+    setActivityLogging(auditOn, user?.displayName || user?.email || '');
+    if (!auditOn || !user?.id) return;
+    const key = `jpos-signin-logged-${user.id}`;
+    try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); } catch { /* no session storage */ }
+    logActivity('signin');
+  }, [auditOn, user?.id, user?.displayName, user?.email]);
+  useEffect(() => () => setActivityLogging(false, ''), []);
   useEffect(() => { applyTheme(brand.theme); }, [brand.theme]);
   useEffect(() => () => applyTheme(null), []);
 

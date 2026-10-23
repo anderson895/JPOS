@@ -38,6 +38,8 @@ export interface Entitlements {
   voidSales?: boolean;
   /** Stock counts, taken off by sales, with low-stock alerts. */
   inventory?: boolean;
+  /** Audit trail: who did what, and when. */
+  auditTrail?: boolean;
   /** Storage for pictures and sales data, in MB; null = no limit. Missing: the package decides (500 / 2048 / 10240). */
   storageMB?: number | null;
 }

@@ -169,6 +169,8 @@ export default function Billing() {
                       <li>{e?.staffLimit == null ? 'Unlimited accounts' : `Up to ${e.staffLimit} accounts`}</li>
                       {e && hasFeature({ plan: id, entitlements: e }, 'branding') && <li>Custom branding (logo and colors)</li>}
                       {e && hasFeature({ plan: id, entitlements: e }, 'voidSales') && <li>Void sales</li>}
+                      {e && hasFeature({ plan: id, entitlements: e }, 'inventory') && <li>Inventory</li>}
+                      {e && hasFeature({ plan: id, entitlements: e }, 'auditTrail') && <li>Audit trail</li>}
                       {e?.fullReports && <li>Monthly reports + PDF</li>}
                       {e?.trends && <li>Sales trends</li>}
                       {e?.rfid && <li>RFID card login</li>}

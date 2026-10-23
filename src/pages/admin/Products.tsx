@@ -8,6 +8,7 @@ import { STORAGE_FULL, useStorage } from '@/lib/usage';
 import { cn, formatCurrency } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { BUSINESS_UP, hasFeature } from '@/lib/entitlements';
+import { changes, logActivity } from '@/lib/activity';
 import { DEFAULT_LOW_STOCK, isLow, isOut, stockLabel } from '@/lib/inventory';
 import Switch from '@/components/shared/Switch';
 import {
@@ -121,11 +122,20 @@ export default function AdminProducts() {
         updatedAt: new Date().toISOString(),
       };
       if (editId) {
+        const before = products.find(p => p.id === editId);
         await updateDoc(tenantDoc('products', editId), data);
         toast.success('Product updated');
+        logActivity('product.edit', name, changes([
+          ['Name', before?.name, name],
+          ['Price', before ? formatCurrency(before.price) : '', formatCurrency(price)],
+          ['Cost', before ? formatCurrency(before.cost ?? 0) : '', formatCurrency(cost)],
+          ...(canInventory ? [['Stock', before?.trackStock ? before.stock ?? 0 : 'not counted', data.trackStock ? data.stock : 'not counted'] as [string, unknown, unknown]] : []),
+          ['Code', before?.sku, sku],
+        ]));
       } else {
         await addDoc(tenantCol('products'), { ...data, createdAt: new Date().toISOString() });
         toast.success('Product added');
+        logActivity('product.add', name, `Price: ${formatCurrency(price)}`);
       }
       setModalOpen(false);
       setEditId(null);
@@ -144,6 +154,7 @@ export default function AdminProducts() {
     setBusyId(id);
     try {
       await deleteDoc(tenantDoc('products', id));
+      logActivity('product.delete', products.find(p => p.id === id)?.name ?? '');
       setProducts(prev => prev.filter(p => p.id !== id));
       toast.success('Product deleted');
     } catch {
@@ -157,6 +168,7 @@ export default function AdminProducts() {
     setBusyId(p.id);
     try {
       await updateDoc(tenantDoc('products', p.id), { isAvailable: !p.isAvailable });
+      logActivity(p.isAvailable ? 'product.hide' : 'product.show', p.name);
       setProducts(prev => prev.map(x => x.id === p.id ? { ...x, isAvailable: !x.isAvailable } : x));
     } catch {
       toast.error('Failed to update');

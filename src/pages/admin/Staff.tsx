@@ -7,6 +7,7 @@ import { hasAccess } from '@/lib/entitlements';
 import { getAuthErrorMessage } from '@/lib/authErrors';
 import { uploadImage } from '@/lib/cloudinary';
 import { STORAGE_FULL, useStorage } from '@/lib/usage';
+import { changes, logActivity } from '@/lib/activity';
 import { useAuth } from '@/contexts/AuthContext';
 import Portal from '@/components/shared/Portal';
 import PageHeader from '@/components/shared/PageHeader';
@@ -158,6 +159,14 @@ export default function AdminStaff() {
         }
         if (oldCard) batch.delete(tenantDoc('rfidCards', oldTag));
         await batch.commit();
+        {
+          const before = staff.find(s => s.id === editId);
+          logActivity('staff.edit', data.displayName, changes([
+            ['Name', before?.displayName, data.displayName],
+            ['Role', before?.role, data.role],
+            ['RFID card', before?.rfidTag ? 'set' : 'none', newTag ? 'set' : 'none'],
+          ]));
+        }
         toast.success(
           newTag && cardPassword ? 'Staff updated & RFID credentials saved'
           : isAdminRole && oldCard ? "Staff updated — RFID card removed (admins can't use RFID)"
@@ -183,6 +192,7 @@ export default function AdminStaff() {
           await batch.commit();
         });
         toast.success('Staff account created');
+        logActivity('staff.add', editStaff.displayName?.trim() || email, `Role: ${editStaff.role ?? 'staff'}`);
       }
       setModalOpen(false);
       setEditId(null);
@@ -212,6 +222,7 @@ export default function AdminStaff() {
         if (card.exists() && card.data().userId === id) batch.delete(card.ref);
       }
       await batch.commit();
+      logActivity('staff.delete', member?.displayName || member?.email || '');
       setStaff(prev => prev.filter(s => s.id !== id));
       toast.success('Staff deleted');
     } catch { toast.error('Failed to delete'); }
@@ -223,6 +234,7 @@ export default function AdminStaff() {
     setBusyId(s.id);
     try {
       await updateDoc(doc(db, 'users', s.id), { isActive: !s.isActive });
+      logActivity(s.isActive ? 'staff.off' : 'staff.on', s.displayName || s.email);
       setStaff(prev => prev.map(x => x.id === s.id ? { ...x, isActive: !x.isActive } : x));
     } catch { toast.error('Failed to update'); }
     finally { setBusyId(null); }

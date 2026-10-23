@@ -231,6 +231,25 @@ await t('admin voids a sale and puts the stock back', 'allow', () => {
   return b.commit();
 });
 
+// ── Audit trail ────────────────────────────────────────────────────────────────
+const entry = (uid, extra = {}) => ({ action: 'product.edit', by: uid, byName: 'Name', at: serverTimestamp(), target: 'Water', note: 'Price: ₱20 → ₱25', ...extra });
+await t('admin writes an activity entry', 'allow', () => setDoc(doc(as('adminA'), 'tenants/A/activity/e1'), entry('adminA')));
+await t('a cashier writes one (e.g. signed in)', 'allow', () => setDoc(doc(as('staffA'), 'tenants/A/activity/e1'), entry('staffA', { action: 'signin', target: '', note: '' })));
+await t("an entry in someone else's name", 'deny', () => setDoc(doc(as('staffA'), 'tenants/A/activity/e1'), entry('adminA')));
+await t('an entry with a made-up time', 'deny', () => setDoc(doc(as('adminA'), 'tenants/A/activity/e1'), entry('adminA', { at: Timestamp.fromMillis(now - DAY) })));
+await t('an entry with an extra field', 'deny', () => setDoc(doc(as('adminA'), 'tenants/A/activity/e1'), entry('adminA', { ip: '1.2.3.4' })));
+await t('Starter: an activity entry', 'deny', () => setDoc(doc(as('adminB'), 'tenants/B/activity/e1'), entry('adminB')));
+await t('admin reads the activity', 'allow', () => getDocs(collection(as('adminA'), 'tenants/A/activity')));
+await t('a cashier reads the activity', 'deny', () => getDocs(collection(as('staffA'), 'tenants/A/activity')));
+await t('change an entry', 'deny', async () => {
+  await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'tenants/A/activity/old'), { action: 'sale.void', by: 'adminA', byName: 'x', at: Timestamp.fromMillis(now), target: '', note: '' }));
+  return updateDoc(doc(as('adminA'), 'tenants/A/activity/old'), { note: 'nothing happened' });
+});
+await t('delete an entry', 'deny', async () => {
+  await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'tenants/A/activity/old'), { action: 'sale.void', by: 'adminA', byName: 'x', at: Timestamp.fromMillis(now), target: '', note: '' }));
+  return deleteDoc(doc(as('adminA'), 'tenants/A/activity/old'));
+});
+
 await env.cleanup();
 for (const [s, e, n] of results) console.log(`${s}  [${e.padEnd(5)}]  ${n}`);
 const failed = results.filter(r => r[0] === 'FAIL').length;

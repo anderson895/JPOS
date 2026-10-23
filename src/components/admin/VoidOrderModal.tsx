@@ -5,6 +5,7 @@ import { FirebaseError } from 'firebase/app';
 import Portal from '@/components/shared/Portal';
 import { useAuth } from '@/contexts/AuthContext';
 import { voidOrder, VOID_REASON_MAX } from '@/lib/voidOrder';
+import { logActivity } from '@/lib/activity';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import type { Order } from '@/types';
 
@@ -27,6 +28,7 @@ export default function VoidOrderModal({ order, onClose, onVoided }: {
     try {
       const change = await voidOrder(order.id, reason, currentUser, order.items);
       onVoided(change);
+      logActivity('sale.void', order.orderNumber, `${formatCurrency(order.total)} · ${reason.trim()}`);
       toast.success(`${order.orderNumber} is voided.`);
       onClose();
     } catch (err) {

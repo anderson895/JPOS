@@ -735,3 +735,9 @@ The owner's list (note.txt): logos and colors per shop, the shop's name on its s
 - **Cookie notice** (`CookieNotice`, `src/lib/consent.ts`): "This website uses cookies" with Necessary (always on) and Preferences, and Allow all / Allow selection / Only necessary. Only what JPOS uses is listed: no statistics, ads or tracking. Without Preferences the device doesn't remember its shop sign-in page or an unfinished sign-up. Footer → Cookie settings opens it again.
 - **Enterprise: 100 accounts** by default; Super Admin → Settings → "Accounts per shop" sets each package's number (empty = no limit), saved with an audit entry. Shops get the new number with their next approved payment.
 - **Verified** on the local test app: cookie notice 7/7, sign-in card balance 6/6.
+
+## 37. Audit trail (Business and up) (2026-10-23)
+
+- **Admin → Activity** (`src/pages/admin/Activity.tsx`, `src/lib/activity.ts`): who did what, and when, newest first, with a person filter and Show more. Recorded: sign-ins (once per session), products added / changed (name, price, cost, stock, code: before → after) / deleted / put on or taken off sale, voided sales (amount and reason), discounts, people (added, changed, removed, on/off), Store Settings and Payment Settings changes.
+- Starter sees "The activity list: included in the Business and Enterprise packages." The Business card and the Subscription page list Inventory and Audit trail.
+- **Verified** on the local test app: 5/5.
