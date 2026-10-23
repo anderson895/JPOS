@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Check, Eye, EyeOff, KeyRound, Loader2, Lock, Mail, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Loader2, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { resetPassword, sendPasswordResetCode } from '@/lib/account';
@@ -94,9 +94,7 @@ export default function ForgotPassword({ initialEmail, terminalSlug, signInPage,
         <ArrowLeft className="w-4 h-4" aria-hidden="true" /> {step === 'code' ? 'Back' : 'Back to sign in'}
       </button>
       <div>
-        <h3 className="flex items-center gap-2 font-display text-xl text-espresso-900">
-          <KeyRound className="w-5 h-5 text-caramel-600" aria-hidden="true" /> Reset your password
-        </h3>
+        <h3 className="font-display text-xl text-espresso-900">Reset your password</h3>
         <p className="mt-1 text-sm text-bark-600">
           {step === 'email'
             ? "We'll email you a 6-digit code."
@@ -109,13 +107,12 @@ export default function ForgotPassword({ initialEmail, terminalSlug, signInPage,
           <div>
             <label htmlFor="reset-email" className="label">Email</label>
             <div className="relative">
-              <Mail className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-bark-500 pointer-events-none" />
               <input id="reset-email" type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)}
-                placeholder="you@example.com" className="input pl-11 py-3" required autoFocus />
+                placeholder="you@example.com" className="input py-3" required autoFocus />
             </div>
           </div>
           <button type="submit" disabled={!!busy} className="btn-primary w-full py-3 text-[15px]">
-            {busy === 'send' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+            {busy === 'send' && <Loader2 className="w-4 h-4 animate-spin" />}
             {busy === 'send' ? 'Sending…' : 'Send code'}
           </button>
         </form>
@@ -126,9 +123,8 @@ export default function ForgotPassword({ initialEmail, terminalSlug, signInPage,
           <div>
             <label htmlFor="reset-password" className="label">New password</label>
             <div className="relative">
-              <Lock className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-bark-500 pointer-events-none" />
               <input id="reset-password" ref={passwordRef} type={showPass ? 'text' : 'password'} autoComplete="new-password"
-                value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 6 characters" className="input pl-11 pr-12 py-3" />
+                value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 6 characters" className="input pr-12 py-3" />
               <button type="button" onClick={() => setShowPass(v => !v)}
                 className="absolute right-4 top-1/2 -translate-y-1/2 text-bark-500 hover:text-espresso-800" aria-label={showPass ? 'Hide password' : 'Show password'}>
                 {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -136,7 +132,7 @@ export default function ForgotPassword({ initialEmail, terminalSlug, signInPage,
             </div>
           </div>
           <button type="submit" disabled={!!busy || code.length !== 6 || password.length < 6} className="btn-primary w-full py-3 text-[15px]">
-            {busy === 'save' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            {busy === 'save' && <Loader2 className="w-4 h-4 animate-spin" />}
             {busy === 'save' ? 'Saving…' : 'Save new password'}
           </button>
           <button type="button" onClick={() => send(true)} disabled={waitSec > 0 || !!busy} className="btn-secondary w-full">

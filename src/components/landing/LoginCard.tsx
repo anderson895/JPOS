@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { FirebaseError } from 'firebase/app';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthErrorMessage, CANCELLED_SIGN_IN_CODES } from '@/lib/authErrors';
-import { CreditCard, KeyRound, Eye, EyeOff, Loader2, Wifi, Mail, Lock, LogIn, UserPlus } from 'lucide-react';
+import { CreditCard, Eye, EyeOff, Loader2, Wifi } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import CreamCard from '@/components/shared/CreamCard';
 import GoogleIcon from '@/components/shared/GoogleIcon';
@@ -141,34 +141,25 @@ export default function LoginCard({ terminalSlug, brand }: {
     <div id="login" className="relative w-full max-w-[420px] mx-auto scroll-mt-28">
       <CreamCard>
 
-        {/* Header */}
+        {/* Header: the JPOS logo already says "JPOS · Point of Sale"; a shop's page shows its own name */}
         <div className="relative text-center">
           {brand?.hasLogo
             ? <img src={brand.logoUrl} alt="" className="w-20 h-20 mx-auto rounded-2xl object-cover shadow-md ring-1 ring-cream-400/70" />
-            : <img src="/logo.png" alt="JPOS logo" className="w-20 h-20 mx-auto rounded-full mix-blend-multiply" />}
-          <h2 className={cn('mt-1 font-display font-semibold text-espresso-900 tracking-wide break-words', (brand?.name ?? 'JPOS').length > 18 ? 'text-2xl' : 'text-3xl')}>
-            {brand?.name ?? 'JPOS'}
-          </h2>
-          <div className="mt-1 flex items-center justify-center gap-2 text-[13px] font-medium text-espresso-800">
-            <span className="h-px w-8 sm:w-12 bg-gradient-to-r from-transparent to-caramel-500" />
-            <span className="w-1 h-1 rotate-45 bg-caramel-500" />
-            Point of Sale
-            <span className="w-1 h-1 rotate-45 bg-caramel-500" />
-            <span className="h-px w-8 sm:w-12 bg-gradient-to-l from-transparent to-caramel-500" />
-          </div>
+            : <img src="/logo.png" alt="JPOS, Point of Sale" className="w-24 h-24 mx-auto rounded-full mix-blend-multiply" />}
+          {brand ? (
+            <h2 className={cn('mt-2 font-display font-semibold text-espresso-900 tracking-wide break-words', brand.name.length > 18 ? 'text-2xl' : 'text-3xl')}>
+              {brand.name}
+            </h2>
+          ) : (
+            <h2 className="sr-only">Sign in to JPOS</h2>
+          )}
         </div>
 
         {/* Sign in here, or open the sign-up page (the public page) */}
         {!terminalSlug && (
           <nav className="segmented relative mt-6" aria-label="Sign in or create an account">
-            <span className="segmented-item active" aria-current="page">
-              <LogIn className="w-4 h-4" />
-              Sign in
-            </span>
-            <Link to="/subscribe?plan=trial" className="segmented-item">
-              <UserPlus className="w-4 h-4" />
-              Create account
-            </Link>
+            <span className="segmented-item active" aria-current="page">Sign in</span>
+            <Link to="/subscribe?plan=trial" className="segmented-item">Create account</Link>
           </nav>
         )}
 
@@ -182,7 +173,6 @@ export default function LoginCard({ terminalSlug, brand }: {
             onClick={() => setMode('password')}
             className={`segmented-item ${mode === 'password' ? 'active' : ''}`}
           >
-            <KeyRound className="w-4 h-4" />
             Password
           </button>
           <button
@@ -192,7 +182,6 @@ export default function LoginCard({ terminalSlug, brand }: {
             onClick={() => setMode('rfid')}
             className={`segmented-item ${mode === 'rfid' ? 'active' : ''}`}
           >
-            <CreditCard className="w-4 h-4" />
             RFID Card
           </button>
         </div>
@@ -212,7 +201,6 @@ export default function LoginCard({ terminalSlug, brand }: {
                 <div>
                   <label htmlFor="login-email" className="label">Email</label>
                   <div className="relative">
-                    <Mail className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-bark-500 pointer-events-none" />
                     <input
                       id="login-email"
                       type="email"
@@ -220,7 +208,7 @@ export default function LoginCard({ terminalSlug, brand }: {
                       value={email}
                       onChange={e => setEmail(e.target.value)}
                       placeholder="you@example.com"
-                      className="input pl-11 py-3"
+                      className="input py-3"
                       required
                     />
                   </div>
@@ -234,7 +222,6 @@ export default function LoginCard({ terminalSlug, brand }: {
                     </button>
                   </div>
                   <div className="relative">
-                    <Lock className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-bark-500 pointer-events-none" />
                     <input
                       id="login-password"
                       type={showPass ? 'text' : 'password'}
@@ -242,7 +229,7 @@ export default function LoginCard({ terminalSlug, brand }: {
                       value={password}
                       onChange={e => setPassword(e.target.value)}
                       placeholder="Enter your password"
-                      className="input pl-11 pr-12 py-3"
+                      className="input pr-12 py-3"
                       required
                     />
                     <button
@@ -260,7 +247,7 @@ export default function LoginCard({ terminalSlug, brand }: {
                   disabled={loading || googleLoading}
                   className="btn-primary w-full py-3 text-[15px] !mt-6"
                 >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
+                  {loading && <Loader2 className="w-4 h-4 animate-spin" />}
                   {loading ? 'Signing in...' : 'Sign In'}
                 </button>
               </form>
@@ -348,13 +335,6 @@ export default function LoginCard({ terminalSlug, brand }: {
           )}
         </div>
 
-        {!terminalSlug && (
-          <p className="relative mt-5 flex items-start gap-2 text-left text-[11px] leading-relaxed text-bark-500">
-            <CreditCard className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-caramel-600" aria-hidden="true" />
-            Have an RFID card? Tap it on your shop's POS device.
-          </p>
-        )}
-
         {/* A shop's page: "Powered by JPOS" goes to the JPOS main page, and the
             device stops coming back to this shop page (forgetSignInPage) */}
         {terminalSlug ? (
@@ -368,11 +348,7 @@ export default function LoginCard({ terminalSlug, brand }: {
               Powered by <span className="font-semibold text-espresso-700">JPOS</span>
             </button>
           </p>
-        ) : (
-          <p className="relative text-center text-bark-500 text-[11px] mt-6">
-            JPOS v1.0 · <span className="text-espresso-700">Business Management System</span>
-          </p>
-        )}
+        ) : null}
       </CreamCard>
     </div>
   );

@@ -26,7 +26,7 @@ export default function Hero() {
       />
       <div className="absolute inset-0 -z-10 bg-cream-100/45 lg:bg-transparent lg:bg-gradient-to-r lg:from-cream-100/45 lg:via-cream-100/10 lg:to-transparent" />
 
-      <div className="relative max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-10 pt-28 sm:pt-32 lg:pt-36 pb-14 lg:pb-24 grid gap-10 sm:gap-12 lg:gap-10 items-center lg:grid-cols-[1.15fr_minmax(0,420px)] xl:grid-cols-[1.3fr_minmax(0,420px)_0.22fr]">
+      <div className="relative max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-10 pt-28 sm:pt-32 lg:pt-36 pb-14 lg:pb-24 grid gap-10 sm:gap-12 lg:gap-10 items-center lg:grid-cols-[1.15fr_minmax(0,420px)] xl:grid-cols-[1.3fr_minmax(0,420px)]">
         {/* Copy: centered on phones and tablets, left-aligned next to the card on wide screens */}
         <div className="animate-slide-up text-center lg:text-left">
           <p className="relative inline-block whitespace-nowrap font-script text-[30px] min-[400px]:text-4xl sm:text-5xl text-caramel-600">
@@ -97,7 +97,7 @@ export default function Hero() {
         </div>
 
         {/* Sign-in card */}
-        <div className="animate-slide-up">
+        <div className="animate-slide-up lg:flex lg:justify-end lg:[&>#login]:mr-0">
           <LoginCard />
         </div>
       </div>
