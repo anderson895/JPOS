@@ -6,6 +6,7 @@ import { ApiError } from './http.js';
 import { firestoreStore, type Store } from './store.js';
 import { newCode } from './signupCode.js';
 import type { Message } from './mail.js';
+import { LOGO_CID, LOGO_PNG_BASE64 } from './emailLogo.js';
 
 export type Env = Record<string, string | undefined>;
 
@@ -114,7 +115,11 @@ function gmailMailer(env: Env): Mailer {
   const from = { name: env.MAIL_FROM_NAME?.trim() || 'JPOS', address: user };
   return {
     async send(to, message) {
-      await gmail!.sendMail({ from, to, subject: message.subject, text: message.text, html: message.html });
+      // The logo travels inside the email (no picture loaded from the web)
+      const attachments = message.html.includes(`cid:${LOGO_CID}`)
+        ? [{ filename: 'jpos-logo.png', content: Buffer.from(LOGO_PNG_BASE64, 'base64'), contentType: 'image/png', cid: LOGO_CID, contentDisposition: 'inline' as const }]
+        : undefined;
+      await gmail!.sendMail({ from, to, subject: message.subject, text: message.text, html: message.html, attachments });
     },
   };
 }
@@ -137,7 +142,9 @@ function outboxMailer(): Mailer {
   return {
     async send(to, message) {
       const box = localOutbox();
-      box.push({ ...message, to, at: new Date().toISOString() });
+      // The local preview (/__dev/mail) shows the logo as a picture right in the page
+      const html = message.html.split(`cid:${LOGO_CID}`).join(`data:image/png;base64,${LOGO_PNG_BASE64}`);
+      box.push({ ...message, html, to, at: new Date().toISOString() });
       if (box.length > 50) box.shift();
       console.log(`[local email, not sent] to ${to.join(', ')}: ${message.subject}`);
     },

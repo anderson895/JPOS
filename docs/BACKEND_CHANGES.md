@@ -743,3 +743,5 @@ The public landing page used to download the whole app in one 1.7 MB file: every
 **Deploy order:** **rules first, then the app.** The new rules accept the current live app (no `businessType`, no branding doc); the new app's sign-up needs the new rules.
 
 **Also on this branch:** a shop's sign-in page refuses other shops' accounts and logout returns to where you signed in (`AuthContext`, `src/lib/terminal.ts`); Super Admin email change (`api/account/email-code.ts`, `email-finish.ts`, api tests 58/58).
+
+**Emails (owner: "lagyan ng design at logo"):** every email (sign-up code, email-change code, new payment) uses one design: an espresso header with the JPOS logo, a caramel line, a cream card, the code in a big boxed block, and an inbox preview line. Tables + inline styles for Gmail/Outlook/phones. The logo (`api/_lib/emailLogo.ts`, 112 px PNG made from `public/logo.png`) is sent inside the email (`cid:`), so nothing loads from the web and the code emails still have no links; the local inbox preview (`/__dev/mail`) shows it as a picture.
