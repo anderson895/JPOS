@@ -7,6 +7,7 @@ import { usePlatformSettings } from '@/components/shared/ContactOwner';
 import { isPlanChoice, type PlanChoice } from '@/components/shared/PlanCards';
 import { getAuthErrorMessage, CANCELLED_SIGN_IN_CODES } from '@/lib/authErrors';
 import { createShop, isSlugAvailable, slugify, slugProblem, startTrial, SIGNUP_CLOSED_MESSAGE, SlugTakenError } from '@/lib/subscriptions';
+import { rememberSignInPage } from '@/lib/terminal';
 import type { PlanId } from '@/types';
 
 const DRAFT_KEY = 'jpos-signup-draft';
@@ -197,6 +198,7 @@ export function useSignUp(initialChoice: PlanChoice | null) {
     setWorking('Creating your account…');
     try {
       await finishSignUp({ email: codeSentTo, code: value, password, name: ownerName });
+      rememberSignInPage('/login');
     } catch (err) {
       setWorking(null);
       setCode('');
@@ -232,6 +234,7 @@ export function useSignUp(initialChoice: PlanChoice | null) {
     let isNew = false;
     try {
       ({ isNew } = await loginWithGoogle());
+      rememberSignInPage('/login');
     } catch (err) {
       if (!(err instanceof FirebaseError && CANCELLED_SIGN_IN_CODES.includes(err.code))) showError(err, 'Google sign-in failed.');
       return;

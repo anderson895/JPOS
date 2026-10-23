@@ -18,8 +18,22 @@ export function rememberedTerminal(): string | null {
   try { return localStorage.getItem(KEY); } catch { return null; }
 }
 
-/** Where a signed-out user goes on this device. */
+const FROM_KEY = 'jpos-signed-in-from';
+
+/** Where this device's last sign-in happened (the landing page or a shop's page). */
+export function rememberSignInPage(path: string) {
+  try { localStorage.setItem(FROM_KEY, path); } catch { /* storage blocked */ }
+}
+
+/**
+ * Where a signed-out user goes on this device: back to the page they signed in
+ * on (the landing page or their shop's sign-in page). Without one, the shop
+ * page this device remembers, else the landing page.
+ */
 export function signedOutHome(): string {
+  let from: string | null = null;
+  try { from = localStorage.getItem(FROM_KEY); } catch { /* storage blocked */ }
+  if (from === '/login' || /^\/s\/[a-z0-9-]{1,60}$/.test(from ?? '')) return from as string;
   const slug = rememberedTerminal();
   return slug ? `/s/${slug}` : '/login';
 }

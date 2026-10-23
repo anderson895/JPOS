@@ -6,6 +6,7 @@ import { CreditCard, KeyRound, Eye, EyeOff, Loader2, Wifi, Mail, Lock, LogIn, Us
 import { Link } from 'react-router-dom';
 import CreamCard from '@/components/shared/CreamCard';
 import GoogleIcon from '@/components/shared/GoogleIcon';
+import { rememberSignInPage } from '@/lib/terminal';
 import toast from 'react-hot-toast';
 
 // RFID readers "type" a tag at roughly 10–30 ms per character; people are far slower.
@@ -21,6 +22,8 @@ export default function LoginCard({ terminalSlug }: {
   terminalSlug?: string;
 } = {}) {
   const { login, loginWithRFID, loginWithGoogle } = useAuth();
+  // Signing out returns here: this shop's sign-in page, or the landing page
+  const signInPage = terminalSlug ? `/s/${terminalSlug}` : '/login';
   // A terminal opens on RFID (cashiers tap their card); the public page is password/Google only
   const [mode, setMode] = useState<'password' | 'rfid'>(terminalSlug ? 'rfid' : 'password');
   const [email, setEmail] = useState('');
@@ -69,6 +72,7 @@ export default function LoginCard({ terminalSlug }: {
     setLoading(true);
     try {
       await loginWithRFID(tag, terminalSlug ?? '');
+      rememberSignInPage(signInPage);
       toast.success('Welcome back!');
     } catch (err) {
       toast.error(getAuthErrorMessage(err, 'RFID card not recognized'));
@@ -100,7 +104,8 @@ export default function LoginCard({ terminalSlug }: {
     if (!email || !password) return;
     setLoading(true);
     try {
-      await login(email, password);
+      await login(email, password, terminalSlug);
+      rememberSignInPage(signInPage);
       toast.success('Welcome back!');
     } catch (err) {
       toast.error(getAuthErrorMessage(err, 'Invalid email or password'));
@@ -112,7 +117,8 @@ export default function LoginCard({ terminalSlug }: {
   const handleGoogleLogin = async () => {
     setGoogleLoading(true);
     try {
-      await loginWithGoogle();
+      await loginWithGoogle(terminalSlug);
+      rememberSignInPage(signInPage);
       toast.success('Welcome back!');
     } catch (err) {
       // Closing the Google window is a choice, not an error

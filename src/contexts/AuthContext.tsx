@@ -34,11 +34,12 @@ interface AuthContextType {
   /** False while the Super Admin check is still running (so pages can wait for it). */
   superAdminChecked: boolean;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  /** On a shop's sign-in page (terminalSlug), only that shop's accounts get in. */
+  login: (email: string, password: string, terminalSlug?: string) => Promise<void>;
   /** RFID works only on a shop's own staff sign-in page (/s/:slug), so the card lookup knows the shop. */
   loginWithRFID: (rfidTag: string, terminalSlug: string) => Promise<void>;
   /** isNew: a Google account with no shop yet (it continues at /subscribe). */
-  loginWithGoogle: () => Promise<{ isNew: boolean }>;
+  loginWithGoogle: (terminalSlug?: string) => Promise<{ isNew: boolean }>;
   /** Sign-up step 1: emails a 6-digit code (from JPOS's Gmail). No account is made yet. */
   sendSignUpCode: (email: string) => Promise<void>;
   /** Sign-up step 2: a right code makes the account (email already confirmed), then signs in. */
@@ -67,6 +68,9 @@ async function fetchUserProfile(fbUser: FirebaseUser): Promise<User | null> {
  */
 const isUnconfirmedSignUp = (u: FirebaseUser) =>
   !u.emailVerified && u.providerData.length > 0 && u.providerData.every(p => p.providerId === 'password');
+
+/** A shop's sign-in page refused an account from another shop (or none). */
+const OTHER_SHOP = "This account isn't part of this shop. Sign in on your own shop's page.";
 
 /** slugs/{slug} -> the shop's id (a public lookup, so the staff sign-in page can find its shop). */
 async function resolveTerminalShop(slug: string): Promise<string> {
@@ -116,6 +120,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const rfidSignIn = useRef(false);
   // The shop whose staff sign-in page the card was tapped at; the card's account must belong to it.
   const rfidTenant = useRef<string | null>(null);
+  // Set while a password or Google sign-in runs on a shop's sign-in page: the
+  // account must belong to that shop, so the listener refuses any other one
+  // instead of briefly opening another shop's dashboard.
+  const terminalSignIn = useRef<string | null>(null);
 
   useEffect(() => {
     let unsubProfile: (() => void) | null = null;
@@ -174,7 +182,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (snap.metadata.hasPendingWrites) return;
           if (!snap.exists()) {
             // A card can't open an account that has no profile
-            if (rfidSignIn.current || shopId) { resetSession(); return; }
+            if (rfidSignIn.current || terminalSignIn.current || shopId) { resetSession(); return; }
             // Left behind by the old sign-up (email never confirmed): it can't
             // create a shop. Signing up again with the same email replaces it.
             if (isUnconfirmedSignUp(fbUser)) { resetSession(); return; }
@@ -187,6 +195,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const profile = { id: fbUser.uid, ...snap.data() } as User;
           // Admins can't sign in with an RFID card, and a card only opens its own shop
           if (rfidSignIn.current && (profile.role === 'admin' || profile.tenantId !== rfidTenant.current)) {
+            resetSession();
+            return;
+          }
+          // A shop's sign-in page only lets in that shop's accounts
+          if (terminalSignIn.current && profile.tenantId !== terminalSignIn.current) {
             resetSession();
             return;
           }
@@ -231,18 +244,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const login = async (email: string, password: string) => {
-    const cred = await signInWithEmailAndPassword(auth, email, password);
-    const userData = await fetchUserProfile(cred.user);
-    if (!userData && isUnconfirmedSignUp(cred.user)) {
-      await signOut(auth);
-      throw new Error("This email was never confirmed. Sign up again with it and we'll send you a code.");
-    }
-    // No profile = an owner who hasn't finished setting up their shop: the app
-    // takes them to /subscribe to continue.
-    if (userData && !userData.isActive) {
-      await signOut(auth);
-      throw new Error('This account has been deactivated. Contact your administrator.');
+  const login = async (email: string, password: string, terminalSlug?: string) => {
+    const shopId = terminalSlug ? await resolveTerminalShop(terminalSlug) : null;
+    terminalSignIn.current = shopId;
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      const userData = await fetchUserProfile(cred.user).catch(() => null);
+      if (shopId && userData?.tenantId !== shopId) {
+        await signOut(auth).catch(() => { /* already signed out */ });
+        throw new Error(OTHER_SHOP);
+      }
+      if (!userData && isUnconfirmedSignUp(cred.user)) {
+        await signOut(auth);
+        throw new Error("This email was never confirmed. Sign up again with it and we'll send you a code.");
+      }
+      // No profile = an owner who hasn't finished setting up their shop: the app
+      // takes them to /subscribe to continue.
+      if (userData && !userData.isActive) {
+        await signOut(auth);
+        throw new Error('This account has been deactivated. Contact your administrator.');
+      }
+    } finally {
+      terminalSignIn.current = null;
     }
   };
 
@@ -326,20 +349,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * Google sign-in. A registered account opens its shop; a new Google account
    * has no shop yet and continues at /subscribe (Google already verified the email).
    */
-  const loginWithGoogle = async () => {
+  const loginWithGoogle = async (terminalSlug?: string) => {
     const provider = new GoogleAuthProvider();
     // Always show the account picker — POS devices are shared
     provider.setCustomParameters({ prompt: 'select_account' });
-    const cred = await signInWithPopup(auth, provider);
-
-    const userData = await fetchUserProfile(cred.user);
-    if (!userData) return { isNew: true };   // new owner → /subscribe
-    if (!userData.isActive) {
-      await signOut(auth);
-      throw new Error('This account has been deactivated. Contact your administrator.');
+    const shopId = terminalSlug ? await resolveTerminalShop(terminalSlug) : null;
+    terminalSignIn.current = shopId;
+    try {
+      const cred = await signInWithPopup(auth, provider);
+      const userData = await fetchUserProfile(cred.user).catch(() => null);
+      // A shop's sign-in page: only that shop's accounts (no new sign-ups here)
+      if (shopId && userData?.tenantId !== shopId) {
+        await signOut(auth).catch(() => { /* already signed out */ });
+        throw new Error(OTHER_SHOP);
+      }
+      if (!userData) return { isNew: true };   // new owner → /subscribe
+      if (!userData.isActive) {
+        await signOut(auth);
+        throw new Error('This account has been deactivated. Contact your administrator.');
+      }
+      await restoreRfidPassword(cred.user, userData);
+      return { isNew: false };
+    } finally {
+      terminalSignIn.current = null;
     }
-    await restoreRfidPassword(cred.user, userData);
-    return { isNew: false };
   };
 
   const sendSignUpCode = async (email: string) => {
