@@ -20,7 +20,7 @@ const accounts = (limit: number | null | undefined) => (limit == null ? 'Unlimit
 interface Feature { label: string; soon?: boolean }
 const FEATURES: Record<PlanId, Feature[]> = {
   starter: [
-    { label: 'Cash + GCash/Maya QR' }, { label: 'VAT receipts with QR' }, { label: 'Senior/PWD discount' },
+    { label: 'VAT receipts with QR' }, { label: 'Senior/PWD discount' },
     { label: 'Barcode scan + product details' }, { label: 'Today & weekly reports' }, { label: 'Install on phone or computer' },
   ],
   business: [
