@@ -49,7 +49,7 @@ export const PLAN_LABEL: Record<PlanId, string> = { starter: 'Starter', business
 export const DEFAULT_ENTITLEMENTS: Record<PlanId, Entitlements> = {
   starter:    { plan: 'starter',    staffLimit: 3,    rfid: false, fullReports: false, pdfExport: false, trends: false, branding: false, discounts: false, voidSales: false, inventory: false, storageMB: 500 },
   business:   { plan: 'business',   staffLimit: 10,   rfid: true,  fullReports: true,  pdfExport: true,  trends: true,  branding: true,  discounts: true,  voidSales: true, inventory: true, storageMB: 2048 },
-  enterprise: { plan: 'enterprise', staffLimit: null, rfid: true,  fullReports: true,  pdfExport: true,  trends: true,  branding: true,  discounts: true,  voidSales: true, inventory: true, storageMB: 10240 },
+  enterprise: { plan: 'enterprise', staffLimit: 100,  rfid: true,  fullReports: true,  pdfExport: true,  trends: true,  branding: true,  discounts: true,  voidSales: true, inventory: true, storageMB: 10240 },
 };
 
 /** Package features a shop may or may not have (the account limit is separate). */

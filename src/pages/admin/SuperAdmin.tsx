@@ -264,7 +264,8 @@ function SettingsForm({ settings }: { settings: PlatformSettings }) {
     try {
       const { plans, trialDays, paymentChannels, messengerUrl, contactPhone } = draft;
       await savePlatformSettings({ plans, trialDays: Number(trialDays), paymentChannels, messengerUrl: messengerUrl.trim(), contactPhone: contactPhone.trim() }, 'settings.update',
-        { channels: Object.entries(paymentChannels ?? {}).map(([k, c]) => `${k}:${c.enabled ? 'on' : 'off'}`).join(','), prices: PLAN_IDS.map(p => `${p}=${plans[p].price}`).join(',') });
+        { channels: Object.entries(paymentChannels ?? {}).map(([k, c]) => `${k}:${c.enabled ? 'on' : 'off'}`).join(','), prices: PLAN_IDS.map(p => `${p}=${plans[p].price}`).join(','),
+          accounts: PLAN_IDS.map(p => `${p}=${plans[p].entitlements?.staffLimit ?? 'no limit'}`).join(',') });
       toast.success('Settings saved.');
     } catch (err) {
       console.error(err);
@@ -322,6 +323,26 @@ function SettingsForm({ settings }: { settings: PlatformSettings }) {
             <input className="input" type="number" min={1} max={30} value={draft.trialDays}
               onChange={e => setDraft(d => ({ ...d, trialDays: Math.min(30, Math.max(1, Math.round(Number(e.target.value)))) }))} />
           </div>
+        </div>
+      </section>
+
+      {/* Accounts per shop: a package change applies to shops when their next payment is approved */}
+      <section className="card p-6">
+        <h2 className="font-display text-xl text-espresso-900">Accounts per shop</h2>
+        <p className="mt-1 text-sm text-bark-500">Owner included. Leave empty for no limit. Shops get a new number with their next approved payment.</p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          {PLAN_IDS.map(id => (
+            <div key={id}>
+              <label className="label" htmlFor={`accounts-${id}`}>{PLAN_LABEL[id]}</label>
+              <input id={`accounts-${id}`} className="input" type="number" min={1} max={10000} placeholder="No limit"
+                value={draft.plans[id]?.entitlements?.staffLimit ?? ''}
+                onChange={e => {
+                  const raw = e.target.value.trim();
+                  const staffLimit = raw === '' ? null : Math.min(10000, Math.max(1, Math.round(Number(raw)) || 1));
+                  setDraft(d => ({ ...d, plans: { ...d.plans, [id]: { ...d.plans[id], entitlements: { ...d.plans[id].entitlements, staffLimit } } } }));
+                }} />
+            </div>
+          ))}
         </div>
       </section>
 
