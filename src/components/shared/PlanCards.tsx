@@ -1,4 +1,4 @@
-import { Check, Clock, Sparkles } from 'lucide-react';
+import { Check, Clock } from 'lucide-react';
 import { usePlatformSettings } from '@/components/shared/ContactOwner';
 import { PLAN_IDS, storageMB } from '@/lib/entitlements';
 import { cn } from '@/lib/utils';
@@ -77,7 +77,7 @@ export default function PlanCards({ onChoose, selected }: { onChoose: (choice: P
                 <span className="pb-1 text-sm text-cream-200">for {settings.trialDays} days</span>
               </p>
               <button type="button" onClick={() => onChoose('trial')} className="btn-caramel w-full mt-6">
-                <Sparkles className="w-4 h-4" aria-hidden="true" /> Start free trial
+                Start free trial
               </button>
               <p className="mt-6 text-[11px] font-bold uppercase tracking-wider text-caramel-200">{LEVEL[id]}</p>
               <ul className="mt-3 space-y-2.5 text-sm">
