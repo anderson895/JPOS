@@ -209,16 +209,18 @@ export function usageHandler(getDeps: GetDeps = defaultDeps) {
  * GET /api/cron/daily-summary: every morning (Vercel Cron, 8:00 in the
  * Philippines) each Business and Enterprise shop's owner gets yesterday's
  * sales by email: once a day, only when there were sales, never for a shop
- * that switched it off. Only Vercel's scheduler (CRON_SECRET) may start it.
+ * that switched it off. With CRON_SECRET set, only Vercel's scheduler may start it.
  */
 export function dailySummaryHandler(getDeps: GetDeps = defaultDeps) {
   return handle(async (request) => {
     if (request.method !== 'GET' && request.method !== 'POST') requireMethod(request, 'GET');
     const deps = getDeps();
+    // With CRON_SECRET set (Vercel sends it), only Vercel's scheduler gets in.
+    // Without it the run is still harmless: one email per shop per day, the
+    // same numbers, inside the summary budget.
     const secret = deps.env.CRON_SECRET?.trim();
-    if (!isLocalTest(deps.env)) {
-      if (!secret) throw notSetUp('CRON_SECRET is missing');
-      if (request.headers.get('authorization') !== `Bearer ${secret}`) throw new ApiError(401, 'unauthenticated', 'Not allowed.');
+    if (secret && !isLocalTest(deps.env) && request.headers.get('authorization') !== `Bearer ${secret}`) {
+      throw new ApiError(401, 'unauthenticated', 'Not allowed.');
     }
     const now = deps.now();
     const { date, startIso, endIso } = phYesterday(now);

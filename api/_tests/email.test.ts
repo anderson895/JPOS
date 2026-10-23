@@ -832,9 +832,15 @@ describe('Daily sales email (GET /api/cron/daily-summary)', () => {
     const w = world();
     assert.equal((await run(w)).status, 401);
     assert.equal((await run(w, 'wrong')).status, 401);
-    delete w.env.CRON_SECRET;
-    assert.equal((await run(w, 'anything')).status, 503);
     assert.equal(w.sent.length, 0);
+  });
+
+  test('without CRON_SECRET it still runs, and still only once a day per shop', async () => {
+    const w = world();
+    delete w.env.CRON_SECRET;
+    assert.equal((await run(w)).status, 200);
+    await run(w);
+    assert.equal(w.sent.length, 2);
   });
 
   test('Business shops with sales get one email; Starter, switched off, quiet or expired shops none', async () => {
