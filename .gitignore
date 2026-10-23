@@ -18,3 +18,4 @@ backups/
 
 # TypeScript build cache
 *.tsbuildinfo
+.vercel
