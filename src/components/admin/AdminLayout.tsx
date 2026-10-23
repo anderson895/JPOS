@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { signedOutHome } from '@/lib/terminal';
 import { useAuth } from '@/contexts/AuthContext';
-import { Coffee, LayoutDashboard, BarChart3, ShoppingCart, Users, Wallet, CreditCard, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, BarChart3, ShoppingCart, Users, Wallet, CreditCard, ShieldCheck, Package } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { watchPendingRequests } from '@/lib/platform';
 import AppShell, { type ShellNavItem } from '@/components/shared/AppShell';
@@ -11,7 +11,7 @@ import toast from 'react-hot-toast';
 const navItems: ShellNavItem[] = [
   { to: '/admin',          icon: LayoutDashboard, label: 'Dashboard',    end: true },
   { to: '/admin/pos',      icon: ShoppingCart,    label: 'Point of Sale' },
-  { to: '/admin/products', icon: Coffee,          label: 'Products' },
+  { to: '/admin/products', icon: Package,          label: 'Products' },
   { to: '/admin/reports',  icon: BarChart3,       label: 'Reports' },
   { to: '/admin/staff',    icon: Users,           label: 'Manage Staff' },
   { to: '/admin/payments', icon: Wallet,          label: 'Payment Settings' },

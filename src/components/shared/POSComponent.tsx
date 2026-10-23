@@ -15,8 +15,7 @@ import { DEFAULT_PAYMENT_SETTINGS, WALLET_LABEL, approvalCodeProblem, normalizeR
 import { saveOrderAtomically, ReferenceUsedError } from '@/lib/saveOrder';
 import { QRCodeSVG } from 'qrcode.react';
 import {
-  Search, ShoppingCart, Plus, Minus, Trash2, X, CreditCard,
-  Banknote, Smartphone, CheckCircle, Printer, Coffee, Tag, Loader2, Maximize2, AlertTriangle
+  Search, ShoppingCart, Plus, Minus, Trash2, X, CreditCard, Banknote, Smartphone, CheckCircle, Printer, Tag, Loader2, Maximize2, AlertTriangle, Package, LayoutGrid,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Lock } from 'lucide-react';
@@ -214,7 +213,7 @@ export default function POSComponent() {
             onClick={() => setActiveCat('')}
             className={`pill ${!activeCat ? 'active' : ''}`}
           >
-            <Coffee className="w-3.5 h-3.5" /> All
+            <LayoutGrid className="w-3.5 h-3.5" /> All
           </button>
           {categories.map(c => (
             <button
@@ -241,7 +240,7 @@ export default function POSComponent() {
             </div>
           ) : filteredProducts.length === 0 ? (
             <div className="text-center py-16 text-bark-400">
-              <Coffee className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
               <p className="font-medium">No products available</p>
             </div>
           ) : (
@@ -257,7 +256,7 @@ export default function POSComponent() {
                       <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
-                        <Coffee className="w-9 h-9 text-caramel-500/60" />
+                        <Package className="w-9 h-9 text-caramel-500/60" />
                       </div>
                     )}
                     {p.imageUrl && <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-espresso-950/40 to-transparent" />}
@@ -325,7 +324,7 @@ export default function POSComponent() {
           {cartItems.length === 0 ? (
             <div className="text-center py-16 text-bark-400">
               <span className="w-16 h-16 mx-auto mb-3 rounded-full bg-cream-200 flex items-center justify-center">
-                <Coffee className="w-7 h-7 text-caramel-500/70" />
+                <Package className="w-7 h-7 text-caramel-500/70" />
               </span>
               <p className="text-sm font-medium text-bark-500">Cart is empty</p>
               <p className="text-xs mt-1">Select items from the menu</p>
@@ -335,7 +334,7 @@ export default function POSComponent() {
               <div className="w-11 h-11 rounded-xl overflow-hidden bg-cream-200 flex-shrink-0 flex items-center justify-center">
                 {item.imageUrl
                   ? <img src={item.imageUrl} alt="" className="w-full h-full object-cover" />
-                  : <Coffee className="w-4 h-4 text-caramel-500/70" />}
+                  : <Package className="w-4 h-4 text-caramel-500/70" />}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-espresso-800 truncate">{item.productName}</p>
@@ -658,7 +657,8 @@ export default function POSComponent() {
 
             {/* Receipt Content — id="receipt" is what the @media print rules print */}
             <div ref={receiptRef} id="receipt" className="mx-6 my-5 p-5 bg-white rounded-2xl border border-dashed border-cream-500 font-mono text-xs space-y-1 text-espresso-900 print:m-0 print:p-0 print:border-0 print:rounded-none">
-              <p className="text-center font-bold text-base font-body mb-2">JPOS COFFEE SHOP</p>
+              {/* The shop's own name (every shop prints its own receipts) */}
+              <p className="text-center font-bold text-base font-body mb-2 uppercase">{tenant?.name || 'JPOS'}</p>
               <p className="text-center text-bark-500 mb-3">{new Date(receipt.createdAt).toLocaleString()}</p>
               <div className="border-t border-dashed border-bark-300 pt-2 space-y-1">
                 {receipt.items.map((item, i) => (

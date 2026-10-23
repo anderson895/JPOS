@@ -567,3 +567,32 @@ The owner: "Point of sales naman kasi ang inooffer ko hindi coffee". The landing
   - "Your name" fills in from the Google account.
   - The shop and name fields have autofill hints (`organization`, `name`), so the browser stops putting the email there.
 - **"Local test / LIVE" label (this computer only):** a small label at the bottom of every page says which data the dev server uses: green "Local test · fake data" (`npm run dev`) or red "LIVE database · real accounts" (`npm run dev:live`). It came up after the owner tried the local test account on the live database and Firebase locked them out with "Too many attempts". It's never in the live build, and it's hidden in the demo recorder (whose `lib/firebase` mock now also exports `USE_EMULATORS`, which it was missing).
+
+## 28. Phones, the walkthrough video, and POS-neutral icons (2026-10-23)
+
+**Mobile:**
+- **Audit:** every page (landing, plans, sign-up, staff sign-in, every admin and staff page) was checked at 360 and 390 px. None scrolls sideways.
+- **Hero on phones** (the owner: "sabog sabog"):
+  - The copy is centered, and the three highlights are three even columns (icon above the words).
+  - Get Started is one full-width button with Learn More under it, and the "Built for" chips are centered.
+  - The background shows the photo's calm cream-and-sage side.
+  - Wide screens are unchanged.
+- **About:** the POS and printer stand on their own. The round frame is gone, as asked.
+- **Spacing:** less empty space between sections on phones (Features, Dashboard, Testimonials, Pricing, the video).
+- **Reports:** "No orders in selected period" was cut off inside the wide, scrolling table on phones. It's now a plain message.
+
+**Walkthrough video on the landing page** (the owner asked for it; this reverses §16's "confidential" rule):
+- **Placement:** "See JPOS in action", right after About.
+- **The video** (45 s, sample data, `public/demo/jpos-walkthrough.mp4` ~0.9 MB + poster):
+  - Get started → sign up → email code → shop ready → add 2 products → sell at the POS → receipt → the dashboard shows the sale.
+- **Player:**
+  - Eight clickable chapters (`WALKTHROUGH` in `content.ts`).
+  - It plays (muted) when in view and pauses out of view. A click pauses it, and a play button shows when paused.
+  - With reduced motion it waits for a click.
+- **Recorder:** `scripts/demo/record-walkthrough.mjs` (see `scripts/demo/README.md`). It records the real app against the local emulators and refuses to run otherwise.
+
+**POS, not coffee, inside the app too:**
+- **Icons:** Products in the sidebar, product placeholders (POS and Products) and the dashboard's empty states use a package icon. The POS "All" chip uses a grid icon.
+- **Receipts and the PDF report** print **the shop's own name** instead of "JPOS COFFEE SHOP". Every shop has its own.
+- **Product form:** the name placeholder is "e.g., Bottled Water".
+- **Shop link:** an apostrophe joins the word ("Aling Nena's Store" → `aling-nenas-store`) instead of becoming a dash.

@@ -18,9 +18,10 @@ import type { PlanId, SubscriptionRequest, Tenant } from '@/types';
 // ── Shop link (staff sign-in page: …/s/<slug>) ─────────────────────────────
 const RESERVED = new Set(['admin', 'platform', 'login', 's', 'api', 'staff', 'subscribe', 'billing', 'help', 'www', 'app', 'jpos']);
 
-/** "Kape ni Juan!" → "kape-ni-juan" */
+/** "Kape ni Juan!" → "kape-ni-juan", "Aling Nena's Store" → "aling-nenas-store" */
 export function slugify(text: string): string {
   return text.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    .replace(/['’`]/g, '') // an apostrophe joins the word ("nena's" → "nenas"), never a dash
     .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/g, '');
 }
 

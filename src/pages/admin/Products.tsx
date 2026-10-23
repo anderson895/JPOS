@@ -9,8 +9,7 @@ import Portal from '@/components/shared/Portal';
 import PageHeader from '@/components/shared/PageHeader';
 import type { Product, Category } from '@/types';
 import {
-  Plus, Search, Edit2, Trash2, X, Upload, Coffee,
-  ToggleLeft, ToggleRight, Loader2, Tag, Pencil
+  Plus, Search, Edit2, Trash2, X, Upload, ToggleLeft, ToggleRight, Loader2, Tag, Pencil, Package,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -264,7 +263,7 @@ export default function AdminProducts() {
       ) : filtered.length === 0 ? (
         <div className="card text-center py-16 text-bark-400">
           <span className="w-16 h-16 mx-auto mb-3 rounded-full bg-cream-200 flex items-center justify-center">
-            <Coffee className="w-7 h-7 text-caramel-500/70" />
+            <Package className="w-7 h-7 text-caramel-500/70" />
           </span>
           <p className="font-medium text-bark-600">No products found</p>
           <p className="text-sm mt-1">Try adjusting your search or add new products</p>
@@ -276,7 +275,7 @@ export default function AdminProducts() {
               <div className="relative h-36 rounded-2xl overflow-hidden bg-gradient-to-br from-cream-200 to-cream-300">
                 {p.imageUrl
                   ? <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
-                  : <div className="w-full h-full flex items-center justify-center"><Coffee className="w-10 h-10 text-caramel-500/60" /></div>
+                  : <div className="w-full h-full flex items-center justify-center"><Package className="w-10 h-10 text-caramel-500/60" /></div>
                 }
                 {/* Hover-to-reveal only where hover exists; always visible on touch screens */}
                 <div className="absolute top-2 right-2 flex gap-1 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
@@ -353,7 +352,7 @@ export default function AdminProducts() {
               </div>
               <div>
                 <label className="label">Product Name *</label>
-                <input className="input" placeholder="e.g., Iced Caramel Latte"
+                <input className="input" placeholder="e.g., Bottled Water"
                   value={editProduct.name || ''}
                   onChange={e => setEditProduct(p => ({ ...p, name: e.target.value }))} />
               </div>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Play } from 'lucide-react';
 import { SectionTitle } from '@/components/shared/Decor';
 import { cn } from '@/lib/utils';
 
@@ -10,7 +11,7 @@ export interface DemoStep {
 }
 
 interface DemoSectionProps {
-  /** Video URL. The tutorial is CONFIDENTIAL: serve it from protected storage, never from public/. */
+  /** Video URL (public/demo: recorded with sample data, so it's safe to show to everyone). */
   src: string;
   poster: string;
   steps: DemoStep[];
@@ -24,13 +25,10 @@ interface DemoSectionProps {
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 /**
- * Tutorial video with chapter captions.
- * NOT on the public landing page: the video shows the admin side and is for
- * subscribers only (kept for the in-app Help page; see docs/frontend/CHANGELOG.md §16).
+ * Walkthrough video with chapter captions, on the landing page (the owner's
+ * decision of 2026-10-23: it's recorded with sample data, so it's public).
  *
- * - No player controls (no download, speed, picture-in-picture or play/pause menu),
- *   and right-click is disabled on the video. That only hides the UI: anyone with
- *   the URL can still fetch the file, which is why it must stay behind login.
+ * - A clean player: no control bar; a click pauses or plays it.
  * - Loads nothing until it scrolls into view (preload="none" + IntersectionObserver),
  *   plays while visible and pauses when it leaves the screen.
  * - prefers-reduced-motion: no autoplay; the poster stays until a chapter is clicked.
@@ -39,20 +37,23 @@ const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).p
 export default function DemoSection({
   src, poster, steps, id = 'demo',
   title = 'See JPOS in action',
-  subtitle = 'A one-minute tour, from sign-in to sales reports.',
+  subtitle = 'From sign-up to your first sale in under a minute.',
   note = 'Recorded with sample data. Names, orders and sales are not real.',
 }: DemoSectionProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [reducedMotion] = useState(() => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [started, setStarted] = useState(false);
   const [step, setStep] = useState(0);
+  const [paused, setPaused] = useState(false);
+  // Pausing by hand keeps it paused when it scrolls back into view
+  const heldRef = useRef(false);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video || typeof IntersectionObserver === 'undefined') return;
     const io = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
-        if (!reducedMotion || started) video.play().catch(() => {});
+        if ((!reducedMotion || started) && !heldRef.current) video.play().catch(() => {});
       } else if (!video.paused) {
         video.pause();
       }
@@ -70,12 +71,19 @@ export default function DemoSection({
   const seek = (at: number) => {
     const video = videoRef.current;
     if (!video) return;
+    heldRef.current = false;
     video.currentTime = at;
     video.play().catch(() => {});
   };
+  const toggle = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) { heldRef.current = false; video.play().catch(() => {}); }
+    else { heldRef.current = true; video.pause(); }
+  };
 
   return (
-    <section id={id} className="relative bg-cream-100 py-16 lg:py-20 scroll-mt-16 overflow-hidden">
+    <section id={id} className="relative bg-cream-100 py-10 sm:py-16 lg:py-20 scroll-mt-16 overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10">
         <SectionTitle title={title} subtitle={subtitle} />
 
@@ -86,7 +94,8 @@ export default function DemoSection({
               <div className="relative overflow-hidden rounded-3xl bg-espresso-950 aspect-video">
                 <video
                   ref={videoRef}
-                  className="block w-full h-full object-cover select-none"
+                  onClick={toggle}
+                  className="block w-full h-full object-cover select-none cursor-pointer"
                   muted
                   loop
                   playsInline
@@ -96,12 +105,24 @@ export default function DemoSection({
                   disableRemotePlayback
                   controlsList="nodownload noplaybackrate noremoteplayback nofullscreen"
                   onContextMenu={e => e.preventDefault()}
-                  aria-label="Tutorial video: a cashier signs in, takes an order with a discount, checks out with cash and prints a receipt; then the dashboard, reports and staff pages."
-                  onPlay={() => setStarted(true)}
+                  aria-label="Walkthrough video: a shop owner signs up, confirms the email code, adds two products, sells them at the point of sale, gets a receipt and sees the sale on the dashboard."
+                  onPlay={() => { setStarted(true); setPaused(false); }}
+                  onPause={() => setPaused(true)}
                   onTimeUpdate={onTimeUpdate}
                 >
                   <source src={src} type="video/mp4" />
                 </video>
+                {/* Paused by hand (or not started): a play button over the picture */}
+                {(paused || !started) && (
+                  <button
+                    type="button"
+                    onClick={toggle}
+                    aria-label="Play the walkthrough"
+                    className="absolute inset-0 m-auto flex h-16 w-16 items-center justify-center rounded-full bg-espresso-900/80 text-cream-50 shadow-lift transition-transform hover:scale-105"
+                  >
+                    <Play className="ml-1 h-7 w-7" fill="currentColor" aria-hidden="true" />
+                  </button>
+                )}
               </div>
             </div>
             {note && <figcaption className="mt-3 text-center text-xs text-bark-500">{note}</figcaption>}

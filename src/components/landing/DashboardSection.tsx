@@ -11,7 +11,7 @@ export default function DashboardSection() {
       <Wave fill="#f6e8d4" flip className="relative -mt-px" />
       <div className="absolute right-0 top-1/3 w-[520px] h-[520px] rounded-full bg-caramel-500/10 blur-3xl pointer-events-none" />
 
-      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-14 lg:py-16 grid gap-12 items-center lg:grid-cols-[0.75fr_1.25fr]">
+      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-10 sm:py-14 lg:py-16 grid gap-10 sm:gap-12 items-center lg:grid-cols-[0.75fr_1.25fr]">
         <div>
           <h2 className="font-display text-4xl sm:text-5xl font-semibold leading-tight">
             Powerful

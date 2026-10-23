@@ -52,6 +52,26 @@ export const FEATURES: { icon: LucideIcon; title: string; text: string }[] = [
 
 export const DASHBOARD_POINTS = ['Live Sales Overview', 'Top Selling Items', 'Sales Analytics'];
 
+/**
+ * Chapters of the walkthrough video (public/demo/jpos-walkthrough.mp4). The `at`
+ * times come from `node scripts/demo/record-walkthrough.mjs`: copy them again after
+ * re-recording.
+ */
+export const WALKTHROUGH = {
+  src: '/demo/jpos-walkthrough.mp4',
+  poster: '/demo/jpos-walkthrough.jpg',
+  steps: [
+    { at: 0,    title: 'Get started',            text: 'Pick the free trial on the JPOS website.' },
+    { at: 3.7,  title: 'Create your account',    text: 'Your shop name, your name, email and a password.' },
+    { at: 10.9, title: 'Confirm your email',     text: 'Type the 6-digit code we send you.' },
+    { at: 14.2, title: 'Your shop is ready',     text: 'Your dashboard opens, with the 7-day free trial running.' },
+    { at: 16,   title: 'Add your products',      text: 'A name and a price is all it takes.' },
+    { at: 28.5, title: 'Sell at the counter',    text: 'Tap the items, check out and take the cash.' },
+    { at: 37.5, title: 'Receipt with QR',        text: 'Every sale gets a receipt you can print.' },
+    { at: 40.5, title: 'See it on the dashboard', text: "Today's sales and top items update right away." },
+  ],
+};
+
 // PLACEHOLDERS: sample quotes for the design, shown with a "sample reviews" note.
 // Replace them with real customer feedback (with permission) before launch.
 export const TESTIMONIALS = [

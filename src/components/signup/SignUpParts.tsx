@@ -290,7 +290,7 @@ function LocalCodeHelper({ email, onCode }: { email: string; onCode: (code: stri
     }
   };
   return (
-    <button type="button" className="btn w-full py-3 border border-caramel-300 bg-caramel-50 text-caramel-800 hover:bg-caramel-100" onClick={fill} disabled={looking}>
+    <button type="button" data-dev-only className="btn w-full py-3 border border-caramel-300 bg-caramel-50 text-caramel-800 hover:bg-caramel-100" onClick={fill} disabled={looking}>
       {looking ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Mail className="h-4 w-4" aria-hidden="true" />} Local test: fill in the code
     </button>
   );

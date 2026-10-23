@@ -3,6 +3,8 @@ import LandingNav from '@/components/landing/LandingNav';
 import { applyTheme } from '@/components/shared/theme';
 import Hero from '@/components/landing/Hero';
 import AboutSection from '@/components/landing/AboutSection';
+import DemoSection from '@/components/landing/DemoSection';
+import { WALKTHROUGH } from '@/components/landing/content';
 import FeaturesSection from '@/components/landing/FeaturesSection';
 import DashboardSection from '@/components/landing/DashboardSection';
 import TestimonialsSection from '@/components/landing/TestimonialsSection';
@@ -24,6 +26,8 @@ export default function LoginPage() {
       <main>
         <Hero />
         <AboutSection />
+        {/* The walkthrough: sign up, add products, make a sale (sample data) */}
+        <DemoSection src={WALKTHROUGH.src} poster={WALKTHROUGH.poster} steps={WALKTHROUGH.steps} />
         <FeaturesSection />
         <DashboardSection />
         <TestimonialsSection />

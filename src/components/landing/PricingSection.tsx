@@ -10,7 +10,7 @@ export default function PricingSection() {
   return (
     <section
       id="pricing"
-      className="relative overflow-hidden py-16 lg:py-20"
+      className="relative overflow-hidden py-10 sm:py-16 lg:py-20"
       style={{ background: 'linear-gradient(180deg, #fdf7ee 0%, #f6e8d4 100%)' }}
     >
       <SageBubble className="hidden md:block -left-28 top-20 h-80 w-80" />

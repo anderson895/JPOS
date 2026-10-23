@@ -12,6 +12,7 @@ export default function DevModeBadge() {
   return (
     <div
       aria-hidden="true"
+      data-dev-only
       className={cn(
         'pointer-events-none fixed bottom-2 left-1/2 z-[100] -translate-x-1/2 whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-semibold text-white shadow-md',
         local ? 'bg-emerald-600/90' : 'bg-red-600/90',

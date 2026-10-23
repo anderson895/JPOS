@@ -19,16 +19,16 @@ const HIGHLIGHTS = [
 export default function Hero() {
   return (
     <section id="home" className="relative isolate overflow-hidden bg-cream-100 text-espresso-900">
-      {/* Background photo; on phones a cream veil keeps the text easy to read */}
+      {/* Background photo. Phones show its calm side (cream and sage), under a light cream veil */}
       <img
         src="/images/hero-retail.jpg" alt="" aria-hidden="true"
-        className="absolute inset-0 -z-10 h-full w-full object-cover object-right"
+        className="absolute inset-0 -z-10 h-full w-full object-cover object-[15%_50%] lg:object-right"
       />
       <div className="absolute inset-0 -z-10 bg-cream-100/45 lg:bg-transparent lg:bg-gradient-to-r lg:from-cream-100/45 lg:via-cream-100/10 lg:to-transparent" />
 
-      <div className="relative max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-10 pt-28 sm:pt-32 lg:pt-36 pb-16 lg:pb-24 grid gap-12 lg:gap-10 items-center lg:grid-cols-[1.15fr_minmax(0,420px)] xl:grid-cols-[1.3fr_minmax(0,420px)_0.22fr]">
-        {/* Copy */}
-        <div className="animate-slide-up">
+      <div className="relative max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-10 pt-28 sm:pt-32 lg:pt-36 pb-14 lg:pb-24 grid gap-10 sm:gap-12 lg:gap-10 items-center lg:grid-cols-[1.15fr_minmax(0,420px)] xl:grid-cols-[1.3fr_minmax(0,420px)_0.22fr]">
+        {/* Copy: centered on phones and tablets, left-aligned next to the card on wide screens */}
+        <div className="animate-slide-up text-center lg:text-left">
           <p className="relative inline-block whitespace-nowrap font-script text-[30px] min-[400px]:text-4xl sm:text-5xl text-caramel-600">
             Good Business <span className="mx-1 text-caramel-500">•</span> Better Days
             <Swash className="absolute left-6 -bottom-2 w-[85%] h-3 text-caramel-500/70" />
@@ -43,25 +43,27 @@ export default function Hero() {
             </span>
           </h1>
 
-          <p className="mt-8 max-w-xl text-base sm:text-lg text-espresso-800/85 leading-relaxed">
+          <p className="mx-auto lg:mx-0 mt-7 sm:mt-8 max-w-xl text-base sm:text-lg text-espresso-800/85 leading-relaxed">
             Run your store, café or service shop with JPOS.
             <br className="hidden sm:block" /> Track sales, orders, and staff — all in one place.
           </p>
 
-          <ul className="mt-8 flex flex-wrap gap-x-8 gap-y-4">
+          {/* Three even columns on phones (icon above the words); a row on wide screens */}
+          <ul className="mx-auto lg:mx-0 mt-8 grid max-w-md grid-cols-3 gap-2 lg:flex lg:max-w-none lg:flex-wrap lg:gap-x-8 lg:gap-y-4">
             {HIGHLIGHTS.map(({ icon: Icon, line1, line2 }) => (
-              <li key={line1} className="flex items-center gap-3">
-                <span className="w-12 h-12 rounded-full border border-caramel-300 bg-white/70 flex items-center justify-center text-caramel-600 shadow-sm backdrop-blur-sm">
+              <li key={line1} className="flex flex-col items-center gap-2 lg:flex-row lg:gap-3">
+                <span className="w-11 h-11 sm:w-12 sm:h-12 shrink-0 rounded-full border border-caramel-300 bg-white/70 flex items-center justify-center text-caramel-600 shadow-sm backdrop-blur-sm">
                   <Icon className="w-5 h-5" />
                 </span>
-                <span className="text-sm font-medium leading-tight text-espresso-800">{line1}<br />{line2}</span>
+                <span className="text-xs sm:text-sm font-medium leading-tight text-espresso-800">{line1}<br />{line2}</span>
               </li>
             ))}
           </ul>
 
-          <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-4">
+          {/* Phones: one big Get Started button, Learn More under it. Wider: side by side */}
+          <div className="mx-auto lg:mx-0 mt-9 sm:mt-10 flex max-w-sm flex-col items-center gap-4 sm:max-w-none sm:flex-row sm:justify-center sm:gap-6 lg:justify-start">
             {/* Straight to sign-up, with the free trial picked */}
-            <Link to="/subscribe?plan=trial" className="btn-primary px-7 py-3.5 text-base">
+            <Link to="/subscribe?plan=trial" className="btn-primary w-full px-7 py-3.5 text-base sm:w-auto">
               <Store className="w-5 h-5" />
               Get Started
               <ArrowRight className="w-4 h-4" />
@@ -78,12 +80,13 @@ export default function Hero() {
           </div>
 
           {/* "Built for" — the kinds of small businesses JPOS serves */}
-          <div className="mt-10">
-            <p className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-caramel-700/80">
+          <div className="mt-9 sm:mt-10">
+            <p className="flex items-center justify-center lg:justify-start gap-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-caramel-700/80">
               <span className="h-px w-10 bg-gradient-to-r from-transparent to-caramel-500/60" />
               Built for
+              <span className="h-px w-10 bg-gradient-to-l from-transparent to-caramel-500/60 lg:hidden" />
             </p>
-            <ul className="mt-3 flex flex-wrap gap-2 max-w-xl" aria-label="Built for">
+            <ul className="mx-auto lg:mx-0 mt-3 flex max-w-xl flex-wrap justify-center lg:justify-start gap-2" aria-label="Built for">
               {BUILT_FOR.map(({ icon: Icon, label }) => (
                 <li
                   key={label}

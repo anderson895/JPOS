@@ -5,7 +5,7 @@ export default function FeaturesSection() {
   return (
     <section
       id="features"
-      className="relative overflow-hidden scroll-mt-16 py-20 lg:py-24"
+      className="relative overflow-hidden scroll-mt-16 py-12 sm:py-20 lg:py-24"
       style={{ background: 'linear-gradient(180deg, #fdf7ee 0%, #f6e8d4 100%)' }}
     >
       {/* Soft sage circles at the sides, like the hero photo */}

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { tenantCol } from '@/lib/tenant';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
-import { TrendingUp, ShoppingBag, Coffee, Receipt, CalendarDays, Award, Lock } from 'lucide-react';
+import { TrendingUp, ShoppingBag, Receipt, CalendarDays, Award, Lock, Package } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, BarChart, Bar
@@ -126,7 +126,7 @@ export default function AdminDashboard() {
     {
       label: 'Average Order',
       value: formatCurrency(avgOrder(todayData)),
-      icon: Coffee,
+      icon: Package,
       tone: 'cream' as const,
       change: pctChange(avgOrder(todayData), avgOrder(yesterdaySoFar)),
     },
@@ -215,7 +215,7 @@ export default function AdminDashboard() {
           </div>
           {topItems.length === 0 ? (
             <div className="text-center py-10 text-bark-400">
-              <Coffee className="w-8 h-8 mx-auto mb-2 opacity-40" />
+              <Package className="w-8 h-8 mx-auto mb-2 opacity-40" />
               <p className="text-sm">No sales this week yet</p>
             </div>
           ) : (

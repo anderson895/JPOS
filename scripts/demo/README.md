@@ -1,10 +1,31 @@
-# Demo video recorder
+# Demo videos
 
-Records the JPOS tutorial video (`scripts/demo/output/jpos-demo.mp4` + `jpos-demo.jpg`) against **fake sample data**. It never touches Firebase or any payment service.
+## Landing page walkthrough (current)
 
-> 🔒 **Confidential:** the video shows the admin side (dashboard, reports, staff), so it's for subscribers only.
-> `output/` is git-ignored. **Never** copy the video into `public/`: anything there is deployed and reachable by URL.
-> The final tutorial will be recorded at the very end and served from protected storage on an in-app Help page (behind login).
+`record-walkthrough.mjs` records the **walkthrough on the landing page**: a new owner gets started, signs up with the email code, adds two products, sells them at the POS, gets the receipt and sees the sale on the dashboard. About 45 seconds.
+
+```bash
+npm run dev                                   # local test mode (emulators, fake data)
+node scripts/demo/record-walkthrough.mjs      # DEMO_BASE=http://localhost:5174 if the app is on another port
+```
+
+- **What it records:** the real app against the **local emulators only**.
+  - It refuses to run unless the page is in local test mode, so the live database is never touched.
+  - Before each take it resets the demo owner (`juan@email.example`) and the shop link in the emulators.
+- **What it changes on screen:**
+  - The local-test-only bits (`data-dev-only`) are hidden.
+  - `localhost` is shown as `jpos-mu.vercel.app`.
+  - Backdrop blur is off, because it's heavy for a headless browser.
+- **Output:**
+  - `public/demo/jpos-walkthrough.mp4` (H.264, 1280×720, 30 fps, no audio, ~1 MB) and `.jpg` (the poster: the POS with a filled cart).
+  - It plays at 1.25× (`DEMO_SPEED`).
+  - The chapter times are printed at the end. Copy them into `WALKTHROUGH` in `src/components/landing/content.ts`.
+- **It's public:** the owner decided on 2026-10-23 to show the walkthrough on the landing page. It only shows sample data.
+- **Needs:** Microsoft Edge (or `BROWSER=` a Chrome/Edge path) and `ffmpeg` on PATH.
+
+## Admin tour (old, needs an update before use)
+
+`record.mjs` was the first tutorial (admin side, with `mocks/*` instead of a database). Its mocks predate the multi-store data (`tenants/{T}/…`) and the new sign-up, so it doesn't run against today's app. Prefer the walkthrough recorder above.
 
 ```bash
 node scripts/demo/record.mjs

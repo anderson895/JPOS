@@ -154,6 +154,8 @@ export default function AdminReports() {
       const ML   = 14, MR = 14;
       const CW   = W - ML - MR;
       const now  = new Date();
+      // The shop's own name on its report (every shop has its own)
+      const shopName = (tenant?.name || 'JPOS').slice(0, 60);
 
       // ── Helper: add page footer ──────────────────────────────────────────
       const addFooter = () => {
@@ -163,7 +165,7 @@ export default function AdminReports() {
           doc.setFontSize(7);
           doc.setTextColor(160, 130, 110);
           doc.text(
-            `JPOS Coffee Shop  ·  Confidential  ·  ${format(now, 'MMMM d, yyyy  h:mm a')}`,
+            `${shopName}  ·  Confidential  ·  ${format(now, 'MMMM d, yyyy  h:mm a')}`,
             W / 2, H - 6, { align: 'center' }
           );
           doc.text(`Page ${i} of ${pages}`, W - MR, H - 6, { align: 'right' });
@@ -178,7 +180,7 @@ export default function AdminReports() {
       doc.setFontSize(18);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(...WHITE);
-      doc.text('JPOS Coffee Shop', ML, 12);
+      doc.text(shopName, ML, 12);
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
       doc.text('Sales Report', ML, 19);
@@ -548,6 +550,10 @@ export default function AdminReports() {
       {/* Orders Table */}
       <div className="card p-6">
         <h2 className="font-display text-xl text-espresso-900 mb-4">Order Details</h2>
+        {/* No orders: a plain message (inside the wide table it was cut off on phones) */}
+        {orders.length === 0 ? (
+          <p className="py-8 text-center text-sm text-bark-400">No orders in selected period</p>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px]">
             <thead><tr>
@@ -571,12 +577,10 @@ export default function AdminReports() {
                   <td className="table-cell font-mono text-xs">{paymentRefLabel(o)}</td>
                 </tr>
               ))}
-              {orders.length === 0 && (
-                <tr><td colSpan={7} className="text-center py-8 text-bark-400 text-sm">No orders in selected period</td></tr>
-              )}
             </tbody>
           </table>
         </div>
+        )}
       </div>
     </div>
   );

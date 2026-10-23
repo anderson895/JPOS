@@ -24,7 +24,7 @@ export default function TestimonialsSection() {
   };
 
   return (
-    <section className="relative bg-cream-100 py-16 lg:py-20 overflow-hidden">
+    <section className="relative bg-cream-100 py-10 sm:py-16 lg:py-20 overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10">
         <SectionTitle title="What Our Customers Say" subtitle="What small business owners like about JPOS." />
 
