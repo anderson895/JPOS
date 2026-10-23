@@ -24,7 +24,7 @@ const FEATURES: Record<PlanId, Feature[]> = {
     { label: 'Barcode and QR integrated' }, { label: 'Today & weekly reports' }, { label: 'Available on mobile and desktop' },
   ],
   business: [
-    { label: 'Everything in Starter' }, { label: 'Customizable logo and theme' },
+    { label: 'Everything in Starter' }, { label: 'Custom branding (logo and colors)' },
     { label: 'Void sales with a reason' }, { label: 'Inventory and low-stock alerts' },
     { label: 'All reports + PDF' }, { label: 'Sales trends' }, { label: 'RFID card login' },
   ],
