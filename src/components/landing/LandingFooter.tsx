@@ -36,7 +36,7 @@ export default function LandingFooter() {
         {/* Brand */}
         <div>
           <div className="flex items-center gap-4">
-            <img src="/logo.png" alt="JPOS" className="w-16 h-16 rounded-full ring-2 ring-caramel-400/60 shadow-lg" />
+            <img src="/logo.png" alt="JPOS" className="w-16 h-16 rounded-full shadow-lg" />
             <div>
               <p className="font-display text-3xl font-semibold text-cream-50 leading-none">JPOS</p>
               <p className="text-sm text-cream-200/75 mt-1">Point of Sale for Small Businesses</p>

@@ -3,6 +3,7 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import { LogOut, Menu, X, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import BrandMark from '@/components/shared/BrandMark';
+import InstallAppButton from '@/components/shared/InstallApp';
 import SubscriptionBanner from '@/components/shared/SubscriptionBanner';
 import type { User } from '@/types';
 import { cn } from '@/lib/utils';
@@ -142,6 +143,11 @@ export default function AppShell({
             </NavLink>
           ))}
         </nav>
+
+        {/* Install as an app (hidden once installed, or where the browser can't) */}
+        <div className="relative px-3">
+          <InstallAppButton variant="sidebar" iconOnly={!showLabels} />
+        </div>
 
         {/* User */}
         <div className="relative p-3">

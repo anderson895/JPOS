@@ -596,3 +596,35 @@ The owner: "Point of sales naman kasi ang inooffer ko hindi coffee". The landing
 - **Receipts and the PDF report** print **the shop's own name** instead of "JPOS COFFEE SHOP". Every shop has its own.
 - **Product form:** the name placeholder is "e.g., Bottled Water".
 - **Shop link:** an apostrophe joins the word ("Aling Nena's Store" → `aling-nenas-store`) instead of becoming a dash.
+
+## 29. New logo, and JPOS installs as an app (2026-10-23)
+
+**Logo:** the owner's "Warm Brown POS Badge Logo" (a POS terminal in a gold ring, "JPOS · Point of Sale") replaces the coffee-cup logo everywhere.
+- **Fill:** the badge's inside was see-through, so "JPOS" vanished on dark backgrounds (footer, loading screen). The inside is now filled with cream. It's trimmed and square.
+- **Files:**
+  - `public/logo.png` (320 px): nav, sign-in card, sidebar, footer, loading screen.
+  - `favicon.png` (64 px).
+  - `apple-touch-icon.png` (180 px, on cream).
+  - `icons/icon-192/512.png` and `icons/maskable-192/512.png` (for the installed app).
+- **Cleanup:** the extra CSS ring around the logo in the footer and loading screen is gone (the badge has its own), and the unused `public/coffeelogo.png` is deleted.
+
+**Install as an app (PWA):**
+- **Manifest:** `public/manifest.webmanifest` ("JPOS Point of Sale", standalone, cream splash, espresso title bar).
+  - It opens at `/`, so a counter device goes straight back to its shop's sign-in page, and a signed-in owner to the dashboard.
+- **Service worker:** `public/sw.js`, registered only in the real app (`registerServiceWorker` in `src/lib/pwa.ts`), never on the dev server.
+  - **It never caches the app**, so every deploy shows up right away.
+  - It only shows `public/offline.html` ("You're offline", Try again) when a page can't load. Bump `CACHE` when that page changes.
+- **"Install app" buttons** (`src/components/shared/InstallApp.tsx`):
+  - **Where:** landing nav (an icon on tablets, a label on wide screens), the landing phone menu, the app sidebar ("Install app") and the staff sign-in page ("Install on this device").
+  - **Chrome/Edge/Samsung (Android, Windows, Mac):** the browser's own install window.
+  - **iPhone/iPad Safari:** the steps (Share → Add to Home Screen). Inside Facebook/Messenger on iPhone it first says to open the page in Safari.
+  - **Mac Safari:** File → Add to Dock.
+  - Hidden once installed, and where the browser can't install apps (e.g. Firefox).
+- **Tablet nav:** the nav links are a bit tighter on tablets (`px-3`), so the install icon fits next to Login at 768 px.
+- **Verified** on a local-test production build (`vite build --mode emulator` + `vite preview`):
+  - Chrome reports it installable (normal profile).
+  - The manifest is error-free, and the service worker controls the page.
+  - The offline page shows, and Try again recovers.
+  - The buttons and the iPhone and Messenger steps work.
+  - No sideways scroll and no overlapping buttons from 360 to 1280 px.
+- **Video:** the walkthrough was re-recorded with the new logo. The chapter times in `content.ts` are updated.

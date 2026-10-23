@@ -1,0 +1,21 @@
+{
+  "id": "/",
+  "name": "JPOS Point of Sale",
+  "short_name": "JPOS",
+  "description": "Point of sale for small businesses: sales, orders, staff and reports in one place.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fdf7ee",
+  "theme_color": "#2c1a0f",
+  "categories": ["business", "productivity", "finance"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "screenshots": [
+    { "src": "/demo/jpos-walkthrough.jpg", "sizes": "1280x720", "type": "image/jpeg", "form_factor": "wide", "label": "The JPOS point of sale" }
+  ]
+}

@@ -7,6 +7,7 @@ import { applyTheme } from '@/components/shared/theme';
 import { rememberTerminal } from '@/lib/terminal';
 import LoginCard from '@/components/landing/LoginCard';
 import BrandMark from '@/components/shared/BrandMark';
+import InstallAppButton from '@/components/shared/InstallApp';
 
 /**
  * A shop's counter terminal: /s/:slug, bookmarked on the POS device.
@@ -61,6 +62,8 @@ export default function TerminalPage() {
             Tap your card to start your shift
           </p>
           <LoginCard terminalSlug={slug.toLowerCase()} />
+          {/* A counter device can open this page like an app */}
+          <InstallAppButton variant="terminal" />
         </>
       )}
     </div>

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#2c1a0f" />
+    <title>JPOS · You're offline</title>
+    <!-- Shown by the service worker when there's no internet: everything is inline -->
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
+        background: #fdf7ee; color: #2c1a0f; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      .card {
+        width: 100%; max-width: 380px; text-align: center; padding: 32px 24px; border-radius: 28px;
+        background: linear-gradient(165deg, #fffaf2 0%, #faf0e2 55%, #f3e3cc 100%);
+        box-shadow: 0 30px 60px -28px rgba(44, 26, 15, 0.45); border: 1px solid #fff;
+      }
+      .icon {
+        width: 64px; height: 64px; margin: 0 auto; border-radius: 50%; display: flex; align-items: center;
+        justify-content: center; background: #f9e9d2; color: #b06e34;
+      }
+      .brand { margin: 18px 0 0; font: 600 14px/1 Georgia, serif; letter-spacing: 0.2em; color: #b06e34; }
+      h1 { margin: 8px 0 0; font: 600 28px/1.2 Georgia, "Times New Roman", serif; }
+      p { margin: 10px 0 0; font-size: 15px; line-height: 1.5; color: #6b5444; }
+      button {
+        margin-top: 24px; width: 100%; padding: 14px 20px; border: 0; border-radius: 999px; cursor: pointer;
+        font: 600 15px system-ui, sans-serif; color: #fffaf2;
+        background: linear-gradient(180deg, #5a3a26 0%, #3e2617 55%, #2c1a0f 100%);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <div class="icon" aria-hidden="true">
+        <!-- lucide wifi-off -->
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="2" x2="22" y1="2" y2="22" /><path d="M8.5 16.5a5 5 0 0 1 7 0" /><path d="M2 8.82a15 15 0 0 1 4.17-2.65" />
+          <path d="M10.66 5c4.01-.36 8.14.9 11.34 3.76" /><path d="M16.85 11.25a10 10 0 0 1 2.22 1.68" />
+          <path d="M5 13a10 10 0 0 1 5.24-2.76" /><line x1="12" x2="12.01" y1="20" y2="20" />
+        </svg>
+      </div>
+      <p class="brand">JPOS</p>
+      <h1>You're offline</h1>
+      <p>Check your internet connection, then try again.</p>
+      <button type="button" onclick="location.reload()">Try again</button>
+    </main>
+  </body>
+</html>

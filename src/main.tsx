@@ -6,7 +6,11 @@ import App from './App';
 import { AuthProvider } from './contexts/AuthContext';
 import { CartProvider } from './contexts/CartContext';
 import DevModeBadge from './components/shared/DevModeBadge';
+import { registerServiceWorker } from './lib/pwa';
 import './index.css';
+
+// Installable as an app (and a friendly page when offline)
+registerServiceWorker();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

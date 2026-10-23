@@ -63,12 +63,12 @@ export const WALKTHROUGH = {
   steps: [
     { at: 0,    title: 'Get started',            text: 'Pick the free trial on the JPOS website.' },
     { at: 3.7,  title: 'Create your account',    text: 'Your shop name, your name, email and a password.' },
-    { at: 10.9, title: 'Confirm your email',     text: 'Type the 6-digit code we send you.' },
-    { at: 14.2, title: 'Your shop is ready',     text: 'Your dashboard opens, with the 7-day free trial running.' },
-    { at: 16,   title: 'Add your products',      text: 'A name and a price is all it takes.' },
-    { at: 28.5, title: 'Sell at the counter',    text: 'Tap the items, check out and take the cash.' },
-    { at: 37.5, title: 'Receipt with QR',        text: 'Every sale gets a receipt you can print.' },
-    { at: 40.5, title: 'See it on the dashboard', text: "Today's sales and top items update right away." },
+    { at: 11.1, title: 'Confirm your email',     text: 'Type the 6-digit code we send you.' },
+    { at: 15,   title: 'Your shop is ready',     text: 'Your dashboard opens, with the 7-day free trial running.' },
+    { at: 16.8, title: 'Add your products',      text: 'A name and a price is all it takes.' },
+    { at: 29.4, title: 'Sell at the counter',    text: 'Tap the items, check out and take the cash.' },
+    { at: 38.8, title: 'Receipt with QR',        text: 'Every sale gets a receipt you can print.' },
+    { at: 41.8, title: 'See it on the dashboard', text: "Today's sales and top items update right away." },
   ],
 };
 

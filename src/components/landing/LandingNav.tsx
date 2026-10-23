@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Home, Info, LayoutGrid, Mail, Lock, Menu, X } from 'lucide-react';
 import BrandMark from '@/components/shared/BrandMark';
+import InstallAppButton from '@/components/shared/InstallApp';
 import { NAV_LINKS } from './content';
 import { focusLogin, scrollToSection } from './scroll';
 import { cn } from '@/lib/utils';
@@ -72,7 +73,7 @@ export default function LandingNav() {
                   onClick={() => go(id)}
                   aria-current={isActive ? 'true' : undefined}
                   className={cn(
-                    'inline-flex items-center gap-2 px-4 lg:px-5 py-2 rounded-full text-sm font-medium transition-all',
+                    'inline-flex items-center gap-2 px-3 lg:px-5 py-2 rounded-full text-sm font-medium transition-all',
                     isActive
                       ? 'text-cream-50 border border-espresso-800 bg-espresso-800 shadow-[0_8px_20px_-10px_rgb(var(--espresso-900)/0.7)]'
                       : 'text-espresso-800 border border-transparent hover:bg-white/60 hover:text-espresso-950',
@@ -86,6 +87,7 @@ export default function LandingNav() {
           </nav>
 
           <div className="flex items-center gap-2">
+            <InstallAppButton variant="nav" className="hidden md:inline-flex" />
             <button
               onClick={() => { setOpen(false); focusLogin(); }}
               className="btn border border-espresso-800/60 bg-white/50 text-espresso-900 hover:bg-espresso-900 hover:text-cream-50 px-4 sm:px-5"
@@ -125,6 +127,7 @@ export default function LandingNav() {
                   </button>
                 );
               })}
+              <InstallAppButton variant="menu" />
             </div>
           </nav>
         )}
