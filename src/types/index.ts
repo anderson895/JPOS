@@ -163,6 +163,14 @@ export interface Product {
   isAvailable: boolean;
   cost: number;
   variants?: ProductVariant[];
+  /** Details that tell products apart (src/lib/productDetails.ts). Old products have none. */
+  brand?: string;
+  size?: string;
+  color?: string;
+  /** How it's sold: 'kg', 'pack'… ('' or missing = by the piece). */
+  unit?: string;
+  /** Barcode or the shop's own code: a scanner adds the product in the POS. */
+  sku?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -181,6 +189,9 @@ export interface OrderItem {
   variantId?: string;
   variantName?: string;
   notes?: string;
+  /** "Nestlé · 300 g", frozen at the sale (later product edits don't change it). */
+  details?: string;
+  unit?: string;
   subtotal: number;
 }
 
@@ -274,4 +285,6 @@ export interface CartItem {
   variantName?: string;
   notes?: string;
   imageUrl?: string;
+  details?: string;
+  unit?: string;
 }

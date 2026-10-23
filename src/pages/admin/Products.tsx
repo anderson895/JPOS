@@ -4,21 +4,31 @@ import {
 } from 'firebase/firestore';
 import { tenantCol, tenantDoc } from '@/lib/tenant';
 import { uploadImage } from '@/lib/cloudinary';
-import { formatCurrency } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import {
+  DETAIL_FIELDS, DETAIL_LABEL, DETAIL_MAX, UNITS, UNIT_LABEL, mainDetailFields, matchesSearch, productDetails, sizeExample,
+  type DetailField,
+} from '@/lib/productDetails';
 import Portal from '@/components/shared/Portal';
 import PageHeader from '@/components/shared/PageHeader';
 import type { Product, Category } from '@/types';
 import {
-  Plus, Search, Edit2, Trash2, X, Upload, ToggleLeft, ToggleRight, Loader2, Tag, Pencil, Package,
+  Plus, Search, Edit2, Trash2, X, Upload, ToggleLeft, ToggleRight, Loader2, Tag, Pencil, Package, ChevronDown, ScanBarcode,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const defaultProduct: Omit<Product, 'id' | 'createdAt' | 'updatedAt'> = {
   name: '', description: '', price: 0, categoryId: '', categoryName: '',
   imageUrl: '', isAvailable: true, cost: 0, variants: [],
+  brand: '', size: '', color: '', unit: '', sku: '',
 };
 
 export default function AdminProducts() {
+  const { tenant } = useAuth();
+  // The details this kind of store fills in first; the rest are under "More details"
+  const mainFields = mainDetailFields(tenant?.businessType);
+  const [moreDetails, setMoreDetails] = useState(false);
   const [products, setProducts]       = useState<Product[]>([]);
   const [categories, setCategories]   = useState<Category[]>([]);
   const [search, setSearch]           = useState('');
@@ -68,6 +78,11 @@ export default function AdminProducts() {
     if (!(cost >= 0)) {
       toast.error('Cost cannot be negative'); return;
     }
+    const sku = editProduct.sku?.trim() || '';
+    const sameCode = sku ? products.find(p => p.id !== editId && p.sku?.trim().toLowerCase() === sku.toLowerCase()) : undefined;
+    if (sameCode) {
+      toast.error(`"${sameCode.name}" already uses this barcode or code.`); return;
+    }
     setSaving(true);
     try {
       const cat = categories.find(c => c.id === editProduct.categoryId);
@@ -81,6 +96,11 @@ export default function AdminProducts() {
         imageUrl: editProduct.imageUrl || '',
         isAvailable: editProduct.isAvailable ?? true,
         variants: editProduct.variants || [],
+        brand: editProduct.brand?.trim() || '',
+        size: editProduct.size?.trim() || '',
+        color: editProduct.color?.trim() || '',
+        unit: editProduct.unit || '',
+        sku,
         updatedAt: new Date().toISOString(),
       };
       if (editId) {
@@ -211,20 +231,44 @@ export default function AdminProducts() {
   }
 
   const filtered = products.filter(p => {
-    const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = matchesSearch(p, search);
     const matchCat    = !filterCat || p.categoryId === filterCat;
     return matchSearch && matchCat;
   });
 
-  function openEdit(p: Product) { setEditProduct({ ...p }); setEditId(p.id); setModalOpen(true); }
-  function openNew()             { setEditProduct(defaultProduct); setEditId(null); setModalOpen(true); }
+  // "More details" opens by itself when the product already has one of them filled in
+  const hasHiddenDetail = (p: Partial<Product>) => DETAIL_FIELDS.some(f => !mainFields.includes(f) && !!p[f]?.trim());
+  function openEdit(p: Product) { setEditProduct({ ...defaultProduct, ...p }); setEditId(p.id); setMoreDetails(hasHiddenDetail(p)); setModalOpen(true); }
+  function openNew()             { setEditProduct(defaultProduct); setEditId(null); setMoreDetails(false); setModalOpen(true); }
+
+  const detailInput = (f: DetailField) => (
+    <div key={f} className={f === 'sku' ? 'col-span-2' : undefined}>
+      <label htmlFor={`product-${f}`} className="label">{DETAIL_LABEL[f]}</label>
+      {f === 'unit' ? (
+        <select id="product-unit" className="input" value={editProduct.unit || ''}
+          onChange={e => setEditProduct(p => ({ ...p, unit: e.target.value }))}>
+          <option value="">Piece (default)</option>
+          {UNITS.filter(u => u !== 'pc').map(u => <option key={u} value={u}>{UNIT_LABEL[u]}</option>)}
+        </select>
+      ) : (
+        <div className="relative">
+          {f === 'sku' && <ScanBarcode className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-bark-400" aria-hidden="true" />}
+          <input id={`product-${f}`} className={cn('input', f === 'sku' && 'pl-11')} maxLength={DETAIL_MAX[f]}
+            placeholder={f === 'brand' ? 'e.g. Nestlé' : f === 'size' ? sizeExample(tenant?.businessType) : f === 'color' ? 'e.g. Black' : 'Scan or type it'}
+            value={editProduct[f] || ''}
+            onChange={e => setEditProduct(p => ({ ...p, [f]: e.target.value }))} />
+        </div>
+      )}
+    </div>
+  );
+  const otherFields = DETAIL_FIELDS.filter(f => !mainFields.includes(f));
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 animate-fade-in max-w-[1400px] mx-auto">
       <PageHeader
-        eyebrow="Our Menu"
+        eyebrow="What you sell"
         title="Products"
-        subtitle={`${products.length} items in menu`}
+        subtitle={`${products.length} ${products.length === 1 ? 'product' : 'products'}`}
         actions={
           <>
             <button onClick={() => setCatModalOpen(true)} className="btn-secondary flex-1 sm:flex-none">
@@ -241,7 +285,7 @@ export default function AdminProducts() {
       <div className="card p-3 flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-bark-400" />
-          <input className="input pl-11" placeholder="Search products..." value={search} onChange={e => setSearch(e.target.value)} />
+          <input className="input pl-11" placeholder="Search by name, brand or code..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <select className="input sm:max-w-xs" value={filterCat} onChange={e => setFilterCat(e.target.value)}>
           <option value="">All Categories</option>
@@ -294,7 +338,9 @@ export default function AdminProducts() {
               </div>
               <div className="px-1.5 pt-2.5 pb-1">
                 <p className="font-semibold text-espresso-900 text-sm truncate">{p.name}</p>
-                <p className="text-[11px] text-bark-400 mb-1.5 truncate">{p.categoryName || 'Uncategorized'}</p>
+                <p className="text-[11px] text-bark-400 mb-1.5 truncate">
+                  {[productDetails(p), p.categoryName || 'Uncategorized'].filter(Boolean).join(' · ')}
+                </p>
                 <div className="flex items-center justify-between">
                   <span className="font-display font-semibold text-lg text-espresso-800">{formatCurrency(p.price)}</span>
                   <button
@@ -323,7 +369,7 @@ export default function AdminProducts() {
           <div className="modal-panel max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="modal-header">
               <div>
-                <p className="eyebrow text-2xl -mb-1">{editId ? 'Update' : 'New on the menu'}</p>
+                <p className="eyebrow text-2xl -mb-1">{editId ? 'Update' : 'New product'}</p>
                 <h2 className="font-display text-2xl text-espresso-900">{editId ? 'Edit Product' : 'Add Product'}</h2>
               </div>
               <button onClick={() => setModalOpen(false)} className="icon-btn"><X className="w-5 h-5" /></button>
@@ -384,6 +430,20 @@ export default function AdminProducts() {
                   {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
+              {/* Brand, size, unit, code…: the ones this kind of store uses first */}
+              {mainFields.length > 0 && (
+                <div className="grid grid-cols-2 gap-4">{mainFields.map(detailInput)}</div>
+              )}
+              {otherFields.length > 0 && (
+                <div>
+                  <button type="button" onClick={() => setMoreDetails(v => !v)} aria-expanded={moreDetails}
+                    className="flex items-center gap-1.5 text-sm font-semibold text-caramel-700 hover:text-espresso-900">
+                    <ChevronDown className={cn('w-4 h-4 transition-transform', moreDetails && 'rotate-180')} aria-hidden="true" />
+                    {mainFields.length ? 'More details' : 'Brand, size, barcode and more'}
+                  </button>
+                  {moreDetails && <div className="mt-3 grid grid-cols-2 gap-4">{otherFields.map(detailInput)}</div>}
+                </div>
+              )}
               <label htmlFor="available" className="flex items-center gap-3 px-4 py-3 rounded-full bg-cream-200/60 border border-cream-300 cursor-pointer">
                 <input type="checkbox" id="available"
                   checked={editProduct.isAvailable ?? true}

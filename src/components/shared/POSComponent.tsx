@@ -4,6 +4,7 @@ import { doc, getDocs, query, where } from 'firebase/firestore';
 import { tenantCol } from '@/lib/tenant';
 import { useAuth, useStoreBrand } from '@/contexts/AuthContext';
 import { receiptInfo } from '@/lib/storeProfile';
+import { findByCode, matchesSearch, productDetails } from '@/lib/productDetails';
 import { useCart } from '@/contexts/CartContext';
 import { formatCurrency, generateOrderNumber, roundMoney } from '@/lib/utils';
 import Portal from '@/components/shared/Portal';
@@ -101,7 +102,7 @@ export default function POSComponent() {
   }, [qrFullscreen]);
 
   const filteredProducts = products.filter(p => {
-    const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = matchesSearch(p, search);
     const matchCat = !activeCat || p.categoryId === activeCat;
     return matchSearch && matchCat;
   });
@@ -203,9 +204,20 @@ export default function POSComponent() {
             <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-bark-400" />
             <input
               className="input pl-11 py-3 bg-cream-50"
-              placeholder="Search menu..."
+              placeholder="Search or scan a barcode..."
+              aria-label="Search products or scan a barcode"
               value={search}
               onChange={e => setSearch(e.target.value)}
+              onKeyDown={e => {
+                // A barcode scanner types the code and presses Enter: add that product
+                if (e.key !== 'Enter') return;
+                const hit = findByCode(products.filter(p => p.isAvailable), search);
+                if (!hit) return;
+                e.preventDefault();
+                addItem(hit);
+                setSearch('');
+                toast.success(`Added ${hit.name}`, { id: 'scan', duration: 1500 });
+              }}
             />
           </div>
         </div>
@@ -267,7 +279,7 @@ export default function POSComponent() {
                   <div className="px-1.5 pt-2.5 pb-1 flex items-end gap-2">
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-espresso-900 text-sm truncate">{p.name}</p>
-                      <p className="text-[11px] text-bark-400 truncate">{p.categoryName}</p>
+                      <p className="text-[11px] text-bark-400 truncate">{productDetails(p) || p.categoryName}</p>
                       <p className="font-display font-semibold text-lg text-espresso-800 leading-tight mt-0.5">{formatCurrency(p.price)}</p>
                     </div>
                     <span className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-espresso-900 shadow-glow bg-gradient-to-b from-caramel-200 to-caramel-400 group-hover:scale-110 transition-transform">
@@ -341,7 +353,7 @@ export default function POSComponent() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-espresso-800 truncate">{item.productName}</p>
-                {item.variantName && <p className="text-xs text-bark-400">{item.variantName}</p>}
+                {(item.variantName || item.details) && <p className="text-xs text-bark-400 truncate">{[item.variantName, item.details].filter(Boolean).join(' · ')}</p>}
                 <p className="text-sm text-caramel-700 font-semibold">{formatCurrency(item.price * item.quantity)}</p>
               </div>
               <div className="flex items-center gap-1 flex-shrink-0">
@@ -670,9 +682,11 @@ export default function POSComponent() {
               <p className="text-center text-bark-500 mt-2 mb-3">{new Date(receipt.createdAt).toLocaleString()}</p>
               <div className="border-t border-dashed border-bark-300 pt-2 space-y-1">
                 {receipt.items.map((item, i) => (
-                  <div key={i} className="flex justify-between">
-                    <span>{item.productName} ×{item.quantity}</span>
-                    <span>{formatCurrency(item.subtotal)}</span>
+                  <div key={i} className="flex justify-between gap-3">
+                    <span className="min-w-0 break-words">
+                      {item.productName}{item.details ? ` (${item.details})` : ''} ×{item.quantity}{item.unit ? ` ${item.unit}` : ''}
+                    </span>
+                    <span className="shrink-0">{formatCurrency(item.subtotal)}</span>
                   </div>
                 ))}
               </div>

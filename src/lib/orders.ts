@@ -49,6 +49,8 @@ export function buildOrder(s: OrderSnapshot, orderNumber: string, payment?: Manu
       ...(i.variantId   ? { variantId: i.variantId }     : {}),
       ...(i.variantName ? { variantName: i.variantName } : {}),
       ...(i.notes       ? { notes: i.notes }             : {}),
+      ...(i.details     ? { details: i.details }         : {}),
+      ...(i.unit        ? { unit: i.unit }               : {}),
     })),
     subtotal: s.subtotal,
     discount: s.discountAmount,

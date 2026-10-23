@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { roundMoney } from '@/lib/utils';
+import { productDetails } from '@/lib/productDetails';
 import type { CartItem, Product } from '@/types';
 
 interface CartContextType {
@@ -66,6 +67,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         variantName,
         notes,
         imageUrl: product.imageUrl,
+        details: productDetails(product),
+        unit: product.unit || '',
       }];
     });
   }, []);
