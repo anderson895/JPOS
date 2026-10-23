@@ -1,9 +1,11 @@
 import { useSyncExternalStore } from 'react';
 
 /**
- * Installing JPOS as an app (a PWA). Chrome, Edge and Samsung Internet (Android,
- * Windows, Mac) offer their own install prompt, which our "Install app" buttons
- * open. Safari has no prompt: there the buttons show the steps instead.
+ * Installing JPOS as an app (a PWA). Chrome, Edge and Samsung Internet offer
+ * their own install window, which our "Install app" buttons open as soon as the
+ * browser has it ready (Chrome waits for a click and about 30 seconds on the
+ * page). Until then, and in browsers without one (Safari, Firefox), the buttons
+ * show the steps for that browser instead. So "Install app" is always there.
  */
 
 /** Chrome's install prompt (not in TypeScript's DOM types). */
@@ -12,22 +14,44 @@ interface InstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
+/** Which steps to show when the browser has no install window (ready). */
+export type InstallSteps =
+  | 'ios' | 'ios-in-app' | 'mac-safari'
+  | 'android' | 'android-in-app' | 'samsung' | 'firefox-android'
+  | 'chrome' | 'edge' | 'firefox' | 'other';
+
 /**
- * How this device installs JPOS: the browser's prompt, Safari's steps on an
- * iPhone/iPad (or "open it in Safari first" inside Facebook/Messenger), Safari
- * on a Mac, or null (already installed, or this browser can't install apps).
+ * What "Install app" does on this device: open the browser's install window,
+ * show the steps, say it was just installed, or null when this already is the
+ * installed app (nothing to show).
  */
-export type InstallWay = 'prompt' | 'ios' | 'ios-in-app' | 'mac-safari' | null;
+export type InstallWay = 'prompt' | InstallSteps | 'installed' | null;
+
+const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent;
+const touchMac = typeof navigator !== 'undefined' && /Macintosh/i.test(ua) && navigator.maxTouchPoints > 1;
+
+/** This device and browser's way to add JPOS by hand. */
+export const deviceSteps: InstallSteps = (() => {
+  const inApp = /FBAN|FBAV|FB_IAB|Instagram|Messenger|Line\//i.test(ua);
+  if (/iPhone|iPad|iPod/i.test(ua) || touchMac) return inApp ? 'ios-in-app' : 'ios';
+  if (/Android/i.test(ua)) {
+    if (inApp) return 'android-in-app';
+    if (/SamsungBrowser/i.test(ua)) return 'samsung';
+    if (/Firefox/i.test(ua)) return 'firefox-android';
+    return 'android'; // Chrome, Edge and others have it in their menu
+  }
+  if (/Firefox/i.test(ua)) return 'firefox';
+  if (/OPR\//i.test(ua)) return 'other';
+  if (/Edg\//i.test(ua)) return 'edge';
+  if (/Chrome|Chromium/i.test(ua)) return 'chrome';
+  if (/Macintosh/i.test(ua) && /Safari/i.test(ua)) return 'mac-safari';
+  return 'other';
+})();
 
 let deferred: InstallPromptEvent | null = null;
 let installed = false;
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach(fn => fn());
-
-const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent;
-const isIOS = /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1);
-const inAppBrowser = /FBAN|FBAV|FB_IAB|Instagram|Messenger|Line\//i.test(ua);
-const isMacSafari = !isIOS && /Macintosh/i.test(ua) && /Safari/i.test(ua) && !/Chrome|Chromium|CriOS|Edg|OPR|Firefox/i.test(ua);
 
 /** Running as the installed app right now. */
 function standalone(): boolean {
@@ -51,14 +75,13 @@ if (typeof window !== 'undefined') {
 }
 
 function currentWay(): InstallWay {
-  if (installed || standalone()) return null;
+  if (standalone()) return null;
+  if (installed) return 'installed';
   if (deferred) return 'prompt';
-  if (isIOS) return inAppBrowser ? 'ios-in-app' : 'ios';
-  if (isMacSafari) return 'mac-safari';
-  return null;
+  return deviceSteps;
 }
 
-/** How this device can install JPOS (null = hide the install buttons). */
+/** What "Install app" does on this device (null = this is the installed app). */
 export function useInstallWay(): InstallWay {
   return useSyncExternalStore(
     (fn) => { listeners.add(fn); return () => { listeners.delete(fn); }; },
@@ -67,7 +90,7 @@ export function useInstallWay(): InstallWay {
   );
 }
 
-/** Opens the browser's install prompt. A prompt can be used only once. */
+/** Opens the browser's install window. A browser lets each one be used only once. */
 export async function promptInstall(): Promise<'accepted' | 'dismissed' | 'unavailable'> {
   const e = deferred;
   if (!e) return 'unavailable';

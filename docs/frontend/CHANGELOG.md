@@ -628,3 +628,28 @@ The owner: "Point of sales naman kasi ang inooffer ko hindi coffee". The landing
   - The buttons and the iPhone and Messenger steps work.
   - No sideways scroll and no overlapping buttons from 360 to 1280 px.
 - **Video:** the walkthrough was re-recorded with the new logo. The chapter times in `content.ts` are updated.
+
+## 30. Install right from the landing page, and the phone account menu (2026-10-23)
+
+**"Install app" is always there.**
+- **Before:** the buttons only showed once the browser offered its install window. Chrome waits for a click and about 30 seconds on the page, so first-time visitors saw nothing (the owner: "sa landing pages palang meron ng installation ng app").
+- **Now:** the buttons show right away.
+  - They open the browser's window when it's ready.
+  - Until then, they show the steps for that browser. The browser is detected in `deviceSteps` (`src/lib/pwa.ts`), with steps for Chrome, Edge, Android, Samsung Internet, Firefox (Android, and desktop: "open it in Chrome or Edge"), iPhone/iPad, Mac Safari, and Messenger/Facebook in-app ("open it in Safari/Chrome first").
+  - Hidden only inside the installed app. After installing in a tab, they hide too.
+- **New "Get the JPOS app" section, right under the hero** (`src/components/landing/InstallSection.tsx`):
+  - The app icon as on a home screen, "Install it on your phone, tablet or computer. Free, and no app store needed."
+  - Android / iPhone & iPad / Windows / Mac chips, and a big **Install app** button.
+  - After installing it says "Installed on this device".
+- **Shared code:** `useInstallAction()` in `InstallApp.tsx` (used by the section and every button).
+
+**Phones: the avatar opens the account menu.**
+- In the app's top bar on phones, tapping the avatar opens a small menu with the name and role, **Account Settings** (admins) and **Logout** (with a spinner while logging out).
+- It closes on a tap outside, Escape, or another page. Desktop is unchanged (the sidebar has them).
+
+**Verified** on a local-test production build and the emulators:
+- **Install steps** per browser (Chrome, Edge, Firefox, Android, Samsung, iPhone, Messenger, Mac Safari) and Chrome's own window when ready.
+- **Installed state:** "Installed on this device" after installing, and nothing to install inside the installed app.
+- **Account menu:** Account Settings opens, Logout returns to sign-in, and staff see Logout only.
+- **Phones:** no sideways scroll on any page at 360/390 px.
+- **Tests:** api 45/45, unit 17/17, build, sign-up E2E, landing links.

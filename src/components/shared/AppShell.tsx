@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
-import { LogOut, Menu, X, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Loader2, LogOut, Menu, X, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import BrandMark from '@/components/shared/BrandMark';
 import InstallAppButton from '@/components/shared/InstallApp';
 import SubscriptionBanner from '@/components/shared/SubscriptionBanner';
@@ -24,7 +24,7 @@ interface AppShellProps {
   roleLabel: string;
   /** Initials fallback when the user has no name. */
   fallbackInitial: string;
-  onLogout: () => void;
+  onLogout: () => void | Promise<void>;
   /** Shows the gear button when provided. */
   onOpenSettings?: () => void;
   /** Desktop icon-rail collapse (admin only). */
@@ -198,7 +198,14 @@ export default function AppShell({
             <Menu className="w-5 h-5" />
           </button>
           <BrandMark tone="dark" size="sm" subtitle={panelLabel} />
-          <div className="ml-auto">{avatar}</div>
+          {/* The avatar opens Account Settings and Logout (on phones the sidebar is hidden) */}
+          <AccountMenu
+            avatar={avatar}
+            name={user?.displayName ?? ''}
+            roleLabel={roleLabel}
+            onLogout={onLogout}
+            onOpenSettings={onOpenSettings}
+          />
         </header>
 
         <main ref={mainRef} className="flex-1 overflow-y-auto">
@@ -208,6 +215,84 @@ export default function AppShell({
       </div>
 
       {children}
+    </div>
+  );
+}
+
+/** Phones: the avatar in the top bar opens a small menu with Account Settings and Logout. */
+function AccountMenu({ avatar, name, roleLabel, onLogout, onOpenSettings }: {
+  avatar: ReactNode;
+  name: string;
+  roleLabel: string;
+  onLogout: () => void | Promise<void>;
+  onOpenSettings?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const { pathname } = useLocation();
+
+  // Closes on another page, a tap outside, or Escape
+  useEffect(() => { setOpen(false); }, [pathname]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('pointerdown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+
+  const logout = async () => {
+    setLeaving(true);
+    try { await onLogout(); } finally { setLeaving(false); }
+  };
+
+  return (
+    <div ref={ref} className="relative ml-auto">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Account menu"
+        className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-caramel-300"
+      >
+        {avatar}
+      </button>
+      {open && (
+        <div
+          role="menu"
+          aria-label="Account"
+          className="absolute right-0 top-full z-50 mt-2 w-60 rounded-2xl border border-cream-300 bg-cream-50 p-1.5 text-espresso-900 shadow-lift animate-fade-in"
+        >
+          <div className="mb-1 border-b border-cream-300/70 px-3 py-2.5">
+            <p className="truncate text-sm font-semibold">{name || 'Signed in'}</p>
+            <p className="text-xs capitalize text-bark-500">{roleLabel}</p>
+          </div>
+          {onOpenSettings && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { setOpen(false); onOpenSettings(); }}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors hover:bg-cream-200"
+            >
+              <Settings className="h-4 w-4 text-bark-500" aria-hidden="true" />
+              Account Settings
+            </button>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={logout}
+            disabled={leaving}
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-60"
+          >
+            {leaving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <LogOut className="h-4 w-4" aria-hidden="true" />}
+            {leaving ? 'Logging out…' : 'Logout'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

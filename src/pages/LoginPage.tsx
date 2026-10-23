@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import LandingNav from '@/components/landing/LandingNav';
 import { applyTheme } from '@/components/shared/theme';
 import Hero from '@/components/landing/Hero';
+import InstallSection from '@/components/landing/InstallSection';
 import AboutSection from '@/components/landing/AboutSection';
 import DemoSection from '@/components/landing/DemoSection';
 import { WALKTHROUGH } from '@/components/landing/content';
@@ -25,6 +26,8 @@ export default function LoginPage() {
       <LandingNav />
       <main>
         <Hero />
+        {/* Install JPOS as an app, right from the landing page */}
+        <InstallSection />
         <AboutSection />
         {/* The walkthrough: sign up, add products, make a sale (sample data) */}
         <DemoSection src={WALKTHROUGH.src} poster={WALKTHROUGH.poster} steps={WALKTHROUGH.steps} />
