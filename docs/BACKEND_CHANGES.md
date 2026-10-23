@@ -721,3 +721,25 @@ The public landing page used to download the whole app in one 1.7 MB file: every
 **Tests:**
 - `npm run test:api`: 45/45 (sign-up codes, limits, leftovers, payment emails, `checkCode`).
 - Playwright E2E on the emulators: 21/21. It covers no account before the code, a wrong code, Back, the right code → dashboard with the trial running, a reused code refused, "no shop" → Back → sign-in, and the old leftover login.
+
+## 25. Store features: Store Settings, product details, discounts, VAT and void (2026-10-23, branch `store-features`)
+
+**Data (all new fields optional; old shops, products and orders work as before):**
+- `tenants/{T}`: `businessType` (`food|grocery|clothing|hardware|pharmacy|gadgets|services|other`) and `receipt { vatRegistered, tin, address, phone, footer }`.
+- `tenants/{T}/settings/branding` **(public get, no list)**: `{ name, logoUrl ('' = JPOS logo), theme, updatedAt, updatedBy }`. Written with the shop at sign-up; shops made before get it the first time an admin opens the app (`addMissingBranding`).
+- `tenants/{T}/discounts/{id}`: `{ name ≤40, kind percent|fixed, value (>0; ≤100 or ≤100000), active, createdAt, updatedAt }`.
+- `Product`: `brand`, `size`, `color`, `unit`, `sku`. `OrderItem`: `details`, `unit`, `discount`, `discountName`.
+- `Order`: `discount` = every peso given away (items + order + Senior/PWD 20%); `tax` = the VAT inside the total; `vat { vatable, vat, exempt }` (VAT-registered stores), `lessVat` (Senior/PWD in VAT stores), `discounts [{ name, amount }]`, `senior { type, idNumber, name }`; `total = subtotal − discount − lessVat`. Void: `status: 'voided'`, `voidedBy`, `voidedByName`, `voidedAt`, `voidReason`.
+
+**Money** (`src/lib/pricing.ts`, pure, `tests/unit/pricing.test.ts`): item discounts → order discount on the rest → total; VAT stores split the total into VATable sales and VAT (÷ 1.12). Senior/PWD: exempt = subtotal ÷ 1.12 (VAT stores), 20% of that off, no other discounts. Every step rounds to the centavo.
+
+**Rules (`firestore.rules`):**
+- Tenant create allows an optional valid `businessType`. New tenant update `editStore()`: admins (shop not suspended) change only `name`, `businessType`, `receipt`, `updatedAt`, validated; a new name must match the branding doc in the same batch.
+- `settings/branding`: public `get`; written by the shop's admins (not suspended) or the new owner in the sign-up batch; keys, https logo ≤ 500, theme and name (= the shop's) validated.
+- `discounts`: members read; admins with access write (validated); admins delete.
+- **Orders:** the only update is **void** (admin with access, `completed → voided`, own uid, a 3–200 character reason, nothing else changed). **Delete is no longer allowed** (it was admin-allowed before; nothing in the app deleted orders).
+- Tests: `tests/rules/store.rules.test.mjs` (57); the full suite is 212/212. Rule tests can now run beside the local test app: `RULES_PROJECT=demo-rules FIRESTORE_EMULATOR_HOST=127.0.0.1:8085 node tests/rules/<file>`.
+
+**Deploy order:** **rules first, then the app.** The new rules accept the current live app (no `businessType`, no branding doc); the new app's sign-up needs the new rules.
+
+**Also on this branch:** a shop's sign-in page refuses other shops' accounts and logout returns to where you signed in (`AuthContext`, `src/lib/terminal.ts`); Super Admin email change (`api/account/email-code.ts`, `email-finish.ts`, api tests 58/58).

@@ -653,3 +653,43 @@ The owner: "Point of sales naman kasi ang inooffer ko hindi coffee". The landing
 - **Account menu:** Account Settings opens, Logout returns to sign-in, and staff see Logout only.
 - **Phones:** no sideways scroll on any page at 360/390 px.
 - **Tests:** api 45/45, unit 17/17, build, sign-up E2E, landing links.
+
+## 31. Each store's own look, product details, discounts, VAT and void (2026-10-23, branch `store-features`)
+
+The owner's list (note.txt): logos and colors per shop, the shop's name on its sign-in link, a kind of store chosen at sign-up, product details (unit, brand, size…), discounts, void, VAT receipts, a phone menu, and no signing in to another shop's link.
+
+**Store Settings** (admin menu, `/admin/store`, `src/pages/admin/StoreSettings.tsx`):
+- Store name, **What do you sell?** (Food & drinks, Sari-sari & grocery, Clothes & shoes, Hardware, Pharmacy, Gadgets, Services, Something else), and the shop's sign-in link to copy.
+- **Logo** (upload; "Use JPOS logo" goes back to the default) and **Colors** (the 6 themes). Tapping a color shows it at once; leaving without saving puts the saved one back.
+- **Receipt:** address, phone, TIN, a **VAT registered** switch, and a thank-you line, with a live receipt preview.
+- The save bar follows the screen only while there's something to save (on phones it no longer covers the page).
+
+**The shop's own look everywhere:**
+- The sidebar and phone top bar show the shop's logo and name (`BrandMark` takes `name`/`logoUrl`; long names get a smaller font). The app uses the shop's colors (`AppShell` applies them; the landing keeps the JPOS colors).
+- The shop's sign-in page (`/s/:slug`) shows its logo, name and colors, "Powered by JPOS", and the browser tab says "<shop> · Sign in".
+- Receipts print the shop's name, address, phone, `VAT REG TIN` / `NON-VAT REG TIN` and its thank-you line.
+
+**Sign-up:** "What do you sell?" (`BusinessTypePicker`) is required; a line above the button says what's still missing.
+
+**Product details** (`src/lib/productDetails.ts`): brand, size, color, sold by (unit) and barcode/code.
+- The product form shows first the details the store's kind uses; the rest are under **More details** (opens by itself when one is filled in).
+- Two products can't share a code. Search (Products and POS) looks at name, brand, size, color and code.
+- POS: a scanned barcode (code + Enter) adds the product. Tiles, the cart and receipts show the details: "Evaporated milk (Alaska · 370 mL) ×2 can".
+
+**Discounts** (`src/lib/pricing.ts`, `src/components/pos/DiscountSheet.tsx`):
+- **Products → Discounts** (`DiscountsModal`): the admin adds named discounts (% or ₱), switches them on/off, edits or deletes them.
+- POS: the tag button on a cart line gives that item a discount; **Add discount** under the cart gives the whole order one (a saved one or another amount).
+- **Senior / PWD** tab: Senior citizen or PWD, ID number and name. VAT comes off first, then 20% (20% of the price when the store isn't VAT-registered). It replaces other discounts. The receipt shows the ID, the name and a signature line.
+
+**VAT receipt:** VAT-registered stores print VATable sales, VAT 12% and VAT-exempt sales. The receipt is one component (`src/components/pos/Receipt.tsx`) used by the POS and Reports.
+
+**Void** (Reports → Order Details):
+- Each sale has a receipt button and, for admins, **Void** (`VoidOrderModal`): pick or type a reason. The sale stays, marked **VOID** with the reason, and leaves every total. Its receipt shows VOID.
+- Dashboards show voided sales crossed out with a VOID badge.
+
+**Also on this branch:**
+- **Phones and tablets:** a tab bar at the bottom (Home, POS, Products, Reports, More); "More" opens the full menu. The POS "View Order" bar sits above it.
+- **A shop's sign-in page only lets in that shop's accounts**; logging out returns to the page you signed in on (the shop's page or the landing page).
+- **Super Admin can change their sign-in email** (Account Settings and the Super Admin Settings tab): a 6-digit code goes to the new email.
+
+**Verified** on the local test app: Store Settings 33/33, product details 9/9, discounts/Senior/VAT/void 22/22, shop lock 10/10, tab bar 9/9, change email 15/15; phone screenshots at 390 px.

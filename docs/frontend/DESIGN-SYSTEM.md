@@ -34,7 +34,8 @@ How it works:
 - The theme is chosen with `<html data-theme="…">` through `applyTheme()` in `src/components/shared/theme.ts`.
   - The tenant app (`AppShell`) applies it, and resets to the default on unmount.
   - The **landing page always forces the default** (`applyTheme(null)` plus `data-theme="espresso"` on its root). `/platform` must do the same when it's built.
-- The shop's chosen theme comes **only** from the store's Branding settings (`settings/branding.theme`, Phase B). There is no other switcher: the dev-only preview was removed at the owner's request (2026-10-23). Until Phase B every shop uses the default theme.
+- The shop's theme comes **only** from **Store Settings → Colors** (`tenants/{T}/settings/branding.theme`, read live by `useStoreBrand()`). The shop's sign-in page (`/s/:slug`) uses it too. There is no other switcher (the dev-only preview was removed at the owner's request, 2026-10-23).
+- A theme can be shown on one element only: `data-theme="matcha"` on any element re-colors what's inside it (the Store Settings color swatches do this).
 
 Rules for theme-safe code:
 - **Never write a hex/rgb literal for a UI color.**
