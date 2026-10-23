@@ -34,13 +34,11 @@ export function useInstallAction() {
   return { way, busy, install, steps };
 }
 
-type Variant = 'nav' | 'menu' | 'sidebar' | 'terminal';
+type Variant = 'nav' | 'sidebar' | 'terminal';
 
 const STYLE: Record<Variant, string> = {
   // Landing nav (light): an icon on tablets, with its label on wide screens
   nav: 'btn border border-espresso-800/30 bg-white/60 text-espresso-900 hover:bg-white px-3 lg:px-4',
-  // Landing mobile menu: a full-width tile under the links
-  menu: 'col-span-2 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-semibold border border-espresso-800/20 bg-white/80 text-espresso-900',
   // The app's dark sidebar
   sidebar: 'sidebar-link w-full',
   // The staff sign-in page (dark), under the card

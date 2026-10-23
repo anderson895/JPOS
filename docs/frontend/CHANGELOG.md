@@ -689,6 +689,7 @@ The owner's list (note.txt): logos and colors per shop, the shop's name on its s
 
 **Also on this branch:**
 - **Phones and tablets:** a tab bar at the bottom (Home, POS, Products, Reports, More); "More" opens the full menu. The POS "View Order" bar sits above it.
+- **The landing page on phones** has the same kind of tab bar (Home, About, Features, Contact, Install) instead of the menu button; Login stays at the top, and the page leaves room so the footer isn't covered.
 - **A shop's sign-in page only lets in that shop's accounts**; logging out returns to the page you signed in on (the shop's page or the landing page).
 - **Super Admin can change their sign-in email** (Account Settings and the Super Admin Settings tab): a 6-digit code goes to the new email.
 

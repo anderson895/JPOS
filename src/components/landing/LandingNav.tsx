@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Home, Info, LayoutGrid, Mail, Lock, Menu, X } from 'lucide-react';
+import { Download, Home, Info, LayoutGrid, Loader2, Mail, Lock } from 'lucide-react';
 import BrandMark from '@/components/shared/BrandMark';
-import InstallAppButton from '@/components/shared/InstallApp';
+import InstallAppButton, { useInstallAction } from '@/components/shared/InstallApp';
 import { NAV_LINKS } from './content';
 import { focusLogin, scrollToSection } from './scroll';
 import { cn } from '@/lib/utils';
@@ -12,12 +12,14 @@ const ICONS = { home: Home, about: Info, features: LayoutGrid, contact: Mail };
  * Fixed landing navbar: transparent over the light hero, then it fades into
  * frosted cream as the page scrolls (gradually, not in one jump). Dark text
  * throughout, so it reads on the light hero and on the bar. No border line.
+ * Phones: the links are tabs at the bottom of the screen, like an app.
  */
 export default function LandingNav() {
   const [scrolled, setScrolled] = useState(false);
   const [active, setActive] = useState<string>('home');
-  const [open, setOpen] = useState(false);
   const headerRef = useRef<HTMLElement>(null);
+  const installer = useInstallAction();
+  const canInstall = !!installer.way && installer.way !== 'installed';
 
   useEffect(() => {
     let frame = 0;
@@ -43,12 +45,13 @@ export default function LandingNav() {
     return () => { cancelAnimationFrame(frame); window.removeEventListener('scroll', onScroll); };
   }, []);
 
-  const go = (id: string) => { setOpen(false); scrollToSection(id); };
+  const go = (id: string) => scrollToSection(id);
 
   return (
+    <>
     <header
       ref={headerRef}
-      className={cn('fixed inset-x-0 top-0 z-40 [--nav-solid:0]', open && '![--nav-solid:1]')}
+      className="fixed inset-x-0 top-0 z-40 [--nav-solid:0]"
       style={{
         backgroundColor: 'rgb(var(--cream-50) / calc(var(--nav-solid) * 0.9))',
         boxShadow: '0 12px 30px -18px rgb(var(--espresso-900) / calc(var(--nav-solid) * 0.35))',
@@ -89,49 +92,54 @@ export default function LandingNav() {
           <div className="flex items-center gap-2">
             <InstallAppButton variant="nav" className="hidden md:inline-flex" />
             <button
-              onClick={() => { setOpen(false); focusLogin(); }}
+              onClick={focusLogin}
               className="btn border border-espresso-800/60 bg-white/50 text-espresso-900 hover:bg-espresso-900 hover:text-cream-50 px-4 sm:px-5"
             >
               <Lock className="w-4 h-4" />
               Login
             </button>
-            <button
-              onClick={() => setOpen(o => !o)}
-              className="md:hidden w-10 h-10 rounded-full flex items-center justify-center text-espresso-900 hover:bg-espresso-900/5"
-              aria-label={open ? 'Close menu' : 'Open menu'}
-              aria-expanded={open}
-            >
-              {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
           </div>
         </div>
-
-        {/* Mobile menu */}
-        {open && (
-          <nav className="md:hidden pb-4 animate-fade-in" aria-label="Main">
-            <div className="grid grid-cols-2 gap-2">
-              {NAV_LINKS.map(({ id, label }) => {
-                const Icon = ICONS[id];
-                return (
-                  <button
-                    key={id}
-                    onClick={() => go(id)}
-                    className={cn(
-                      'flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-medium border',
-                      active === id
-                        ? 'border-espresso-800 bg-espresso-800 text-cream-50'
-                        : 'border-cream-300 bg-white/70 text-espresso-800',
-                    )}
-                  >
-                    <Icon className="w-4 h-4" /> {label}
-                  </button>
-                );
-              })}
-              <InstallAppButton variant="menu" />
-            </div>
-          </nav>
-        )}
       </div>
     </header>
+
+    {/* Phones: tabs at the bottom, like an app (the page leaves room for them) */}
+    <nav
+      aria-label="Main"
+      className="md:hidden fixed inset-x-0 bottom-0 z-40 grid border-t border-cream-300/80 bg-cream-50/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-10px_30px_-18px_rgb(var(--espresso-900)/0.45)] backdrop-blur-md"
+      style={{ gridTemplateColumns: `repeat(${NAV_LINKS.length + (canInstall ? 1 : 0)}, minmax(0, 1fr))` }}
+    >
+      {NAV_LINKS.map(({ id, label }) => {
+        const Icon = ICONS[id];
+        const isActive = active === id;
+        return (
+          <button
+            key={id}
+            onClick={() => go(id)}
+            aria-current={isActive ? 'true' : undefined}
+            className={cn('flex h-16 flex-col items-center justify-center gap-1 text-[11px] transition-colors', isActive ? 'font-semibold text-espresso-900' : 'font-medium text-bark-500')}
+          >
+            <span className={cn('flex h-7 w-12 items-center justify-center rounded-full transition-colors', isActive && 'bg-espresso-800 text-cream-50')}>
+              <Icon className="h-5 w-5" aria-hidden="true" />
+            </span>
+            {label}
+          </button>
+        );
+      })}
+      {canInstall && (
+        <button
+          onClick={installer.install}
+          disabled={installer.busy}
+          className="flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-semibold text-caramel-700"
+        >
+          <span className="flex h-7 w-12 items-center justify-center rounded-full bg-caramel-100">
+            {installer.busy ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> : <Download className="h-5 w-5" aria-hidden="true" />}
+          </span>
+          Install
+        </button>
+      )}
+    </nav>
+    {installer.steps}
+    </>
   );
 }

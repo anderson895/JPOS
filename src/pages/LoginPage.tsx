@@ -22,7 +22,8 @@ export default function LoginPage() {
   useEffect(() => { applyTheme(null); }, []);
 
   return (
-    <div data-theme="espresso" className="min-h-screen bg-cream-100 text-espresso-900 overflow-x-hidden">
+    // Phones: room at the bottom for the tab bar (LandingNav: 4rem + its 1px top border)
+    <div data-theme="espresso" className="min-h-screen bg-cream-100 text-espresso-900 overflow-x-hidden pb-[calc(4rem+1px+env(safe-area-inset-bottom))] md:pb-0">
       <LandingNav />
       <main>
         <Hero />
