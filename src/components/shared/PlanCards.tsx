@@ -20,18 +20,18 @@ const accounts = (limit: number | null | undefined) => (limit == null ? 'Unlimit
 interface Feature { label: string; soon?: boolean }
 const FEATURES: Record<PlanId, Feature[]> = {
   starter: [
-    { label: 'Point of sale' },
+    { label: 'Point of sale' }, { label: 'Void sales' },
     { label: 'Barcode and QR integrated' }, { label: 'Today & weekly reports' }, { label: 'Available on mobile and desktop' },
   ],
   business: [
     { label: 'Everything in Starter' }, { label: 'Custom branding (logo and colors)' },
-    { label: 'Void sales' }, { label: 'Inventory and low-stock alerts' }, { label: 'Audit trail' },
+    { label: 'Inventory and low-stock alerts' }, { label: 'Audit trail' },
     { label: 'All reports + PDF' }, { label: 'Sales trends' }, { label: 'RFID card login' },
   ],
   enterprise: [
     { label: 'Everything in Business' }, { label: 'Priority support' }, { label: 'Advanced point of sale', soon: true },
     { label: 'AI assistant for your sales', soon: true }, { label: 'Two-step sign-in (2FA)', soon: true }, { label: 'Many branches, one account', soon: true },
-    { label: 'Sales forecasts', soon: true }, { label: 'Customer rewards', soon: true },
+    { label: 'Sales forecasts', soon: true },
   ],
 };
 const LEVEL: Record<PlanId, string> = { starter: 'Basic features', business: 'Standard features', enterprise: 'Advanced features' };

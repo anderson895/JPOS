@@ -20,7 +20,7 @@ const auth = getAuth();
 const db = getFirestore();
 const iso = new Date().toISOString();
 const ENT = {
-  starter: { plan: 'starter', staffLimit: 3, rfid: false, fullReports: false, pdfExport: false, trends: false, branding: false, discounts: false, voidSales: false, inventory: false, auditTrail: false, storageMB: 500 },
+  starter: { plan: 'starter', staffLimit: 3, rfid: false, fullReports: false, pdfExport: false, trends: false, branding: false, discounts: false, voidSales: true, inventory: false, auditTrail: false, storageMB: 500 },
   business: { plan: 'business', staffLimit: 10, rfid: true, fullReports: true, pdfExport: true, trends: true, branding: true, discounts: true, voidSales: true, inventory: true, auditTrail: true, storageMB: 2048 },
   enterprise: { plan: 'enterprise', staffLimit: 100, rfid: true, fullReports: true, pdfExport: true, trends: true, branding: true, discounts: true, voidSales: true, inventory: true, auditTrail: true, storageMB: 10240 },
 };

@@ -388,10 +388,10 @@ service cloud.firestore {
         allow create: if memberOf(t) && hasAccess(t)
           && request.resource.data.cashierId == request.auth.uid
           && eWalletOk(id, request.resource.data) && cardOk(request.resource.data);
-        // Void: an admin marks a completed sale VOID with a reason. It stays for
+        // Void (every package): an admin marks a completed sale VOID with a reason. It stays for
         // the record (left out of every sales total); nothing else changes, and
         // sales are never deleted.
-        allow update: if adminOf(t) && hasAccess(t) && shopCan(t, 'voidSales')
+        allow update: if adminOf(t) && hasAccess(t) && shop(t).entitlements.get('voidSales', true)
           && resource.data.status == 'completed'
           && changed().hasOnly(['status', 'voidedBy', 'voidedByName', 'voidedAt', 'voidReason', 'updatedAt'])
           && d().status == 'voided'

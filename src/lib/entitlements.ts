@@ -47,7 +47,7 @@ export const PLAN_LABEL: Record<PlanId, string> = { starter: 'Starter', business
 
 /** Defaults; the Super Admin can change them in platform settings. */
 export const DEFAULT_ENTITLEMENTS: Record<PlanId, Entitlements> = {
-  starter:    { plan: 'starter',    staffLimit: 3,    rfid: false, fullReports: false, pdfExport: false, trends: false, branding: false, discounts: false, voidSales: false, inventory: false, auditTrail: false, storageMB: 500 },
+  starter:    { plan: 'starter',    staffLimit: 3,    rfid: false, fullReports: false, pdfExport: false, trends: false, branding: false, discounts: false, voidSales: true,  inventory: false, auditTrail: false, storageMB: 500 },
   business:   { plan: 'business',   staffLimit: 10,   rfid: true,  fullReports: true,  pdfExport: true,  trends: true,  branding: true,  discounts: true,  voidSales: true, inventory: true, auditTrail: true, storageMB: 2048 },
   enterprise: { plan: 'enterprise', staffLimit: 100,  rfid: true,  fullReports: true,  pdfExport: true,  trends: true,  branding: true,  discounts: true,  voidSales: true, inventory: true, auditTrail: true, storageMB: 10240 },
 };
@@ -57,13 +57,15 @@ export type Feature = 'rfid' | 'fullReports' | 'pdfExport' | 'trends' | 'brandin
 
 /**
  * Does this shop's package include it? A shop saved before a feature existed
- * has no flag for it: then its package decides (Starter no, Business and
- * Enterprise yes), exactly like firestore.rules (`shopCan`).
+ * has no flag for it: then the package's default decides (DEFAULT_ENTITLEMENTS),
+ * exactly like firestore.rules (`shopCan`, and void open to every package).
  */
 export function hasFeature(t: Pick<Tenant, 'plan' | 'entitlements'> | null | undefined, f: Feature): boolean {
   if (!t) return false;
   const v = t.entitlements?.[f];
-  return typeof v === 'boolean' ? v : t.plan !== 'starter';
+  if (typeof v === 'boolean') return v;
+  const d = DEFAULT_ENTITLEMENTS[t.plan]?.[f];
+  return typeof d === 'boolean' ? d : t.plan !== 'starter';
 }
 
 /** The package's storage in MB (null = no limit); shops saved before storage limits use their package's. */
