@@ -698,6 +698,6 @@ The owner's list (note.txt): logos and colors per shop, the shop's name on its s
 ## 32. Forgot password, and a way home from a shop's sign-in page (2026-10-23)
 
 - **Forgot password?** (next to Password on every sign-in card, landing and shop pages, `src/components/landing/ForgotPassword.tsx`): email → a 6-digit code → a new password → signed in right away. On a shop's page only that shop's accounts get in, as usual. "Back" keeps the typed email. An email with no account gets the same screen (nobody can find out who has an account).
-- **"JPOS home"** on a shop's sign-in page (`/s/:slug`): goes to the main page and the device stops returning to the shop page (before, once a device had signed in on a shop page, the main address always went back there with no way out). Logging out still returns to where you signed in.
+- **"Powered by JPOS"** on a shop's sign-in card (`/s/:slug`; first a "JPOS home" button, which the owner asked to drop): goes to the main page and the device stops returning to the shop page (before, once a device had signed in on a shop page, the main address always went back there with no way out). Logging out still returns to where you signed in.
 - **Code boxes** fit any space (Account Settings on phones overflowed).
 - **Verified** on the local test app: forgot password 20/20 (owner, unknown email, cashier with an RFID card), JPOS home 7/7, code boxes at 320–1280 px.

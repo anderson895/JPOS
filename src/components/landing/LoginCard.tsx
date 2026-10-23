@@ -3,11 +3,11 @@ import { FirebaseError } from 'firebase/app';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthErrorMessage, CANCELLED_SIGN_IN_CODES } from '@/lib/authErrors';
 import { CreditCard, KeyRound, Eye, EyeOff, Loader2, Wifi, Mail, Lock, LogIn, UserPlus } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import CreamCard from '@/components/shared/CreamCard';
 import GoogleIcon from '@/components/shared/GoogleIcon';
 import ForgotPassword from '@/components/landing/ForgotPassword';
-import { rememberSignInPage } from '@/lib/terminal';
+import { forgetSignInPage, rememberSignInPage } from '@/lib/terminal';
 import type { StoreBrand } from '@/lib/storeProfile';
 import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
@@ -27,6 +27,7 @@ export default function LoginCard({ terminalSlug, brand }: {
   brand?: StoreBrand;
 } = {}) {
   const { login, loginWithRFID, loginWithGoogle } = useAuth();
+  const navigate = useNavigate();
   // Signing out returns here: this shop's sign-in page, or the landing page
   const signInPage = terminalSlug ? `/s/${terminalSlug}` : '/login';
   // Every sign-in page opens on email and password (owner's choice); a shop's page also has an RFID tab
@@ -354,11 +355,24 @@ export default function LoginCard({ terminalSlug, brand }: {
           </p>
         )}
 
-        <p className="relative text-center text-bark-500 text-[11px] mt-6">
-          {brand
-            ? <>Powered by <span className="text-espresso-700">JPOS</span></>
-            : <>JPOS v1.0 · <span className="text-espresso-700">Business Management System</span></>}
-        </p>
+        {/* A shop's page: "Powered by JPOS" goes to the JPOS main page, and the
+            device stops coming back to this shop page (forgetSignInPage) */}
+        {terminalSlug ? (
+          <p className="relative text-center text-[11px] mt-6">
+            <button
+              type="button"
+              onClick={() => { forgetSignInPage(); navigate('/login'); }}
+              className="text-bark-500 underline-offset-2 hover:text-espresso-900 hover:underline"
+              title="Go to the JPOS home page"
+            >
+              Powered by <span className="font-semibold text-espresso-700">JPOS</span>
+            </button>
+          </p>
+        ) : (
+          <p className="relative text-center text-bark-500 text-[11px] mt-6">
+            JPOS v1.0 · <span className="text-espresso-700">Business Management System</span>
+          </p>
+        )}
       </CreamCard>
     </div>
   );
