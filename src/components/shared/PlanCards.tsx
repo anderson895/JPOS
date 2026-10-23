@@ -30,7 +30,7 @@ const FEATURES: Record<PlanId, Feature[]> = {
   ],
   enterprise: [
     { label: 'Everything in Business' }, { label: 'Priority support' },
-    { label: 'AI assistant for your sales', soon: true }, { label: 'Many branches, one account', soon: true },
+    { label: 'AI assistant for your sales', soon: true }, { label: 'Two-step sign-in (2FA)', soon: true }, { label: 'Many branches, one account', soon: true },
     { label: 'Sales forecasts', soon: true }, { label: 'Customer rewards', soon: true },
   ],
 };
