@@ -244,8 +244,9 @@ export function CodeBoxes({ value, onChange, id = 'signup-code' }: { value: stri
   const [focused, setFocused] = useState(false);
   const active = Math.min(value.length, 5);
   return (
-    <div className="relative mx-auto w-fit rounded-[26px] border border-cream-300 bg-white/70 p-1.5 transition-all focus-within:border-caramel-400 focus-within:ring-2 focus-within:ring-caramel-300 sm:p-2">
-      <div className="flex gap-1.5 sm:gap-2.5" aria-hidden="true">
+    // Fills the space it's given (up to 24rem), so it fits narrow places too (e.g. inside Account Settings)
+    <div className="relative mx-auto w-full max-w-[24rem] rounded-[26px] border border-cream-300 bg-white/70 p-1.5 transition-all focus-within:border-caramel-400 focus-within:ring-2 focus-within:ring-caramel-300">
+      <div className="grid grid-cols-6 gap-1.5" aria-hidden="true">
         {Array.from({ length: 6 }, (_, i) => {
           const digit = value[i];
           const here = focused && i === active && value.length < 6;
@@ -253,7 +254,7 @@ export function CodeBoxes({ value, onChange, id = 'signup-code' }: { value: stri
             <span
               key={i}
               className={cn(
-                'flex h-12 w-10 items-center justify-center rounded-2xl bg-white font-body text-2xl font-semibold text-espresso-900 shadow-card ring-1 ring-cream-300 transition-shadow sm:h-16 sm:w-14',
+                'flex aspect-[7/8] min-w-0 items-center justify-center rounded-2xl bg-white font-body text-2xl font-semibold text-espresso-900 shadow-card ring-1 ring-cream-300 transition-shadow',
                 here && 'ring-2 ring-caramel-400',
               )}
             >

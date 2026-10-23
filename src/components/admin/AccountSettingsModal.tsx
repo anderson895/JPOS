@@ -159,7 +159,7 @@ export default function AccountSettingsModal({ onClose }: Props) {
 
         {/* ── Profile Tab ── */}
         {activeTab === 'profile' && (
-          <div className="p-6 space-y-5">
+          <div className="p-4 sm:p-6 space-y-5">
             {/* Avatar */}
             <div className="flex flex-col items-center gap-3">
               <div className="relative">
@@ -200,7 +200,7 @@ export default function AccountSettingsModal({ onClose }: Props) {
             </div>
             {/* The JPOS owner can change their sign-in email (a code goes to the new one) */}
             {isSuperAdmin ? (
-              <ChangeEmailCard className="rounded-3xl border border-cream-300/80 bg-cream-100/60 p-4" />
+              <ChangeEmailCard className="rounded-3xl border border-cream-300/80 bg-cream-100/60 p-3 sm:p-4" />
             ) : (
               <div>
                 <label className="label">Email</label>
@@ -218,7 +218,7 @@ export default function AccountSettingsModal({ onClose }: Props) {
 
         {/* ── Password Tab ── */}
         {activeTab === 'password' && (
-          <div className="p-6 space-y-4">
+          <div className="p-4 sm:p-6 space-y-4">
             <div>
               <label className="label">Current Password</label>
               <div className="relative">

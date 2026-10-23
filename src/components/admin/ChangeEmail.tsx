@@ -100,7 +100,7 @@ export default function ChangeEmailCard({ className }: { className?: string }) {
 
       {/* 1. New email + password */}
       {step === 'form' && (
-        <form onSubmit={e => { e.preventDefault(); send(); }} className="space-y-3 rounded-3xl border border-cream-300 bg-white/60 p-4">
+        <form onSubmit={e => { e.preventDefault(); send(); }} className="space-y-3 sm:rounded-3xl sm:border sm:border-cream-300 sm:bg-white/60 sm:p-4">
           <div>
             <label className="label" htmlFor="new-signin-email">New email</label>
             <div className="relative">
@@ -131,7 +131,7 @@ export default function ChangeEmailCard({ className }: { className?: string }) {
 
       {/* 2. The code from the new email */}
       {step === 'code' && (
-        <form onSubmit={e => { e.preventDefault(); confirm(code); }} className="space-y-3 rounded-3xl border border-cream-300 bg-white/60 p-4">
+        <form onSubmit={e => { e.preventDefault(); confirm(code); }} className="space-y-3 sm:rounded-3xl sm:border sm:border-cream-300 sm:bg-white/60 sm:p-4">
           <button type="button" onClick={() => setStep('form')} disabled={!!busy} className="inline-flex items-center gap-1.5 text-sm font-medium text-bark-500 hover:text-espresso-800">
             <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Back
           </button>
