@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { AlertTriangle, ArrowLeft, BadgeCheck, Check, Copy, Eye, EyeOff, Link2, Loader2, Lock, Mail, RefreshCw, Sparkles, Store, Tag, User as UserIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
 import GoogleIcon from '@/components/shared/GoogleIcon';
+import BusinessTypePicker from '@/components/shared/BusinessTypePicker';
 import { PLAN_LABEL } from '@/lib/entitlements';
 import { slugProblem } from '@/lib/subscriptions';
 import { USE_EMULATORS } from '@/lib/firebase';
@@ -70,6 +71,12 @@ export function SignUpForm({ s, onChangePlan }: { s: SignUp; onChangePlan: () =>
         <input id="owner-name" className="input pl-11 py-3" autoComplete="name" value={s.ownerName} onChange={e => s.setOwnerName(e.target.value)} placeholder="e.g. Juan Dela Cruz" maxLength={60} required />
       </Field>
 
+      {/* What the shop sells: it picks the product details the shop fills in */}
+      <div className="sm:col-span-2">
+        <p id="shop-type-label" className="label">What do you sell?</p>
+        <BusinessTypePicker labelId="shop-type-label" value={s.businessType} onChange={s.setBusinessType} />
+      </div>
+
       {/* The shop's sign-in page for the POS devices: type or paste it, and copy it */}
       <div className="sm:col-span-2">
         <label className="label" htmlFor="shop-link">Your shop's sign-in page</label>
@@ -117,6 +124,8 @@ export function SignUpForm({ s, onChangePlan }: { s: SignUp; onChangePlan: () =>
       )}
 
       <div className="flex flex-col gap-3 pt-1 sm:col-span-2">
+        {/* Why the button is still off, once they started filling in the form */}
+        {s.shopProblem && s.shopName.trim() && <p className="text-center text-xs text-bark-500">{s.shopProblem}</p>}
         <button type="submit" disabled={!!s.busy || !!s.shopProblem || s.closed} className="btn-primary w-full py-3 text-[15px]">
           {s.busy === 'code' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}
           {s.signedIn ? 'Create my shop for free' : s.busy === 'code' ? 'Sending your code…' : 'Create free account'}

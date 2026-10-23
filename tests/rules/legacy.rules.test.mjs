@@ -10,7 +10,8 @@ import {
 const RULES = process.env.RULES_FILE ?? 'firestore.transition.rules';
 const [emuHost, emuPort] = (process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8085').split(':');
 const env = await initializeTestEnvironment({
-  projectId: 'demo-jpos',
+  // RULES_PROJECT: run beside the local test app (npm run dev) without touching its data
+  projectId: process.env.RULES_PROJECT ?? 'demo-jpos',
   firestore: { rules: readFileSync(RULES, 'utf8'), host: emuHost, port: Number(emuPort) },
 });
 

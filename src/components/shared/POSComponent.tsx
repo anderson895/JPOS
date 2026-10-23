@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { doc, getDocs, query, where } from 'firebase/firestore';
 import { tenantCol } from '@/lib/tenant';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth, useStoreBrand } from '@/contexts/AuthContext';
+import { receiptInfo } from '@/lib/storeProfile';
 import { useCart } from '@/contexts/CartContext';
 import { formatCurrency, generateOrderNumber, roundMoney } from '@/lib/utils';
 import Portal from '@/components/shared/Portal';
@@ -30,6 +31,8 @@ const PAYMENT_METHODS: { value: PaymentMethod; label: string; icon: any }[] = [
 
 export default function POSComponent() {
   const { currentUser, tenant } = useAuth();
+  const brand = useStoreBrand();
+  const shopInfo = receiptInfo(tenant);
   const { items: cartItems, addItem, removeItem, updateQuantity, clearCart, subtotal, total, discount, setDiscount, discountType, setDiscountType, discountAmount, itemCount } = useCart();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -657,9 +660,14 @@ export default function POSComponent() {
 
             {/* Receipt Content — id="receipt" is what the @media print rules print */}
             <div ref={receiptRef} id="receipt" className="mx-6 my-5 p-5 bg-white rounded-2xl border border-dashed border-cream-500 font-mono text-xs space-y-1 text-espresso-900 print:m-0 print:p-0 print:border-0 print:rounded-none">
-              {/* The shop's own name (every shop prints its own receipts) */}
-              <p className="text-center font-bold text-base font-body mb-2 uppercase">{tenant?.name || 'JPOS'}</p>
-              <p className="text-center text-bark-500 mb-3">{new Date(receipt.createdAt).toLocaleString()}</p>
+              {/* The shop's own name and details (Store Settings): every shop prints its own receipts */}
+              <p className="text-center font-bold text-base font-body uppercase break-words">{brand.name}</p>
+              {shopInfo.address && <p className="text-center break-words">{shopInfo.address}</p>}
+              {shopInfo.phone && <p className="text-center">{shopInfo.phone}</p>}
+              {(shopInfo.vatRegistered || shopInfo.tin) && (
+                <p className="text-center">{shopInfo.vatRegistered ? 'VAT REG TIN' : 'NON-VAT REG TIN'} {shopInfo.tin}</p>
+              )}
+              <p className="text-center text-bark-500 mt-2 mb-3">{new Date(receipt.createdAt).toLocaleString()}</p>
               <div className="border-t border-dashed border-bark-300 pt-2 space-y-1">
                 {receipt.items.map((item, i) => (
                   <div key={i} className="flex justify-between">
@@ -682,7 +690,7 @@ export default function POSComponent() {
                 <QRCodeSVG value={receiptQrPayload(receipt)} size={128} level="M" marginSize={2} />
                 <p className="mt-1 text-[10px]">{receipt.orderNumber}</p>
               </div>
-              <p className="text-center text-bark-500 mt-2">Thank you for your order!</p>
+              <p className="text-center text-bark-500 mt-2 break-words">{shopInfo.footer || 'Thank you for your order!'}</p>
               <p className="text-center text-bark-400">Cashier: {receipt.cashierName}</p>
             </div>
 

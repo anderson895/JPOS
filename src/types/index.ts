@@ -53,6 +53,37 @@ export interface Tenant {
   entitlements: Entitlements;
   staffCount: number;
   pendingRequestId?: string | null;
+  /** What the shop sells (chosen at sign-up, changeable in Store Settings). Old shops have none. */
+  businessType?: BusinessType;
+  /** What the receipt shows under the shop name (Store Settings). */
+  receipt?: ReceiptInfo;
+}
+
+/** The kinds of store JPOS is set up for (src/lib/storeProfile.ts has the labels). */
+export type BusinessType = 'food' | 'grocery' | 'clothing' | 'hardware' | 'pharmacy' | 'gadgets' | 'services' | 'other';
+
+/** The shop's details printed on every receipt. */
+export interface ReceiptInfo {
+  /** BIR VAT-registered: the receipt shows VATable sales and 12% VAT. */
+  vatRegistered: boolean;
+  tin: string;
+  address: string;
+  phone: string;
+  /** A closing line, e.g. "Thank you, come again!" */
+  footer: string;
+}
+
+/**
+ * tenants/{T}/settings/branding: the shop's name, logo and colors. Anyone can
+ * read it (the shop's sign-in page shows it before anyone signs in).
+ */
+export interface StoreBranding {
+  name: string;
+  /** '' = the JPOS logo. */
+  logoUrl: string;
+  theme: string;
+  updatedAt?: FirestoreTime;
+  updatedBy?: string;
 }
 
 /** A package as the Super Admin defines it (platform/settings.plans). */

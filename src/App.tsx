@@ -17,6 +17,7 @@ const AdminReports   = lazy(() => import('./pages/admin/Reports'));
 const AdminPOS       = lazy(() => import('./pages/admin/POS'));
 const AdminStaff     = lazy(() => import('./pages/admin/Staff'));
 const AdminPayments  = lazy(() => import('./pages/admin/PaymentSettings'));
+const AdminStore     = lazy(() => import('./pages/admin/StoreSettings'));
 const AdminBilling   = lazy(() => import('./pages/admin/Billing'));
 const SuperAdmin     = lazy(() => import('./pages/admin/SuperAdmin'));
 const StaffDashboard = lazy(() => import('./pages/staff/Dashboard'));
@@ -93,6 +94,7 @@ export default function App() {
           <Route path="reports" element={<Page><AdminReports /></Page>} />
           <Route path="pos" element={<Page><AdminPOS /></Page>} />
           <Route path="staff" element={<Page><AdminStaff /></Page>} />
+          <Route path="store" element={<Page><AdminStore /></Page>} />
           <Route path="payments" element={<Page><AdminPayments /></Page>} />
           <Route path="billing" element={<Page><AdminBilling /></Page>} />
           <Route path="platform" element={!superAdminChecked ? <LoadingScreen /> : isSuperAdmin ? <Page><SuperAdmin /></Page> : <Navigate to="/admin" replace />} />

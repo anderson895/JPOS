@@ -7,6 +7,8 @@ import { Link } from 'react-router-dom';
 import CreamCard from '@/components/shared/CreamCard';
 import GoogleIcon from '@/components/shared/GoogleIcon';
 import { rememberSignInPage } from '@/lib/terminal';
+import type { StoreBrand } from '@/lib/storeProfile';
+import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
 
 // RFID readers "type" a tag at roughly 10–30 ms per character; people are far slower.
@@ -17,9 +19,11 @@ const SCANNER_MS_PER_CHAR = 50;
  * Auth logic is unchanged from the previous LoginPage — only the markup moved here.
  * `id="login"` and `id="login-email"` are scroll/focus targets for the landing CTAs.
  */
-export default function LoginCard({ terminalSlug }: {
+export default function LoginCard({ terminalSlug, brand }: {
   /** Set on a shop's terminal page (/s/:slug). RFID is offered only there: the card lookup needs the shop. */
   terminalSlug?: string;
+  /** The shop's own name and logo, on its sign-in page. */
+  brand?: StoreBrand;
 } = {}) {
   const { login, loginWithRFID, loginWithGoogle } = useAuth();
   // Signing out returns here: this shop's sign-in page, or the landing page
@@ -135,8 +139,12 @@ export default function LoginCard({ terminalSlug }: {
 
         {/* Header */}
         <div className="relative text-center">
-          <img src="/logo.png" alt="JPOS logo" className="w-20 h-20 mx-auto rounded-full mix-blend-multiply" />
-          <h2 className="mt-1 font-display text-3xl font-semibold text-espresso-900 tracking-wide">JPOS</h2>
+          {brand?.hasLogo
+            ? <img src={brand.logoUrl} alt="" className="w-20 h-20 mx-auto rounded-2xl object-cover shadow-md ring-1 ring-cream-400/70" />
+            : <img src="/logo.png" alt="JPOS logo" className="w-20 h-20 mx-auto rounded-full mix-blend-multiply" />}
+          <h2 className={cn('mt-1 font-display font-semibold text-espresso-900 tracking-wide break-words', (brand?.name ?? 'JPOS').length > 18 ? 'text-2xl' : 'text-3xl')}>
+            {brand?.name ?? 'JPOS'}
+          </h2>
           <div className="mt-1 flex items-center justify-center gap-2 text-[13px] font-medium text-espresso-800">
             <span className="h-px w-8 sm:w-12 bg-gradient-to-r from-transparent to-caramel-500" />
             <span className="w-1 h-1 rotate-45 bg-caramel-500" />
@@ -331,7 +339,9 @@ export default function LoginCard({ terminalSlug }: {
         )}
 
         <p className="relative text-center text-bark-500 text-[11px] mt-6">
-          JPOS v1.0 · <span className="text-espresso-700">Business Management System</span>
+          {brand
+            ? <>Powered by <span className="text-espresso-700">JPOS</span></>
+            : <>JPOS v1.0 · <span className="text-espresso-700">Business Management System</span></>}
         </p>
       </CreamCard>
     </div>

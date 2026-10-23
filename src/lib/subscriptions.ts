@@ -8,7 +8,9 @@ import { normalizeReference } from '@/lib/eWallet';
 import { getPlatformSettings, getSavedPlatformSettings } from '@/lib/platform';
 import { callApi } from '@/lib/api';
 import { PLAN_LABEL } from '@/lib/entitlements';
-import type { PlanId, SubscriptionRequest, Tenant } from '@/types';
+import { brandingRef } from '@/lib/storeProfile';
+import { DEFAULT_THEME } from '@/components/shared/theme';
+import type { BusinessType, PlanId, SubscriptionRequest, Tenant } from '@/types';
 
 /**
  * A shop's own subscription actions: create the shop at sign-up, start the
@@ -50,9 +52,9 @@ export class SlugTakenError extends Error {
 /**
  * Creates the owner's shop in SETUP mode (they can prepare everything, but
  * can't sell until they start the trial or a payment is approved). One batch:
- * the shop, its link, and the owner's profile. Needs a verified email.
+ * the shop, its link, its public name, and the owner's profile. Needs a verified email.
  */
-export async function createShop(input: { shopName: string; slug: string; ownerName: string; desiredPlan: PlanId }) {
+export async function createShop(input: { shopName: string; slug: string; ownerName: string; businessType: BusinessType; desiredPlan: PlanId }) {
   const user = auth.currentUser;
   if (!user) throw new Error('Sign in again.');
   if (!user.emailVerified) throw new Error('Verify your email first.');
@@ -70,7 +72,7 @@ export async function createShop(input: { shopName: string; slug: string; ownerN
   const shopRef = doc(collection(db, 'tenants'));
   const batch = writeBatch(db);
   batch.set(shopRef, {
-    name: input.shopName.trim(), slug: input.slug, ownerUid: user.uid,
+    name: input.shopName.trim(), slug: input.slug, ownerUid: user.uid, businessType: input.businessType,
     plan: 'starter', desiredPlan: input.desiredPlan,
     status: 'setup', suspended: false, trialUsed: false, trialDays: settings.trialDays,
     entitlements: settings.plans.starter.entitlements,
@@ -78,6 +80,10 @@ export async function createShop(input: { shopName: string; slug: string; ownerN
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   });
   batch.set(doc(db, 'slugs', input.slug), { tenantId: shopRef.id });
+  // The shop's public name (its sign-in page shows it), with the JPOS logo and colors to start
+  batch.set(brandingRef(shopRef.id), {
+    name: input.shopName.trim(), logoUrl: '', theme: DEFAULT_THEME, updatedAt: serverTimestamp(), updatedBy: user.uid,
+  });
   batch.set(doc(db, 'users', user.uid), {
     tenantId: shopRef.id, email: user.email ?? '', displayName: input.ownerName.trim(),
     role: 'admin', isActive: true, rfidTag: '', photoURL: '', createdAt: iso, updatedAt: iso,

@@ -36,6 +36,21 @@ service cloud.firestore {
         && !(slug in ['admin', 'platform', 'login', 's', 'api', 'staff', 'subscribe', 'billing', 'help', 'www', 'app', 'jpos']);
     }
 
+    // ── Store Settings: what the shop sells, and what its receipts say ────
+    function validBusinessType(v) {
+      return v in ['food', 'grocery', 'clothing', 'hardware', 'pharmacy', 'gadgets', 'services', 'other'];
+    }
+    function validReceipt(r) {
+      return r is map
+        && r.keys().hasOnly(['vatRegistered', 'tin', 'address', 'phone', 'footer'])
+        && r.keys().hasAll(['vatRegistered', 'tin', 'address', 'phone', 'footer'])
+        && r.vatRegistered is bool
+        && r.tin is string && r.tin.size() <= 20 && r.tin.matches('^[0-9 -]*$')
+        && r.address is string && r.address.size() <= 200
+        && r.phone is string && r.phone.size() <= 30
+        && r.footer is string && r.footer.size() <= 200;
+    }
+
     // ── People: one shop per login (users/{uid}.tenantId) ────────────────
     match /users/{uid} {
       allow get: if signedIn() && (request.auth.uid == uid || adminOf(resource.data.tenantId) || isSuperAdmin());
@@ -194,7 +209,8 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.auth.token.email_verified == true
         && !exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && d().keys().hasOnly(['name', 'slug', 'ownerUid', 'plan', 'desiredPlan', 'status', 'suspended', 'trialUsed', 'trialDays', 'entitlements', 'staffCount', 'lastStaffChange', 'pendingRequestId', 'createdAt', 'updatedAt'])
+        && d().keys().hasOnly(['name', 'slug', 'ownerUid', 'businessType', 'plan', 'desiredPlan', 'status', 'suspended', 'trialUsed', 'trialDays', 'entitlements', 'staffCount', 'lastStaffChange', 'pendingRequestId', 'createdAt', 'updatedAt'])
+        && (!('businessType' in d()) || validBusinessType(d().businessType))
         && d().ownerUid == request.auth.uid
         && d().status == 'setup' && d().suspended == false && d().trialUsed == false
         && d().trialDays == platform().trialDays
@@ -209,8 +225,21 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId == t;
 
       allow update: if startTrial() || counterUp() || counterDown() || openRequest() || cancelRequest()
-                    || superReview() || superAudited();
+                    || superReview() || superAudited() || editStore();
       allow delete: if false;
+
+      // Store Settings: the shop's admins change its name, what it sells and its
+      // receipt details. A new name goes to its public name in the same batch.
+      function editStore() {
+        return adminOf(t) && resource.data.suspended == false
+          && changed().hasOnly(['name', 'businessType', 'receipt', 'updatedAt'])
+          && d().updatedAt == request.time
+          && d().name is string && d().name.size() >= 2 && d().name.size() <= 60
+          && (!('businessType' in d()) || validBusinessType(d().businessType))
+          && (!('receipt' in d()) || validReceipt(d().receipt))
+          && (!changed().hasAny(['name'])
+              || getAfter(/databases/$(database)/documents/tenants/$(t)/settings/branding).data.name == d().name);
+      }
 
       // The one-time free trial, started by the shop's admin
       function startTrial() {
@@ -365,6 +394,29 @@ service cloud.firestore {
           && request.resource.data.card.enabled is bool
           && request.resource.data.updatedAt is string
           && request.resource.data.updatedBy == request.auth.uid;
+      }
+
+      // The shop's name, logo and colors. Public: its sign-in page shows them
+      // before anyone signs in (nothing private here). Written with the shop at
+      // sign-up, then by its admins (Store Settings); the name matches the shop's.
+      function brandingOk() {
+        return d().keys().hasOnly(['name', 'logoUrl', 'theme', 'updatedAt', 'updatedBy'])
+          && d().name == getAfter(/databases/$(database)/documents/tenants/$(t)).data.name
+          && d().logoUrl is string && d().logoUrl.size() <= 500
+          && (d().logoUrl == '' || d().logoUrl.matches('^https://.+'))
+          && d().theme in ['espresso', 'matcha', 'berry', 'ocean', 'charcoal', 'sunset']
+          && d().updatedBy == request.auth.uid
+          && d().updatedAt == request.time;
+      }
+      match /settings/branding {
+        allow get: if true;
+        allow list: if false;
+        allow create, update: if signedIn() && brandingOk() && (
+            (adminOf(t) && shop(t).suspended == false)
+            // the new owner, in the batch that creates the shop
+            || (!exists(/databases/$(database)/documents/tenants/$(t))
+                && getAfter(/databases/$(database)/documents/tenants/$(t)).data.ownerUid == request.auth.uid));
+        allow delete: if false;
       }
 
       // RFID: the staff sign-in page looks up ONE card before sign-in (public get,

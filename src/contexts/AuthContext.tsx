@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -20,12 +20,17 @@ import { auth, db } from '@/lib/firebase';
 import { setCurrentTenant, tenantDoc, tenantRef } from '@/lib/tenant';
 import { isSuperAdmin as checkSuperAdmin } from '@/lib/platform';
 import { callPublicApi } from '@/lib/api';
-import type { Tenant, User } from '@/types';
+import { brandingRef, storeBrand, type StoreBrand } from '@/lib/storeProfile';
+import type { StoreBranding, Tenant, User } from '@/types';
 
 interface AuthContextType {
   currentUser: User | null;
   /** The signed-in user's shop (live). Null while loading or signed out. */
   tenant: Tenant | null;
+  /** The shop's name, logo and colors (live). Null when the shop never saved any. */
+  branding: StoreBranding | null;
+  /** False until the shop's branding has been read (so a missing one can be told apart). */
+  brandingReady: boolean;
   firebaseUser: FirebaseUser | null;
   /** Signed in, but the account has no shop yet (a new sign-up): finish at /subscribe. */
   noShop: boolean;
@@ -54,6 +59,12 @@ export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');
   return ctx;
+}
+
+/** The signed-in shop's name, logo and colors, or the JPOS ones. */
+export function useStoreBrand(): StoreBrand {
+  const { branding, tenant } = useAuth();
+  return useMemo(() => storeBrand(branding, tenant?.name), [branding, tenant?.name]);
 }
 
 async function fetchUserProfile(fbUser: FirebaseUser): Promise<User | null> {
@@ -110,6 +121,8 @@ async function restoreRfidPassword(fbUser: FirebaseUser, profile: User) {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [branding, setBranding] = useState<StoreBranding | null>(null);
+  const [brandingReady, setBrandingReady] = useState(false);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [noShop, setNoShop] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
@@ -128,6 +141,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let unsubProfile: (() => void) | null = null;
     let unsubTenant: (() => void) | null = null;
+    let unsubBranding: (() => void) | null = null;
     // Bumped on every auth change (and on unmount). Async work started for an
     // older auth state checks it before touching anything, so a slow response
     // for a user who has since signed out can't "log them back in".
@@ -135,8 +149,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const clearState = () => {
       if (unsubTenant) { unsubTenant(); unsubTenant = null; }
+      if (unsubBranding) { unsubBranding(); unsubBranding = null; }
       setCurrentTenant(null);
       setTenant(null);
+      setBranding(null);
+      setBrandingReady(false);
       setCurrentUser(null);
       setNoShop(false);
     };
@@ -224,6 +241,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 if (version === authVersion) resetSession();
               }
             );
+            // The shop's name, logo and colors (Store Settings), live
+            unsubBranding = onSnapshot(
+              brandingRef(shopId),
+              (bsnap) => {
+                if (version !== authVersion) return;
+                setBranding(bsnap.exists() ? (bsnap.data() as StoreBranding) : null);
+                setBrandingReady(true);
+              },
+              (err) => {
+                // Not fatal: the app falls back to the JPOS look
+                console.error('Branding snapshot error:', err);
+                if (version === authVersion) { setBranding(null); setBrandingReady(false); }
+              }
+            );
           }
           setNoShop(false);
           setCurrentUser(profile);
@@ -241,6 +272,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       unsubAuth();
       if (unsubProfile) unsubProfile();
       if (unsubTenant) unsubTenant();
+      if (unsubBranding) unsubBranding();
     };
   }, []);
 
@@ -389,6 +421,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try { await signOut(auth); } catch { /* already signed out */ }
     setCurrentTenant(null);
     setTenant(null);
+    setBranding(null);
+    setBrandingReady(false);
     setCurrentUser(null);
     setFirebaseUser(null);
     setNoShop(false);
@@ -407,7 +441,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-      currentUser, tenant, firebaseUser, noShop, isSuperAdmin, superAdminChecked, loading,
+      currentUser, tenant, branding, brandingReady, firebaseUser, noShop, isSuperAdmin, superAdminChecked, loading,
       login, loginWithRFID, loginWithGoogle, sendSignUpCode, finishSignUp,
       logout, refreshUser,
     }}>

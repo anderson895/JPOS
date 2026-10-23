@@ -1,9 +1,10 @@
 import { useNavigate } from 'react-router-dom';
 import { signedOutHome } from '@/lib/terminal';
 import { useAuth } from '@/contexts/AuthContext';
-import { LayoutDashboard, BarChart3, ShoppingCart, Users, Wallet, CreditCard, ShieldCheck, Package } from 'lucide-react';
+import { LayoutDashboard, BarChart3, ShoppingCart, Users, Wallet, CreditCard, ShieldCheck, Package, Store } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { watchPendingRequests } from '@/lib/platform';
+import { addMissingBranding } from '@/lib/storeProfile';
 import AppShell, { type ShellNavItem } from '@/components/shared/AppShell';
 import AccountSettingsModal from '@/components/admin/AccountSettingsModal';
 import toast from 'react-hot-toast';
@@ -14,12 +15,13 @@ const navItems: ShellNavItem[] = [
   { to: '/admin/products', icon: Package,          label: 'Products' },
   { to: '/admin/reports',  icon: BarChart3,       label: 'Reports' },
   { to: '/admin/staff',    icon: Users,           label: 'Manage Staff' },
+  { to: '/admin/store',    icon: Store,           label: 'Store Settings' },
   { to: '/admin/payments', icon: Wallet,          label: 'Payment Settings' },
   { to: '/admin/billing',  icon: CreditCard,      label: 'Subscription' },
 ];
 
 export default function AdminLayout() {
-  const { currentUser, logout, isSuperAdmin } = useAuth();
+  const { currentUser, logout, isSuperAdmin, tenant, branding, brandingReady } = useAuth();
   const navigate = useNavigate();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
@@ -41,6 +43,15 @@ export default function AdminLayout() {
       seen.current = new Set(rows.map(r => r.id));
     });
   }, [isSuperAdmin]);
+
+  // A shop made before Store Settings has no public name yet: add it once, so its
+  // sign-in page shows the shop's name instead of "JPOS"
+  const addedBranding = useRef(false);
+  useEffect(() => {
+    if (!brandingReady || branding || !tenant || tenant.suspended || currentUser?.role !== 'admin' || addedBranding.current) return;
+    addedBranding.current = true;
+    addMissingBranding(tenant).catch(err => console.warn('[AdminLayout] could not add the shop branding', err));
+  }, [brandingReady, branding, tenant, currentUser?.role]);
 
   // The JPOS owner's own shop never pays, so Subscription gives way to Super Admin
   const items: ShellNavItem[] = isSuperAdmin

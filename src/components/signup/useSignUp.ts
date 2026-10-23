@@ -8,14 +8,15 @@ import { isPlanChoice, type PlanChoice } from '@/components/shared/PlanCards';
 import { getAuthErrorMessage, CANCELLED_SIGN_IN_CODES } from '@/lib/authErrors';
 import { createShop, isSlugAvailable, slugify, slugProblem, startTrial, SIGNUP_CLOSED_MESSAGE, SlugTakenError } from '@/lib/subscriptions';
 import { rememberSignInPage } from '@/lib/terminal';
-import type { PlanId } from '@/types';
+import { isBusinessType } from '@/lib/storeProfile';
+import type { BusinessType, PlanId } from '@/types';
 
 const DRAFT_KEY = 'jpos-signup-draft';
 /** "Send a new code" waits a minute between emails (the server's limit too). */
 const RESEND_WAIT_MS = 60_000;
 /** A code works for 10 minutes: within that, the same email skips sending another one. */
 const CODE_LIFE_MS = 10 * 60_000;
-interface Draft { shopName: string; slug: string; ownerName: string; plan: PlanChoice | null; email?: string }
+interface Draft { shopName: string; slug: string; ownerName: string; businessType: BusinessType | null; plan: PlanChoice | null; email?: string }
 
 /**
  * Kept in this browser, so a reload (or a phone closing the tab while the
@@ -66,6 +67,8 @@ export function useSignUp(initialChoice: PlanChoice | null) {
   const [slugTouched, setSlugTouched] = useState(!!draft.slug);
   const [slugFree, setSlugFree] = useState<boolean | null>(null);
   const [ownerName, setOwnerName] = useState(draft.ownerName ?? '');
+  // What the shop sells: it picks the product details the shop fills in
+  const [businessType, setBusinessType] = useState<BusinessType | null>(isBusinessType(draft.businessType) ? draft.businessType : null);
   const [email, setEmail] = useState(draft.email ?? '');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
@@ -120,7 +123,8 @@ export function useSignUp(initialChoice: PlanChoice | null) {
   }, [signedIn, firebaseUser?.displayName]);
   const shopProblem = !shopName.trim() || shopName.trim().length < 2 ? 'Enter your shop name.'
     : slugProblem(slug) ?? (slugFree === false ? 'That shop link is taken. Try another one.' : null)
-    ?? (!ownerName.trim() ? 'Enter your name.' : null);
+    ?? (!ownerName.trim() ? 'Enter your name.' : null)
+    ?? (!businessType ? 'Pick what your store sells.' : null);
 
   const setSlug = (value: string) => {
     setSlugTouched(true);
@@ -135,7 +139,7 @@ export function useSignUp(initialChoice: PlanChoice | null) {
     if (shopProblem) { setWorking(null); toast.error(shopProblem, { id: shopProblem }); return; }
     setWorking('Setting up your shop…');
     try {
-      const shopId = await createShop({ shopName, slug, ownerName, desiredPlan: plan });
+      const shopId = await createShop({ shopName, slug, ownerName, businessType: businessType ?? 'other', desiredPlan: plan });
       clearDraft();
       if (choice === 'trial') {
         setWorking('Starting your free trial…');
@@ -171,7 +175,7 @@ export function useSignUp(initialChoice: PlanChoice | null) {
     if (shopProblem) { toast.error(shopProblem, { id: shopProblem }); return; }
     if (password.length < 6) { toast.error('Use a password with at least 6 characters.', { id: 'password' }); return; }
     const address = email.trim().toLowerCase();
-    saveDraft({ shopName, slug, ownerName, plan: choice, email: address });
+    saveDraft({ shopName, slug, ownerName, businessType, plan: choice, email: address });
     // Came back to fix something: the code already sent to this email still works
     if (lastSent?.to === address && Date.now() - lastSent.at < CODE_LIFE_MS) {
       setCodeSentTo(address);
@@ -229,7 +233,7 @@ export function useSignUp(initialChoice: PlanChoice | null) {
   const google = async () => {
     if (closed) { showError(new Error(SIGNUP_CLOSED_MESSAGE), SIGNUP_CLOSED_MESSAGE); return; }
     if (shopProblem) { toast.error(shopProblem, { id: shopProblem }); return; }
-    saveDraft({ shopName, slug, ownerName, plan: choice });
+    saveDraft({ shopName, slug, ownerName, businessType, plan: choice });
     setBusy('google');
     let isNew = false;
     try {
@@ -260,7 +264,7 @@ export function useSignUp(initialChoice: PlanChoice | null) {
     /** Sign-up isn't open: JPOS's prices and trial were never set up. */
     closed,
     choice, setChoice, plan,
-    shopName, setShopName, slug, setSlug, slugFree, ownerName, setOwnerName,
+    shopName, setShopName, slug, setSlug, slugFree, ownerName, setOwnerName, businessType, setBusinessType,
     email, setEmail, password, setPassword, showPass, setShowPass,
     busy, working, target, waitSec,
     /** What the "please wait" screen says, or null. */

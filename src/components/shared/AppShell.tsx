@@ -3,6 +3,8 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import { Loader2, LogOut, Menu, X, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import BrandMark from '@/components/shared/BrandMark';
+import { applyTheme } from '@/components/shared/theme';
+import { useStoreBrand } from '@/contexts/AuthContext';
 import InstallAppButton from '@/components/shared/InstallApp';
 import SubscriptionBanner from '@/components/shared/SubscriptionBanner';
 import type { User } from '@/types';
@@ -51,8 +53,11 @@ export default function AppShell({
   // Mobile drawer open/closed.
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // The color theme comes from each store's Branding settings (Phase B, applyTheme in
-  // src/components/shared/theme.ts). Until then the app uses the default theme.
+  // The shop's own name, logo and colors (Store Settings). Leaving the app
+  // (sign-out) puts the JPOS colors back for the public pages.
+  const brand = useStoreBrand();
+  useEffect(() => { applyTheme(brand.theme); }, [brand.theme]);
+  useEffect(() => () => applyTheme(null), []);
 
   // <main> is shared by every page, so its scroll position would carry over
   // (e.g. Reports opening half-way down after scrolling the Dashboard).
@@ -110,7 +115,7 @@ export default function AppShell({
 
         {/* Header */}
         <div className={cn('relative flex items-center gap-2 px-4 pt-5 pb-4', !showLabels && 'lg:flex-col lg:px-2')}>
-          <BrandMark tone="dark" subtitle={panelLabel} iconOnly={!showLabels} />
+          <BrandMark tone="dark" subtitle={panelLabel} iconOnly={!showLabels} name={brand.name} logoUrl={brand.logoUrl} />
 
           {/* Desktop collapse toggle */}
           {collapsible && (
@@ -199,7 +204,7 @@ export default function AppShell({
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Mobile top bar */}
         <header className="lg:hidden flex items-center gap-3 px-4 h-14 espresso-surface text-cream-50 flex-shrink-0 shadow-md">
-          <BrandMark tone="dark" size="sm" subtitle={panelLabel} />
+          <BrandMark tone="dark" size="sm" subtitle={panelLabel} name={brand.name} logoUrl={brand.logoUrl} />
           {/* The avatar opens Account Settings and Logout (on phones the sidebar is hidden) */}
           <AccountMenu
             avatar={avatar}
