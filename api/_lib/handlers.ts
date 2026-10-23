@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { ApiError, handle, json, readJsonBody, requireMethod } from './http.js';
 import { defaultDeps, isLocalTest, notSetUp, type Deps, type Mailer } from './deps.js';
-import { emailChangeCodeMessage, paymentNoticeMessage, signupCodeMessage, type Message } from './mail.js';
+import { emailChangeCodeMessage, passwordResetCodeMessage, paymentNoticeMessage, signupCodeMessage, type Message } from './mail.js';
 import { CODE_TTL_MS, codeHash, emailId, type CodeCheck } from './signupCode.js';
 import type { Reserve } from './store.js';
 
@@ -177,6 +177,82 @@ export function signupFinishHandler(getDeps: GetDeps = defaultDeps) {
       throw new ApiError(503, 'signup_failed', "We couldn't create your account right now. Send a new code and try again.");
     }
     return json({ created: true });
+  });
+}
+
+/** A "Forgot password?" code is kept per address, apart from sign-up codes. */
+const resetId = (email: string) => `rst_${emailId(email)}`;
+
+/** A new password: same rule as sign-up (Firebase needs at least 6 characters). */
+function readPassword(body: Record<string, unknown>): string {
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (password.length < 6 || password.length > 100) {
+    throw new ApiError(400, 'weak_password', 'Use a password with at least 6 characters.', 'password');
+  }
+  return password;
+}
+
+/**
+ * POST /api/password/code { email }: "Forgot password?". Emails a 6-digit code
+ * when a JPOS login has this email. The answer is the same either way, so it
+ * can't be used to find out who has an account; the limits count every ask.
+ */
+export function passwordCodeHandler(getDeps: GetDeps = defaultDeps) {
+  return handle(async (request) => {
+    requireMethod(request, 'POST');
+    const deps = getDeps();
+    const email = readEmail(await readJsonBody(request));
+
+    const mailer = deps.mailer(); // fails before anything is counted if Gmail isn't set up
+    const ipId = networkId(request);
+    const reservedAt = deps.now();
+    const quota = await deps.store.reserveVerifyEmail(emailId(email), ipId, reservedAt);
+    if (!quota.ok) throw limitError(quota);
+
+    const user = await deps.auth.getUserByEmail(email);
+    if (!user || user.disabled) return json({ sent: true });
+    try {
+      const code = deps.newCode();
+      const id = resetId(email);
+      await deps.store.saveSignupCode(id, { hash: codeHash(id, code), expiresAt: reservedAt.getTime() + CODE_TTL_MS, tries: 0 });
+      await send(mailer, [email], passwordResetCodeMessage({ code }));
+    } catch (err) {
+      await deps.store.releaseVerifyEmail(emailId(email), ipId, reservedAt).catch(() => { /* best effort */ });
+      throw err;
+    }
+    return json({ sent: true });
+  });
+}
+
+/**
+ * POST /api/password/reset { email, code, password }: a right code sets the new
+ * password (and the person's RFID card, which keeps it). The app then signs in
+ * with it.
+ */
+export function passwordResetHandler(getDeps: GetDeps = defaultDeps) {
+  return handle(async (request) => {
+    requireMethod(request, 'POST');
+    const deps = getDeps();
+    const body = await readJsonBody(request);
+    const email = readEmail(body);
+    const code = typeof body.code === 'string' ? body.code.replace(/\s+/g, '') : '';
+    if (!/^\d{6}$/.test(code)) throw new ApiError(400, 'invalid_code', 'Enter the 6-digit code from the email.', 'code');
+    const password = readPassword(body);
+
+    const id = resetId(email);
+    const check = await deps.store.checkSignupCode(id, codeHash(id, code), deps.now());
+    if (!check.ok) throw codeError(check);
+    const user = await deps.auth.getUserByEmail(email);
+    if (!user || user.disabled) throw codeError({ ok: false, reason: 'missing' });
+
+    try {
+      await deps.auth.updatePassword(user.uid, password);
+      await deps.store.setCardPassword(user.uid, password);
+    } catch (err) {
+      console.error('[api] password not changed:', err instanceof Error ? err.message : err);
+      throw new ApiError(503, 'reset_failed', "We couldn't change your password right now. Send a new code and try again.");
+    }
+    return json({ reset: true });
   });
 }
 

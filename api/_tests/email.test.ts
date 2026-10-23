@@ -3,7 +3,10 @@
 // Run with: npm run test:api
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { emailChangeCodeHandler, emailChangeFinishHandler, paymentNoticeHandler, signupCodeHandler, signupFinishHandler } from '../_lib/handlers.js';
+import {
+  emailChangeCodeHandler, emailChangeFinishHandler, passwordCodeHandler, passwordResetHandler, paymentNoticeHandler,
+  signupCodeHandler, signupFinishHandler,
+} from '../_lib/handlers.js';
 import { ApiError } from '../_lib/http.js';
 import {
   BUDGET, checkQuota, hourKey, last24Hours, withinBudget, PAYMENT_LIMIT, VERIFY_IP_LIMIT, VERIFY_LIMIT,
@@ -38,6 +41,8 @@ interface World {
   admins: Set<string>;
   /** users/{uid}.email */
   profileEmail: Map<string, string>;
+  /** The password kept on a person's RFID card, by uid */
+  cards: Map<string, string>;
 }
 
 /** In-memory version of firestoreStore, using the same limits. */
@@ -78,6 +83,7 @@ function memoryStore(w: World): Store {
     accountInUse: async (uid) => w.inUse.has(uid) || w.admins.has(uid),
     isPlatformAdmin: async (uid) => w.admins.has(uid),
     setProfileEmail: async (uid, email) => { if (w.profileEmail.has(uid)) w.profileEmail.set(uid, email); },
+    setCardPassword: async (uid, password) => { if (w.cards.has(uid)) w.cards.set(uid, password); },
     reservePaymentNotice: async (id, uid, now) => reserve('payment', `pay_${uid}`, PAYMENT_LIMIT, now, null, `paid_${id}`),
     releasePaymentNotice: async (id, uid, now) => release('payment', `pay_${uid}`, now, null, `paid_${id}`),
     getPaymentRequest: async (id) => w.requests[id] ?? null,
@@ -124,6 +130,7 @@ function newWorld(): World {
     createFails: false,
     admins: new Set(['boss', 'gboss']),
     profileEmail: new Map([['boss', 'admin@shop.test'], ['juan', 'juan@shop.test']]),
+    cards: new Map([['cashier', 'cashier-password']]),
   };
 }
 
@@ -171,6 +178,9 @@ function depsFor(w: World): () => Deps {
         return uid;
       },
       deleteUser: async (uid) => { delete w.accounts[uid]; },
+      updatePassword: async (uid, password) => {
+        w.accounts[uid] = { ...w.accounts[uid], password, providers: [...new Set([...w.accounts[uid].providers, 'password'])] };
+      },
     },
     mailer: () => {
       if (!w.env.GMAIL_USER || !w.env.GMAIL_APP_PASSWORD) {
@@ -609,6 +619,96 @@ describe('Super Admin: change the sign-in email', () => {
     const again = await askChange(w, 'ok:boss', 'boss.new@gmail.test');
     assert.equal(again.status, 429);
     assert.equal(again.body.error.code, 'too_soon');
+  });
+});
+
+describe('Forgot password', () => {
+  const askCode = (w: World, email: string, ip?: string) => call(passwordCodeHandler(depsFor(w)), post('password/code', undefined, { email }, ip));
+  const reset = (w: World, email: string, code: string, password = 'new-secret') =>
+    call(passwordResetHandler(depsFor(w)), post('password/reset', undefined, { email, code, password }));
+
+  test('a JPOS login gets a code; no links in it', async () => {
+    const w = newWorld();
+    const r = await askCode(w, ' Juan@Shop.test ');
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { sent: true });
+    assert.equal(w.sent.length, 1);
+    assert.deepEqual(w.sent[0].to, ['juan@shop.test']);
+    assert.ok(w.sent[0].subject.includes('000001') && w.sent[0].html.includes('Reset your password'));
+    assert.ok(!/href=|https?:\/\/|www\./i.test(w.sent[0].html + w.sent[0].text), 'no links');
+  });
+
+  test("an email with no account: the same answer, and nothing is sent", async () => {
+    const w = newWorld();
+    const r = await askCode(w, 'nobody@shop.test');
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { sent: true });
+    assert.equal(w.sent.length, 0);
+  });
+
+  test('a turned-off account gets nothing', async () => {
+    const w = newWorld();
+    assert.deepEqual((await askCode(w, 'off@shop.test')).body, { sent: true });
+    assert.equal(w.sent.length, 0);
+  });
+
+  test('the right code sets the new password; the code works once', async () => {
+    const w = newWorld();
+    await askCode(w, 'juan@shop.test');
+    const r = await reset(w, 'juan@shop.test', '000001');
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { reset: true });
+    assert.equal(w.accounts.juan.password, 'new-secret');
+    assert.equal((await reset(w, 'juan@shop.test', '000001', 'again-123')).status, 400);
+  });
+
+  test("a staff member's RFID card gets the new password too", async () => {
+    const w = newWorld();
+    await askCode(w, 'cashier@shop.test');
+    await reset(w, 'cashier@shop.test', '000001', 'cashier-new');
+    assert.equal(w.accounts.cashier.password, 'cashier-new');
+    assert.equal(w.cards.get('cashier'), 'cashier-new');
+  });
+
+  test('a wrong code counts down, and a code for another email never works', async () => {
+    const w = newWorld();
+    await askCode(w, 'juan@shop.test');
+    const wrong = await reset(w, 'juan@shop.test', '999999');
+    assert.equal(wrong.status, 400);
+    assert.match(String((wrong.body as { error: { message: string } }).error.message), /isn't right.*tries left/);
+    assert.equal((await reset(w, 'maria@shop.test', '000001')).status, 400);
+    assert.equal(w.accounts.maria.password, undefined);
+  });
+
+  test('a sign-up code is not a password code', async () => {
+    const w = newWorld();
+    await call(signupCodeHandler(depsFor(w)), post('signup/code', undefined, { email: 'new@shop.test' }));
+    w.accounts.late = { uid: 'late', email: 'new@shop.test', emailVerified: true, disabled: false, providers: ['password'] };
+    assert.equal((await reset(w, 'new@shop.test', '000001')).status, 400);
+  });
+
+  test('a short password is refused before the code is used', async () => {
+    const w = newWorld();
+    await askCode(w, 'juan@shop.test');
+    assert.equal((await reset(w, 'juan@shop.test', '000001', '123')).status, 400);
+    assert.equal((await reset(w, 'juan@shop.test', '000001')).status, 200);
+  });
+
+  test('one email a minute per address, like the sign-up code', async () => {
+    const w = newWorld();
+    await askCode(w, 'juan@shop.test');
+    const again = await askCode(w, 'juan@shop.test');
+    assert.equal(again.status, 429);
+    assert.equal(w.sent.length, 1);
+  });
+
+  test("Gmail down: an error, and it doesn't count against the day", async () => {
+    const w = newWorld();
+    w.mailFails = true;
+    assert.equal((await askCode(w, 'juan@shop.test')).status, 502);
+    w.mailFails = false;
+    w.now = new Date(START.getTime() + 61_000);   // the one-a-minute wait still applies
+    assert.equal((await askCode(w, 'juan@shop.test')).status, 200);
   });
 });
 

@@ -35,6 +35,8 @@ export interface AuthLike {
   deleteUser(uid: string): Promise<void>;
   /** Changes a login's email (confirmed already). A 409 when another login has it. */
   updateEmail(uid: string, email: string): Promise<void>;
+  /** Sets a new password ("Forgot password?"). */
+  updatePassword(uid: string, password: string): Promise<void>;
 }
 
 /** Everything the handlers touch outside their own code, so tests can swap it out. */
@@ -202,6 +204,9 @@ export function defaultDeps(env: Env = process.env): Deps {
         }
       },
       deleteUser: uid => auth.deleteUser(uid),
+      async updatePassword(uid, password) {
+        await auth.updateUser(uid, { password });
+      },
       async updateEmail(uid, email) {
         try {
           await auth.updateUser(uid, { email, emailVerified: true });

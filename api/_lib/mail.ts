@@ -142,6 +142,35 @@ ${small("If you didn't ask to change your JPOS email, you can ignore this email.
   };
 }
 
+/**
+ * "Forgot password?": the code that lets the owner of this email choose a new
+ * password. No links, and no text from the request (like the sign-up code).
+ */
+export function passwordResetCodeMessage({ code }: { code: string }): Message {
+  const minutes = Math.round(CODE_TTL_MS / 60_000);
+  return {
+    subject: `Your JPOS code: ${code}`,
+    text: [
+      'Hi,',
+      '',
+      'Enter this code in JPOS to choose a new password:',
+      '',
+      code,
+      '',
+      `It works for ${minutes} minutes.`,
+      "If you didn't ask for a new password, you can ignore this email. Your password stays the same.",
+      '',
+      'JPOS',
+    ].join('\n'),
+    html: layout('Reset your password', `
+<p style="margin:0 0 8px">Hi,</p>
+<p style="margin:0">Enter this code in JPOS to choose a new password:</p>
+${codeBlock(code)}
+${small(`It works for ${minutes} minutes.`)}
+${small("If you didn't ask for a new password, you can ignore this email. Your password stays the same.")}`, `Your code is ${code}. It works for ${minutes} minutes.`),
+  };
+}
+
 /** Sent to the Super Admin when a shop sends a payment and receipt. */
 export function paymentNoticeMessage(request: PaymentRequestDoc, adminUrl: string, cloudName?: string): Message {
   const plan = PLAN_LABEL[request.plan] ?? oneLine(request.plan, 20);

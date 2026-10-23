@@ -6,6 +6,7 @@ import { CreditCard, KeyRound, Eye, EyeOff, Loader2, Wifi, Mail, Lock, LogIn, Us
 import { Link } from 'react-router-dom';
 import CreamCard from '@/components/shared/CreamCard';
 import GoogleIcon from '@/components/shared/GoogleIcon';
+import ForgotPassword from '@/components/landing/ForgotPassword';
 import { rememberSignInPage } from '@/lib/terminal';
 import type { StoreBrand } from '@/lib/storeProfile';
 import { cn } from '@/lib/utils';
@@ -33,6 +34,8 @@ export default function LoginCard({ terminalSlug, brand }: {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
+  // "Forgot password?": the card shows the reset steps instead of the sign-in form
+  const [forgot, setForgot] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [rfidInput, setRfidInput] = useState('');
@@ -195,7 +198,14 @@ export default function LoginCard({ terminalSlug, brand }: {
         )}
 
         <div className="relative mt-6">
-          {mode === 'password' ? (
+          {mode === 'password' && forgot ? (
+            <ForgotPassword
+              initialEmail={email}
+              terminalSlug={terminalSlug}
+              signInPage={signInPage}
+              onBack={address => { if (address) setEmail(address); setPassword(''); setForgot(false); }}
+            />
+          ) : mode === 'password' ? (
             <>
               <form onSubmit={handleLogin} className="space-y-4">
                 <div>
@@ -215,7 +225,13 @@ export default function LoginCard({ terminalSlug, brand }: {
                   </div>
                 </div>
                 <div>
-                  <label htmlFor="login-password" className="label">Password</label>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <label htmlFor="login-password" className="label">Password</label>
+                    <button type="button" onClick={() => setForgot(true)} disabled={loading || googleLoading}
+                      className="text-xs font-semibold text-caramel-700 hover:text-espresso-900 hover:underline underline-offset-2">
+                      Forgot password?
+                    </button>
+                  </div>
                   <div className="relative">
                     <Lock className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-bark-500 pointer-events-none" />
                     <input

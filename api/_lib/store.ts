@@ -46,6 +46,11 @@ export interface Store {
   isPlatformAdmin(uid: string): Promise<boolean>;
   /** Writes the new email into users/{uid}, when that profile exists. */
   setProfileEmail(uid: string, email: string): Promise<void>;
+  /**
+   * After a new password: the person's RFID card keeps their password (it signs
+   * them in with it), so the card gets the new one too. Nothing when they have no card.
+   */
+  setCardPassword(uid: string, password: string): Promise<void>;
   getPaymentRequest(id: string): Promise<PaymentRequestDoc | null>;
   /** Marks this payment's Super Admin email as sent. Refused ('duplicate') if it already was. */
   reservePaymentNotice(requestId: string, uid: string, now: Date): Promise<Reserve>;
@@ -145,6 +150,15 @@ export function firestoreStore(db: Firestore): Store {
     async setProfileEmail(uid, email) {
       const ref = db.collection('users').doc(uid);
       if ((await ref.get()).exists) await ref.update({ email, updatedAt: new Date().toISOString() });
+    },
+    async setCardPassword(uid, password) {
+      const profile = (await db.collection('users').doc(uid).get()).data() as { tenantId?: string; rfidTag?: string } | undefined;
+      const tag = profile?.rfidTag?.trim();
+      if (!profile?.tenantId || !tag || tag.includes('/')) return;
+      const card = db.collection('tenants').doc(profile.tenantId).collection('rfidCards').doc(tag);
+      const snap = await card.get();
+      // Only the person's own card (a tag could have been given to someone else since)
+      if (snap.exists && snap.data()?.userId === uid) await card.update({ password, updatedAt: new Date().toISOString() });
     },
     reservePaymentNotice: (requestId, uid, now) =>
       reserve({ kind: 'payment', quotaId: `pay_${uid}`, limit: PAYMENT_LIMIT, onceId: `paid_${requestId}`, now }),
