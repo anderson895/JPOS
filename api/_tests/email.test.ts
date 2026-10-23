@@ -3,7 +3,7 @@
 // Run with: npm run test:api
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { paymentNoticeHandler, signupCodeHandler, signupFinishHandler } from '../_lib/handlers.js';
+import { emailChangeCodeHandler, emailChangeFinishHandler, paymentNoticeHandler, signupCodeHandler, signupFinishHandler } from '../_lib/handlers.js';
 import { ApiError } from '../_lib/http.js';
 import {
   BUDGET, checkQuota, hourKey, last24Hours, withinBudget, PAYMENT_LIMIT, VERIFY_IP_LIMIT, VERIFY_LIMIT,
@@ -34,6 +34,10 @@ interface World {
   env: Record<string, string | undefined>;
   mailFails: boolean;
   createFails: boolean;
+  /** platformAdmins/{uid} */
+  admins: Set<string>;
+  /** users/{uid}.email */
+  profileEmail: Map<string, string>;
 }
 
 /** In-memory version of firestoreStore, using the same limits. */
@@ -71,7 +75,9 @@ function memoryStore(w: World): Store {
       if (next) w.codes.set(id, next); else w.codes.delete(id);
       return result;
     },
-    accountInUse: async (uid) => w.inUse.has(uid),
+    accountInUse: async (uid) => w.inUse.has(uid) || w.admins.has(uid),
+    isPlatformAdmin: async (uid) => w.admins.has(uid),
+    setProfileEmail: async (uid, email) => { if (w.profileEmail.has(uid)) w.profileEmail.set(uid, email); },
     reservePaymentNotice: async (id, uid, now) => reserve('payment', `pay_${uid}`, PAYMENT_LIMIT, now, null, `paid_${id}`),
     releasePaymentNotice: async (id, uid, now) => release('payment', `pay_${uid}`, now, null, `paid_${id}`),
     getPaymentRequest: async (id) => w.requests[id] ?? null,
@@ -96,6 +102,9 @@ function newWorld(): World {
       old: login('old', 'old@shop.test', { password: 'old-password' }),
       // Turned off by the Super Admin
       off: login('off', 'off@shop.test', { disabled: true }),
+      // The JPOS owner (Super Admin), and a second one who signs in with Google only
+      boss: login('boss', 'admin@shop.test', { emailVerified: true, password: 'boss-password' }),
+      gboss: login('gboss', 'gboss@gmail.test', { emailVerified: true, providers: ['google.com'] }),
     },
     inUse: new Set(['juan', 'maria', 'cashier']),
     codes: new Map(),
@@ -113,6 +122,8 @@ function newWorld(): World {
     env: { APP_URL: APP, GMAIL_USER: 'jpos.owner@gmail.com', GMAIL_APP_PASSWORD: 'abcd efgh ijkl mnop', VITE_CLOUDINARY_CLOUD_NAME: 'demo' },
     mailFails: false,
     createFails: false,
+    admins: new Set(['boss', 'gboss']),
+    profileEmail: new Map([['boss', 'admin@shop.test'], ['juan', 'juan@shop.test']]),
   };
 }
 
@@ -126,11 +137,25 @@ function depsFor(w: World): () => Deps {
     store: memoryStore(w),
     newCode: () => nth(++w.codesMade),
     auth: {
-      // A "token" is "ok:<uid>"; anything else is refused the way the Admin SDK does
+      // A "token" is "ok:<uid>" (password typed just now) or "old:<uid>" (an hour ago);
+      // anything else is refused the way the Admin SDK does
       verifyIdToken: async (token) => {
         if (token === 'down') throw Object.assign(new Error('no certs'), { code: 'app/network-error' });
-        if (!token.startsWith('ok:')) throw Object.assign(new Error('bad'), { code: 'auth/argument-error' });
-        return { uid: token.slice(3) };
+        const nowSec = Math.floor(w.now.getTime() / 1000);
+        if (token.startsWith('ok:')) return { uid: token.slice(3), authTime: nowSec };
+        if (token.startsWith('old:')) return { uid: token.slice(4), authTime: nowSec - 3600 };
+        throw Object.assign(new Error('bad'), { code: 'auth/argument-error' });
+      },
+      getUser: async (uid) => {
+        const a = w.accounts[uid];
+        if (!a) throw Object.assign(new Error('none'), { code: 'auth/user-not-found' });
+        return { uid: a.uid, email: a.email, emailVerified: a.emailVerified, disabled: a.disabled, providers: a.providers };
+      },
+      updateEmail: async (uid, email) => {
+        if (Object.values(w.accounts).some(x => x.email === email && x.uid !== uid)) {
+          throw new ApiError(409, 'email_taken', 'This email already has an account.', 'email');
+        }
+        w.accounts[uid] = { ...w.accounts[uid], email, emailVerified: true };
       },
       getUserByEmail: async (email) => {
         const a = Object.values(w.accounts).find(x => x.email === email);
@@ -457,6 +482,133 @@ describe('POST /api/signup/finish', () => {
     assert.equal(r.status, 503);
     assert.equal(r.body.error.code, 'signup_failed');
     assert.equal(byEmail(w, 'new@shop.test'), undefined);
+  });
+});
+
+describe('Super Admin: change the sign-in email', () => {
+  const askChange = (w: World, token: string | undefined, email: unknown, ip?: string) =>
+    call(emailChangeCodeHandler(depsFor(w)), post('account/email-code', token, { email }, ip));
+  const finishChange = (w: World, token: string | undefined, email: unknown, code: unknown) =>
+    call(emailChangeFinishHandler(depsFor(w)), post('account/email-finish', token, { email, code }));
+
+  test('needs a sign-in, and only the Super Admin', async () => {
+    const w = newWorld();
+    assert.equal((await askChange(w, undefined, 'new@shop.test')).status, 401);
+    assert.equal((await askChange(w, 'forged', 'new@shop.test')).status, 401);
+    assert.equal((await askChange(w, 'ok:juan', 'new@shop.test')).status, 403, 'a shop owner is not the Super Admin');
+    assert.equal((await finishChange(w, 'ok:juan', 'new@shop.test', nth(1))).status, 403);
+    assert.equal(w.sent.length, 0);
+  });
+
+  test('the password must have been typed in the last few minutes', async () => {
+    const w = newWorld();
+    const r = await askChange(w, 'old:boss', 'new@shop.test');
+    assert.equal(r.status, 401);
+    assert.equal(r.body.error.code, 'reauth_needed');
+    assert.equal(w.sent.length, 0);
+  });
+
+  test('sends a code to the NEW address only; nothing changes yet', async () => {
+    const w = newWorld();
+    const r = await askChange(w, 'ok:boss', '  Boss.New@Gmail.test ');
+    assert.equal(r.status, 200);
+    assert.equal(w.sent.length, 1);
+    assert.deepEqual(w.sent[0].to, ['boss.new@gmail.test']);
+    assert.equal(w.sent[0].subject, 'Your JPOS code: 000001');
+    assert.ok(!/href=|https?:\/\/|www\./i.test(w.sent[0].html + w.sent[0].text), 'no links');
+    assert.equal(w.accounts.boss.email, 'admin@shop.test');
+  });
+
+  test('bad, same or taken addresses are refused', async () => {
+    const w = newWorld();
+    assert.equal((await askChange(w, 'ok:boss', 'nope')).body.error.code, 'invalid_email');
+    assert.equal((await askChange(w, 'ok:boss', 'ADMIN@shop.test')).body.error.code, 'same_email');
+    for (const taken of ['juan@shop.test', 'cashier@shop.test', 'gina@gmail.test', 'off@shop.test']) {
+      const r = await askChange(w, 'ok:boss', taken);
+      assert.equal(r.status, 409, taken);
+      assert.equal(r.body.error.code, 'email_taken');
+    }
+    assert.equal(w.sent.length, 0);
+  });
+
+  test('a Google-only login has no password to confirm with', async () => {
+    const w = newWorld();
+    const r = await askChange(w, 'ok:gboss', 'new@shop.test');
+    assert.equal(r.status, 400);
+    assert.equal(r.body.error.code, 'no_password');
+  });
+
+  test('the right code changes the email (confirmed) and the profile', async () => {
+    const w = newWorld();
+    await askChange(w, 'ok:boss', 'boss.new@gmail.test');
+    const r = await finishChange(w, 'ok:boss', 'Boss.New@gmail.test', nth(1));
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { changed: true });
+    assert.equal(w.accounts.boss.email, 'boss.new@gmail.test');
+    assert.equal(w.accounts.boss.emailVerified, true);
+    assert.equal(w.accounts.boss.password, 'boss-password', 'the password stays');
+    assert.equal(w.profileEmail.get('boss'), 'boss.new@gmail.test');
+  });
+
+  test('the finish step works with any sign-in (the code is the proof)', async () => {
+    const w = newWorld();
+    await askChange(w, 'ok:boss', 'boss.new@gmail.test');
+    assert.equal((await finishChange(w, 'old:boss', 'boss.new@gmail.test', nth(1))).status, 200);
+  });
+
+  test('a code only works for the address it was sent to', async () => {
+    const w = newWorld();
+    await askChange(w, 'ok:boss', 'boss.new@gmail.test');
+    const r = await finishChange(w, 'ok:boss', 'other@gmail.test', nth(1));
+    assert.equal(r.status, 400);
+    assert.equal(w.accounts.boss.email, 'admin@shop.test');
+  });
+
+  test('a sign-up code for the same address does not change the email', async () => {
+    const w = newWorld();
+    await call(signupCodeHandler(depsFor(w)), post('signup/code', undefined, { email: 'boss.new@gmail.test' }));
+    const r = await finishChange(w, 'ok:boss', 'boss.new@gmail.test', nth(1));
+    assert.equal(r.status, 400);
+    assert.equal(r.body.error.code, 'code_missing');
+    assert.equal(w.accounts.boss.email, 'admin@shop.test');
+  });
+
+  test('wrong codes count down, then it stops working', async () => {
+    const w = newWorld();
+    await askChange(w, 'ok:boss', 'boss.new@gmail.test');
+    for (let i = 1; i < CODE_TRIES; i++) {
+      const r = await finishChange(w, 'ok:boss', 'boss.new@gmail.test', '999999');
+      assert.equal(r.body.error.code, 'code_wrong');
+    }
+    assert.equal((await finishChange(w, 'ok:boss', 'boss.new@gmail.test', '999999')).body.error.code, 'code_locked');
+    assert.equal((await finishChange(w, 'ok:boss', 'boss.new@gmail.test', nth(1))).status, 400);
+    assert.equal(w.accounts.boss.email, 'admin@shop.test');
+  });
+
+  test('an old code has expired; a new code replaces the old one', async () => {
+    const w = newWorld();
+    await askChange(w, 'ok:boss', 'boss.new@gmail.test');
+    w.now = new Date(START.getTime() + 61_000);
+    await askChange(w, 'ok:boss', 'boss.new@gmail.test');
+    assert.equal((await finishChange(w, 'ok:boss', 'boss.new@gmail.test', nth(1))).status, 400, 'the first code is replaced');
+    w.now = new Date(START.getTime() + 61_000 + CODE_TTL_MS);
+    assert.equal((await finishChange(w, 'ok:boss', 'boss.new@gmail.test', nth(2))).body.error.code, 'code_expired');
+  });
+
+  test('a never-confirmed leftover login with that email is replaced', async () => {
+    const w = newWorld();
+    await askChange(w, 'ok:boss', 'old@shop.test');
+    assert.equal((await finishChange(w, 'ok:boss', 'old@shop.test', nth(1))).status, 200);
+    assert.equal(w.accounts.old, undefined, 'the leftover login is gone');
+    assert.equal(w.accounts.boss.email, 'old@shop.test');
+  });
+
+  test('same limits as other code emails (one a minute per address)', async () => {
+    const w = newWorld();
+    assert.equal((await askChange(w, 'ok:boss', 'boss.new@gmail.test')).status, 200);
+    const again = await askChange(w, 'ok:boss', 'boss.new@gmail.test');
+    assert.equal(again.status, 429);
+    assert.equal(again.body.error.code, 'too_soon');
   });
 });
 

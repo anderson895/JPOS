@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { ApiError, handle, json, readJsonBody, requireMethod } from './http.js';
 import { defaultDeps, isLocalTest, notSetUp, type Deps, type Mailer } from './deps.js';
-import { paymentNoticeMessage, signupCodeMessage, type Message } from './mail.js';
+import { emailChangeCodeMessage, paymentNoticeMessage, signupCodeMessage, type Message } from './mail.js';
 import { CODE_TTL_MS, codeHash, emailId, type CodeCheck } from './signupCode.js';
 import type { Reserve } from './store.js';
 
@@ -11,10 +11,15 @@ const EMAIL = /^[^\s@,<>]+@[^\s@,<>]+\.[^\s@,<>]+$/;
 
 /** `Authorization: Bearer <Firebase ID token>` → the caller's uid. */
 async function verifyCaller(request: Request, deps: Deps): Promise<string> {
+  return (await verifyCallerSession(request, deps)).uid;
+}
+
+/** The caller, and when they last typed their password (seconds since 1970). */
+async function verifyCallerSession(request: Request, deps: Deps): Promise<{ uid: string; authTime?: number }> {
   const match = /^Bearer\s+(\S+)$/i.exec(request.headers.get('authorization') ?? '');
   if (!match) throw new ApiError(401, 'unauthenticated', 'Sign in again, then try once more.');
   try {
-    return (await deps.auth.verifyIdToken(match[1])).uid;
+    return await deps.auth.verifyIdToken(match[1]);
   } catch (err) {
     const code = (err as { code?: unknown } | null)?.code;
     if (typeof code === 'string' && code.startsWith('auth/') && code !== 'auth/internal-error') {
@@ -172,6 +177,111 @@ export function signupFinishHandler(getDeps: GetDeps = defaultDeps) {
       throw new ApiError(503, 'signup_failed', "We couldn't create your account right now. Send a new code and try again.");
     }
     return json({ created: true });
+  });
+}
+
+/** Changing the sign-in email needs the password typed again within the last few minutes. */
+export const RECENT_SIGN_IN_MS = 5 * 60 * 1000;
+
+/** The code for an email change is kept per account, and only works for that one new address. */
+const changeId = (uid: string) => `chg_${uid}`;
+const changeKey = (uid: string, email: string) => `chg_${uid}_${emailId(email)}`;
+
+/** Only the Super Admin can change their sign-in email here (shop staff emails belong to their shop). */
+async function requireSuperAdmin(deps: Deps, uid: string) {
+  if (!(await deps.store.isPlatformAdmin(uid))) {
+    throw new ApiError(403, 'forbidden', 'Only the JPOS owner can change the sign-in email here.');
+  }
+}
+
+/** The new address must differ and be free (a never-confirmed leftover login may be replaced). */
+async function checkNewEmail(deps: Deps, uid: string, email: string): Promise<string | null> {
+  const me = await deps.auth.getUser(uid).catch(() => {
+    throw new ApiError(401, 'unauthenticated', 'Sign in again, then try once more.');
+  });
+  if (me.disabled) throw new ApiError(403, 'forbidden', 'This account is turned off.');
+  if (!me.providers.includes('password')) {
+    throw new ApiError(400, 'no_password', 'This account signs in with Google only, so its email follows the Google account.');
+  }
+  if ((me.email ?? '').toLowerCase() === email) throw new ApiError(400, 'same_email', "That's already your sign-in email.", 'email');
+  const other = await deps.auth.getUserByEmail(email);
+  if (other && other.uid === uid) throw new ApiError(400, 'same_email', "That's already your sign-in email.", 'email');
+  try {
+    return await freeEmail(deps, email);
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'email_taken') {
+      throw new ApiError(409, 'email_taken', 'This email already has an account. Use another one.', 'email');
+    }
+    throw err;
+  }
+}
+
+/**
+ * POST /api/account/email-code { email }: the Super Admin wants a new sign-in
+ * email. Needs a password typed within the last 5 minutes; emails a 6-digit
+ * code to the NEW address (proof it's theirs). Nothing changes yet.
+ */
+export function emailChangeCodeHandler(getDeps: GetDeps = defaultDeps) {
+  return handle(async (request) => {
+    requireMethod(request, 'POST');
+    const deps = getDeps();
+    const { uid, authTime } = await verifyCallerSession(request, deps);
+    await requireSuperAdmin(deps, uid);
+    if (!authTime || deps.now().getTime() - authTime * 1000 > RECENT_SIGN_IN_MS) {
+      throw new ApiError(401, 'reauth_needed', 'Type your password again, then try once more.');
+    }
+    const email = readEmail(await readJsonBody(request));
+    await checkNewEmail(deps, uid, email);
+
+    const mailer = deps.mailer(); // fails before anything is counted if Gmail isn't set up
+    const ipId = networkId(request);
+    const reservedAt = deps.now();
+    const quota = await deps.store.reserveVerifyEmail(emailId(email), ipId, reservedAt);
+    if (!quota.ok) throw limitError(quota);
+
+    try {
+      const code = deps.newCode();
+      await deps.store.saveSignupCode(changeId(uid), { hash: codeHash(changeKey(uid, email), code), expiresAt: reservedAt.getTime() + CODE_TTL_MS, tries: 0 });
+      await send(mailer, [email], emailChangeCodeMessage({ code }));
+    } catch (err) {
+      await deps.store.releaseVerifyEmail(emailId(email), ipId, reservedAt).catch(() => { /* best effort */ });
+      throw err;
+    }
+    return json({ sent: true });
+  });
+}
+
+/**
+ * POST /api/account/email-finish { email, code }: a right code (sent to that
+ * new address, for this account) changes the sign-in email, confirmed, and the
+ * email in the JPOS profile. The app then signs in again with the new email.
+ */
+export function emailChangeFinishHandler(getDeps: GetDeps = defaultDeps) {
+  return handle(async (request) => {
+    requireMethod(request, 'POST');
+    const deps = getDeps();
+    const uid = await verifyCaller(request, deps);
+    await requireSuperAdmin(deps, uid);
+    const body = await readJsonBody(request);
+    const email = readEmail(body);
+    const code = typeof body.code === 'string' ? body.code.replace(/\s+/g, '') : '';
+    if (!/^\d{6}$/.test(code)) throw new ApiError(400, 'invalid_code', 'Enter the 6-digit code from the email.', 'code');
+
+    // Checked before the code, so a taken email doesn't use up a try
+    const leftover = await checkNewEmail(deps, uid, email);
+    const check = await deps.store.checkSignupCode(changeId(uid), codeHash(changeKey(uid, email), code), deps.now());
+    if (!check.ok) throw codeError(check);
+
+    try {
+      if (leftover) await deps.auth.deleteUser(leftover);
+      await deps.auth.updateEmail(uid, email);
+      await deps.store.setProfileEmail(uid, email);
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
+      console.error('[api] email not changed:', err instanceof Error ? err.message : err);
+      throw new ApiError(503, 'change_failed', "We couldn't change your email right now. Send a new code and try again.");
+    }
+    return json({ changed: true });
   });
 }
 

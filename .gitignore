@@ -12,7 +12,7 @@ firebase-debug.log
 firestore-debug.log
 ui-debug.log
 .firebase/
-
+note.txt
 # Migration backups (staff data!) — never commit
 backups/
 

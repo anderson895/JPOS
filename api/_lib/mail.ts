@@ -77,6 +77,35 @@ export function signupCodeMessage({ code }: { code: string }): Message {
   };
 }
 
+/**
+ * Sent to the new address when the Super Admin changes their sign-in email.
+ * No links, and no text from the request (like the sign-up code).
+ */
+export function emailChangeCodeMessage({ code }: { code: string }): Message {
+  const minutes = Math.round(CODE_TTL_MS / 60_000);
+  return {
+    subject: `Your JPOS code: ${code}`,
+    text: [
+      'Hi,',
+      '',
+      'Enter this code in JPOS to make this your new sign-in email:',
+      '',
+      code,
+      '',
+      `It works for ${minutes} minutes.`,
+      "If you didn't ask to change your JPOS email, you can ignore this email.",
+      '',
+      'JPOS',
+    ].join('\n'),
+    html: layout('Confirm your new email', `
+<p style="margin:0 0 8px">Hi,</p>
+<p style="margin:0">Enter this code in JPOS to make this your new sign-in email:</p>
+<p style="margin:20px 0;font-size:34px;font-weight:bold;letter-spacing:8px;color:#3b2314">${esc(code)}</p>
+<p style="margin:0;font-size:13px;color:#6b5444">It works for ${minutes} minutes.</p>
+<p style="margin:16px 0 0;font-size:13px;color:#6b5444">If you didn't ask to change your JPOS email, you can ignore this email.</p>`),
+  };
+}
+
 /** Sent to the Super Admin when a shop sends a payment and receipt. */
 export function paymentNoticeMessage(request: PaymentRequestDoc, adminUrl: string, cloudName?: string): Message {
   const plan = PLAN_LABEL[request.plan] ?? oneLine(request.plan, 20);

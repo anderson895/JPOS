@@ -10,6 +10,7 @@ import { uploadImage } from '@/lib/cloudinary';
 import { getAuthErrorMessage } from '@/lib/authErrors';
 import { useAuth } from '@/contexts/AuthContext';
 import Portal from '@/components/shared/Portal';
+import ChangeEmailCard from '@/components/admin/ChangeEmail';
 import { X, User, Lock, Camera, Loader2, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -18,7 +19,7 @@ interface Props {
 }
 
 export default function AccountSettingsModal({ onClose }: Props) {
-  const { currentUser, refreshUser } = useAuth();
+  const { currentUser, refreshUser, isSuperAdmin } = useAuth();
 
   const initials = currentUser?.displayName
     ?.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) || 'A';
@@ -197,11 +198,16 @@ export default function AccountSettingsModal({ onClose }: Props) {
                 value={displayName} onChange={e => setDisplayName(e.target.value)}
               />
             </div>
-            <div>
-              <label className="label">Email</label>
-              <input className="input bg-cream-200/60 text-bark-500 cursor-not-allowed"
-                value={currentUser?.email || ''} readOnly />
-            </div>
+            {/* The JPOS owner can change their sign-in email (a code goes to the new one) */}
+            {isSuperAdmin ? (
+              <ChangeEmailCard className="rounded-3xl border border-cream-300/80 bg-cream-100/60 p-4" />
+            ) : (
+              <div>
+                <label className="label">Email</label>
+                <input className="input bg-cream-200/60 text-bark-500 cursor-not-allowed"
+                  value={currentUser?.email || ''} readOnly />
+              </div>
+            )}
             <div>
               <label className="label">Role</label>
               <input className="input bg-cream-200/60 text-bark-500 cursor-not-allowed capitalize"

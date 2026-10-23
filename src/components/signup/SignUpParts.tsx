@@ -231,7 +231,7 @@ function Field({ icon: Icon, label, htmlFor, children }: { icon: typeof Mail; la
  * Six boxes for the code. One real (invisible) input lies on top, so typing,
  * pasting and the phone's "fill in code from email" all work as usual.
  */
-function CodeBoxes({ value, onChange }: { value: string; onChange: (digits: string) => void }) {
+export function CodeBoxes({ value, onChange, id = 'signup-code' }: { value: string; onChange: (digits: string) => void; id?: string }) {
   const [focused, setFocused] = useState(false);
   const active = Math.min(value.length, 5);
   return (
@@ -254,7 +254,7 @@ function CodeBoxes({ value, onChange }: { value: string; onChange: (digits: stri
         })}
       </div>
       <input
-        id="signup-code"
+        id={id}
         aria-label="6-digit code"
         value={value}
         onChange={e => onChange(e.target.value.replace(/\D/g, '').slice(0, 6))}
@@ -274,7 +274,7 @@ function CodeBoxes({ value, onChange }: { value: string; onChange: (digits: stri
  * Local test mode only: test addresses (like @shop.test) get no real email.
  * This reads the newest code the local server "sent" to this address and fills it in.
  */
-function LocalCodeHelper({ email, onCode }: { email: string; onCode: (code: string) => void }) {
+export function LocalCodeHelper({ email, onCode }: { email: string; onCode: (code: string) => void }) {
   const [looking, setLooking] = useState(false);
   const fill = async () => {
     setLooking(true);

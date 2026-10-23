@@ -33,12 +33,19 @@ export interface Store {
   reserveVerifyEmail(emailId: string, ipId: string | null, now: Date): Promise<Reserve>;
   /** Gives back what reserveVerifyEmail counted, when the email couldn't be sent. */
   releaseVerifyEmail(emailId: string, ipId: string | null, now: Date): Promise<void>;
-  /** Keeps the newest sign-up code for this address (it replaces any older one). */
-  saveSignupCode(emailId: string, code: StoredCode): Promise<void>;
+  /**
+   * Keeps the newest code under this id (a sign-up's emailId, or an email
+   * change's `chg_<uid>`); it replaces any older one.
+   */
+  saveSignupCode(id: string, code: StoredCode): Promise<void>;
   /** Checks a typed code: a right one is used up, a wrong one counts as a try. */
-  checkSignupCode(emailId: string, hash: string, now: Date): Promise<CodeCheck>;
+  checkSignupCode(id: string, hash: string, now: Date): Promise<CodeCheck>;
   /** True when this login has a JPOS profile or runs JPOS (Super Admin). */
   accountInUse(uid: string): Promise<boolean>;
+  /** True when this login runs JPOS (platformAdmins/{uid}). */
+  isPlatformAdmin(uid: string): Promise<boolean>;
+  /** Writes the new email into users/{uid}, when that profile exists. */
+  setProfileEmail(uid: string, email: string): Promise<void>;
   getPaymentRequest(id: string): Promise<PaymentRequestDoc | null>;
   /** Marks this payment's Super Admin email as sent. Refused ('duplicate') if it already was. */
   reservePaymentNotice(requestId: string, uid: string, now: Date): Promise<Reserve>;
@@ -116,12 +123,12 @@ export function firestoreStore(db: Firestore): Store {
   return {
     reserveVerifyEmail: (emailId, ipId, now) => reserve({ kind: 'verify', quotaId: `verify_${emailId}`, limit: VERIFY_LIMIT, ipId, now }),
     releaseVerifyEmail: (emailId, ipId, now) => release({ kind: 'verify', quotaId: `verify_${emailId}`, ipId, now }),
-    async saveSignupCode(emailId, code) {
-      await db.collection(CODES).doc(emailId).set(code);
+    async saveSignupCode(id, code) {
+      await db.collection(CODES).doc(id).set(code);
     },
-    checkSignupCode: (emailId, hash, now) =>
+    checkSignupCode: (id, hash, now) =>
       db.runTransaction(async (tx) => {
-        const ref = db.collection(CODES).doc(emailId);
+        const ref = db.collection(CODES).doc(id);
         const snap = await tx.get(ref);
         const { result, next } = checkCode(snap.data() as Partial<StoredCode> | undefined, hash, now.getTime());
         if (next) tx.set(ref, next);
@@ -131,6 +138,13 @@ export function firestoreStore(db: Firestore): Store {
     async accountInUse(uid) {
       const [profile, admin] = await db.getAll(db.collection('users').doc(uid), db.collection('platformAdmins').doc(uid));
       return profile.exists || admin.exists;
+    },
+    async isPlatformAdmin(uid) {
+      return (await db.collection('platformAdmins').doc(uid).get()).exists;
+    },
+    async setProfileEmail(uid, email) {
+      const ref = db.collection('users').doc(uid);
+      if ((await ref.get()).exists) await ref.update({ email, updatedAt: new Date().toISOString() });
     },
     reservePaymentNotice: (requestId, uid, now) =>
       reserve({ kind: 'payment', quotaId: `pay_${uid}`, limit: PAYMENT_LIMIT, onceId: `paid_${requestId}`, now }),

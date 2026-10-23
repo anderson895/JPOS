@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import PageHeader from '@/components/shared/PageHeader';
 import Portal from '@/components/shared/Portal';
 import Switch from '@/components/shared/Switch';
+import ChangeEmailCard from '@/components/admin/ChangeEmail';
 import { usePlatformSettings, prettyPhone } from '@/components/shared/ContactOwner';
 import {
   approveRequest, rejectRequest, savePlatformSettings, setSuspended, watchPendingRequests, watchShops,
@@ -247,6 +248,13 @@ function SettingsForm({ settings }: { settings: PlatformSettings }) {
 
   return (
     <div className="space-y-6">
+      {/* The JPOS owner's own sign-in email */}
+      <section className="card p-6">
+        <h2 className="font-display text-xl text-espresso-900">Your sign-in</h2>
+        <p className="text-sm text-bark-600 mt-1">The email you use to sign in to JPOS. A code goes to the new email to confirm it.</p>
+        <ChangeEmailCard className="mt-4 max-w-xl" />
+      </section>
+
       <section className="card p-6">
         <h2 className="font-display text-xl text-espresso-900">Your payment QR codes</h2>
         <p className="text-sm text-bark-600 mt-1">Shops scan these to pay their subscription. You can change them anytime.</p>

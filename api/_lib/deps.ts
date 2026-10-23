@@ -24,12 +24,16 @@ export interface AuthUser {
 
 /** The parts of Firebase Auth (Admin SDK) the handlers use. */
 export interface AuthLike {
-  verifyIdToken(token: string): Promise<{ uid: string }>;
+  /** The signed-in user, and when they last typed their password (seconds since 1970). */
+  verifyIdToken(token: string): Promise<{ uid: string; authTime?: number }>;
+  getUser(uid: string): Promise<AuthUser>;
   /** The login with this email, or null when there is none. */
   getUserByEmail(email: string): Promise<AuthUser | null>;
   /** Makes a login whose email is already confirmed. Returns its uid. */
   createUser(user: { email: string; password: string; displayName?: string }): Promise<string>;
   deleteUser(uid: string): Promise<void>;
+  /** Changes a login's email (confirmed already). A 409 when another login has it. */
+  updateEmail(uid: string, email: string): Promise<void>;
 }
 
 /** Everything the handlers touch outside their own code, so tests can swap it out. */
@@ -161,17 +165,20 @@ function localTestMailer(env: Env): Mailer {
   };
 }
 
+const toAuthUser = (u: { uid: string; email?: string; emailVerified: boolean; disabled: boolean; providerData: { providerId: string }[] }): AuthUser =>
+  ({ uid: u.uid, email: u.email, emailVerified: u.emailVerified, disabled: u.disabled, providers: u.providerData.map(p => p.providerId) });
+
 export function defaultDeps(env: Env = process.env): Deps {
   const app = adminApp(env);
   const auth = getAuth(app);
   return {
     env,
     auth: {
-      verifyIdToken: token => auth.verifyIdToken(token),
+      verifyIdToken: token => auth.verifyIdToken(token).then(d => ({ uid: d.uid, authTime: d.auth_time })),
+      getUser: uid => auth.getUser(uid).then(toAuthUser),
       async getUserByEmail(email) {
         try {
-          const u = await auth.getUserByEmail(email);
-          return { uid: u.uid, email: u.email, emailVerified: u.emailVerified, disabled: u.disabled, providers: u.providerData.map(p => p.providerId) };
+          return toAuthUser(await auth.getUserByEmail(email));
         } catch (err) {
           if ((err as { code?: unknown } | null)?.code === 'auth/user-not-found') return null;
           throw err;
@@ -188,6 +195,16 @@ export function defaultDeps(env: Env = process.env): Deps {
         }
       },
       deleteUser: uid => auth.deleteUser(uid),
+      async updateEmail(uid, email) {
+        try {
+          await auth.updateUser(uid, { email, emailVerified: true });
+        } catch (err) {
+          if ((err as { code?: unknown } | null)?.code === 'auth/email-already-exists') {
+            throw new ApiError(409, 'email_taken', 'This email already has an account.', 'email');
+          }
+          throw err;
+        }
+      },
     },
     store: firestoreStore(getFirestore(app)),
     mailer: () => (isLocalTest(env) ? localTestMailer(env) : gmailMailer(env)),
