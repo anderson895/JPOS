@@ -155,14 +155,6 @@ export default function LoginCard({ terminalSlug, brand }: {
           )}
         </div>
 
-        {/* Sign in here, or open the sign-up page (the public page) */}
-        {!terminalSlug && (
-          <nav className="segmented relative mt-6" aria-label="Sign in or create an account">
-            <span className="segmented-item active" aria-current="page">Sign in</span>
-            <Link to="/subscribe?plan=trial" className="segmented-item">Create account</Link>
-          </nav>
-        )}
-
         {/* Mode Toggle (terminal only) */}
         {terminalSlug && (
         <div className="segmented relative mt-6" role="tablist" aria-label="Sign-in method">
@@ -266,6 +258,13 @@ export default function LoginCard({ terminalSlug, brand }: {
                 {googleLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <GoogleIcon className="w-5 h-5" />}
                 {googleLoading ? 'Waiting for Google...' : 'Sign in with Google'}
               </button>
+              {/* The public page: new shops sign up from here */}
+              {!terminalSlug && (
+                <p className="mt-5 text-center text-sm text-bark-600">
+                  New to JPOS?{' '}
+                  <Link to="/subscribe?plan=trial" className="font-semibold text-caramel-700 underline-offset-2 hover:text-espresso-900 hover:underline">Create account</Link>
+                </p>
+              )}
             </>
           ) : (
             <div className="text-center py-2">
