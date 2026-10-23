@@ -5,6 +5,7 @@ import LoginPage from './pages/LoginPage';
 import TerminalPage from './pages/TerminalPage';
 import SubscribePage from './pages/SubscribePage';
 import LoadingScreen from './components/shared/LoadingScreen';
+import CookieNotice from './components/shared/CookieNotice';
 import { signedOutHome } from './lib/terminal';
 
 // The signed-in areas load on demand, so the public landing page doesn't
@@ -60,7 +61,10 @@ export default function App() {
   if (loading && pathname !== '/subscribe') return <LoadingScreen />;
 
   return (
-    // Shown while a layout's code loads (first visit to the admin or staff area)
+    <>
+    {/* Until the visitor picks, and again from "Cookie settings" */}
+    <CookieNotice />
+    {/* Shown while a layout's code loads (first visit to the admin or staff area) */}
     <Suspense fallback={<LoadingScreen />}>
       <Routes>
         <Route
@@ -117,5 +121,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
+    </>
   );
 }

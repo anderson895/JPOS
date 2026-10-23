@@ -728,3 +728,10 @@ The owner's list (note.txt): logos and colors per shop, the shop's name on its s
 - Starter sees "Stock counts: included in the Business and Enterprise packages."
 - **Package cards (owner):** Starter: Point of sale, Barcode and QR, Today & weekly reports, Available on mobile and desktop (no Cash/GCash, VAT or Senior/PWD lines; those features are still in every package). Business: Custom branding (logo and colors), Void sales with a reason, Inventory and low-stock alerts, reports, trends, RFID. Enterprise adds Advanced point of sale (soon). The hero lost its icons and got more room.
 - **Verified** on the local test app: inventory 9/9; rules 231/231; unit 41/41.
+
+## 36. Sign-in card, cookie notice, Enterprise 100 accounts (2026-10-23)
+
+- **Sign-in card:** the logo only (it already says JPOS · Point of Sale); no Sign in / Create account tabs ("New to JPOS? Create account" sits under Google); no icons in the fields or the button; no RFID hint or version line. The hero lost its empty right column, so the card lines up with the right edge (even space both sides). The reset-password steps lost the same icons.
+- **Cookie notice** (`CookieNotice`, `src/lib/consent.ts`): "This website uses cookies" with Necessary (always on) and Preferences, and Allow all / Allow selection / Only necessary. Only what JPOS uses is listed: no statistics, ads or tracking. Without Preferences the device doesn't remember its shop sign-in page or an unfinished sign-up. Footer → Cookie settings opens it again.
+- **Enterprise: 100 accounts** by default; Super Admin → Settings → "Accounts per shop" sets each package's number (empty = no limit), saved with an audit entry. Shops get the new number with their next approved payment.
+- **Verified** on the local test app: cookie notice 7/7, sign-in card balance 6/6.

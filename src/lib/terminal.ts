@@ -4,9 +4,12 @@
  * instead of the public landing page. Storage can be blocked: everything falls
  * back to /login.
  */
+import { preferencesAllowed } from '@/lib/consent';
+
 const KEY = 'jpos-terminal-slug';
 
 export function rememberTerminal(slug: string) {
+  if (!preferencesAllowed()) return; // the cookie choice said no
   try { localStorage.setItem(KEY, slug.trim().toLowerCase()); } catch { /* storage blocked */ }
 }
 
@@ -22,6 +25,7 @@ const FROM_KEY = 'jpos-signed-in-from';
 
 /** Where this device's last sign-in happened (the landing page or a shop's page). */
 export function rememberSignInPage(path: string) {
+  if (!preferencesAllowed()) return; // the cookie choice said no
   try { localStorage.setItem(FROM_KEY, path); } catch { /* storage blocked */ }
 }
 

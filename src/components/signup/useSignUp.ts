@@ -8,6 +8,7 @@ import { isPlanChoice, type PlanChoice } from '@/components/shared/PlanCards';
 import { getAuthErrorMessage, CANCELLED_SIGN_IN_CODES } from '@/lib/authErrors';
 import { createShop, isSlugAvailable, slugify, slugProblem, startTrial, SIGNUP_CLOSED_MESSAGE, SlugTakenError } from '@/lib/subscriptions';
 import { rememberSignInPage } from '@/lib/terminal';
+import { preferencesAllowed } from '@/lib/consent';
 import { isBusinessType } from '@/lib/storeProfile';
 import type { BusinessType, PlanId } from '@/types';
 
@@ -26,6 +27,7 @@ function loadDraft(): Partial<Draft> {
   try { return JSON.parse(localStorage.getItem(DRAFT_KEY) ?? '{}'); } catch { return {}; }
 }
 function saveDraft(d: Draft) {
+  if (!preferencesAllowed()) return; // the cookie choice said no
   try { localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch { /* storage blocked */ }
 }
 export function clearDraft() {

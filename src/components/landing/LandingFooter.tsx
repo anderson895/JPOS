@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { Wave } from '@/components/shared/Decor';
 import { NAV_LINKS, EXTERNAL_LINKS } from './content';
 import { openExternal, scrollToSection } from './scroll';
+import { openCookieSettings } from '@/lib/consent';
 
 const SOCIALS = [
   { icon: Facebook, label: 'Facebook', url: EXTERNAL_LINKS.facebook },
@@ -109,6 +110,8 @@ export default function LandingFooter() {
             <button onClick={() => openExternal(EXTERNAL_LINKS.privacy, 'Privacy Policy')} className="hover:text-caramel-200">Privacy Policy</button>
             <span className="h-3 w-px bg-cream-200/30" />
             <button onClick={() => openExternal(EXTERNAL_LINKS.terms, 'Terms of Service')} className="hover:text-caramel-200">Terms of Service</button>
+            <span className="h-3 w-px bg-cream-200/30" />
+            <button onClick={openCookieSettings} className="hover:text-caramel-200">Cookie settings</button>
           </p>
         </div>
       </div>
