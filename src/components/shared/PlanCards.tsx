@@ -1,4 +1,4 @@
-import { BadgePercent, Ban, Check, Download, Palette, Receipt, ScanBarcode, Sparkles, type LucideIcon } from 'lucide-react';
+import { Check, Clock, Sparkles } from 'lucide-react';
 import { usePlatformSettings } from '@/components/shared/ContactOwner';
 import { PLAN_IDS } from '@/lib/entitlements';
 import { cn } from '@/lib/utils';
@@ -12,22 +12,29 @@ export const isPlanChoice = (v: unknown): v is PlanChoice => PLAN_CHOICES.includ
 const peso = (n: number) => `₱${n.toLocaleString('en-PH')}`;
 const accounts = (limit: number | null | undefined) => (limit == null ? 'Unlimited accounts' : `Up to ${limit} accounts`);
 
-/** Kept short on purpose: a few words per line. */
-const FEATURES: Record<PlanId, string[]> = {
-  starter: ['Cash + GCash/Maya QR', 'Receipts with QR', 'Today & weekly reports'],
-  business: ['Everything in Starter', 'All reports + PDF', 'Sales trends', 'RFID card login'],
-  enterprise: ['Everything in Business', 'Priority support'],
+/**
+ * Kept short on purpose: a few words per line. Starter = basic, Business =
+ * standard, Enterprise = advanced (owner, 2026-10-23); same split as
+ * DEFAULT_ENTITLEMENTS. `soon`: announced, not built yet (shown with a "Soon" tag).
+ */
+interface Feature { label: string; soon?: boolean }
+const FEATURES: Record<PlanId, Feature[]> = {
+  starter: [
+    { label: 'Cash + GCash/Maya QR' }, { label: 'VAT receipts with QR' }, { label: 'Senior/PWD discount' },
+    { label: 'Barcode scan + product details' }, { label: 'Today & weekly reports' }, { label: 'Install on phone or computer' },
+  ],
+  business: [
+    { label: 'Everything in Starter' }, { label: 'Your logo and colors' }, { label: 'Saved + per-item discounts' },
+    { label: 'Void sales with a reason' }, { label: 'Inventory and low-stock alerts', soon: true },
+    { label: 'All reports + PDF' }, { label: 'Sales trends' }, { label: 'RFID card login' },
+  ],
+  enterprise: [
+    { label: 'Everything in Business' }, { label: 'Priority support' },
+    { label: 'AI assistant for your sales', soon: true }, { label: 'Many branches, one account', soon: true },
+    { label: 'Sales forecasts', soon: true }, { label: 'Customer rewards', soon: true },
+  ],
 };
-/** In every package, the free trial too (shown once, under the cards). */
-const EVERY_PACKAGE: { icon: LucideIcon; label: string }[] = [
-  { icon: Palette, label: 'Your logo, colors and name' },
-  { icon: ScanBarcode, label: 'Barcode scan + product details' },
-  { icon: BadgePercent, label: 'Discounts + Senior/PWD' },
-  { icon: Receipt, label: 'VAT receipts' },
-  { icon: Ban, label: 'Void sales with a reason' },
-  { icon: Download, label: 'Install on phone or computer' },
-];
-
+const LEVEL: Record<PlanId, string> = { starter: 'Basic features', business: 'Standard features', enterprise: 'Advanced features' };
 const TAGLINE: Record<PlanId, string> = {
   starter: 'For small shops',
   business: 'For growing shops',
@@ -41,12 +48,11 @@ const TAGLINE: Record<PlanId, string> = {
 export default function PlanCards({ onChoose, selected }: { onChoose: (choice: PlanChoice) => void; selected?: PlanChoice }) {
   const { settings } = usePlatformSettings();
   return (
-    <div>
     <div className="grid gap-4 md:grid-cols-3 items-stretch">
       {PLAN_IDS.map(id => {
         const plan = settings.plans[id];
         const name = plan?.name ?? id;
-        const list = [accounts(plan?.entitlements.staffLimit), ...FEATURES[id]];
+        const list: Feature[] = [{ label: accounts(plan?.entitlements.staffLimit) }, ...FEATURES[id]];
 
         // Starter is also the free trial: the highlighted card
         if (id === 'starter') {
@@ -71,9 +77,10 @@ export default function PlanCards({ onChoose, selected }: { onChoose: (choice: P
               <button type="button" onClick={() => onChoose('trial')} className="btn-caramel w-full mt-6">
                 <Sparkles className="w-4 h-4" aria-hidden="true" /> Start free trial
               </button>
-              <ul className="mt-6 space-y-2.5 text-sm">
+              <p className="mt-6 text-[11px] font-bold uppercase tracking-wider text-caramel-200">{LEVEL[id]}</p>
+              <ul className="mt-3 space-y-2.5 text-sm">
                 {list.map(f => (
-                  <li key={f} className="flex items-center gap-2.5"><Check className="w-4 h-4 text-caramel-300" strokeWidth={2.6} aria-hidden="true" /> {f}</li>
+                  <li key={f.label} className="flex items-center gap-2.5"><Check className="w-4 h-4 shrink-0 text-caramel-300" strokeWidth={2.6} aria-hidden="true" /> {f.label}</li>
                 ))}
               </ul>
               <p className="mt-auto pt-6 text-xs text-cream-300/80">Then {peso(plan?.price ?? 0)}/month. No automatic charges.</p>
@@ -98,27 +105,21 @@ export default function PlanCards({ onChoose, selected }: { onChoose: (choice: P
             <button type="button" onClick={() => onChoose(id)} className={cn('w-full mt-6', popular ? 'btn-primary' : 'btn-outline')}>
               Choose {name}
             </button>
-            <ul className="mt-6 space-y-2.5 text-sm text-espresso-800">
+            <p className="mt-6 text-[11px] font-bold uppercase tracking-wider text-bark-500">{LEVEL[id]}</p>
+            <ul className="mt-3 space-y-2.5 text-sm text-espresso-800">
               {list.map(f => (
-                <li key={f} className="flex items-center gap-2.5"><Check className="w-4 h-4 text-espresso-800" strokeWidth={2.6} aria-hidden="true" /> {f}</li>
+                <li key={f.label} className={cn('flex items-center gap-2.5', f.soon && 'text-bark-500')}>
+                  {f.soon
+                    ? <Clock className="w-4 h-4 shrink-0 text-caramel-500" aria-hidden="true" />
+                    : <Check className="w-4 h-4 shrink-0 text-espresso-800" strokeWidth={2.6} aria-hidden="true" />}
+                  <span>{f.label}</span>
+                  {f.soon && <span className="rounded-full bg-caramel-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-caramel-800">Soon</span>}
+                </li>
               ))}
             </ul>
           </div>
         );
       })}
-    </div>
-
-    {/* What every package has, the free trial included */}
-    <div className="mt-5 rounded-3xl border border-cream-300/80 bg-cream-50/70 px-5 py-5 backdrop-blur-sm">
-      <p className="text-center text-sm font-semibold text-espresso-900">Every package has</p>
-      <ul className="mt-3 flex flex-wrap justify-center gap-2">
-        {EVERY_PACKAGE.map(({ icon: Icon, label }) => (
-          <li key={label} className="inline-flex items-center gap-2 rounded-full border border-cream-300 bg-white/80 px-3.5 py-2 text-sm text-espresso-800">
-            <Icon className="w-4 h-4 text-caramel-600" aria-hidden="true" /> {label}
-          </li>
-        ))}
-      </ul>
-    </div>
     </div>
   );
 }

@@ -21,6 +21,7 @@ import { setCurrentTenant, tenantDoc, tenantRef } from '@/lib/tenant';
 import { isSuperAdmin as checkSuperAdmin } from '@/lib/platform';
 import { callPublicApi } from '@/lib/api';
 import { brandingRef, storeBrand, type StoreBrand } from '@/lib/storeProfile';
+import { hasFeature } from '@/lib/entitlements';
 import type { StoreBranding, Tenant, User } from '@/types';
 
 interface AuthContextType {
@@ -61,10 +62,17 @@ export function useAuth() {
   return ctx;
 }
 
-/** The signed-in shop's name, logo and colors, or the JPOS ones. */
+/**
+ * The signed-in shop's name, logo and colors, or the JPOS ones. Its own logo
+ * and colors need a package that has them (Business and up); the name always shows.
+ */
 export function useStoreBrand(): StoreBrand {
   const { branding, tenant } = useAuth();
-  return useMemo(() => storeBrand(branding, tenant?.name), [branding, tenant?.name]);
+  const own = hasFeature(tenant, 'branding');
+  return useMemo(
+    () => storeBrand(own || !branding ? branding : { ...branding, logoUrl: '', theme: 'espresso' }, tenant?.name),
+    [branding, own, tenant?.name],
+  );
 }
 
 async function fetchUserProfile(fbUser: FirebaseUser): Promise<User | null> {

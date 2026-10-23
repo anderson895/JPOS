@@ -47,7 +47,24 @@ export const PLAN_LABEL: Record<PlanId, string> = { starter: 'Starter', business
 
 /** Defaults; the Super Admin can change them in platform settings. */
 export const DEFAULT_ENTITLEMENTS: Record<PlanId, Entitlements> = {
-  starter:    { plan: 'starter',    staffLimit: 3,    rfid: false, fullReports: false, pdfExport: false, trends: false },
-  business:   { plan: 'business',   staffLimit: 10,   rfid: true,  fullReports: true,  pdfExport: true,  trends: true },
-  enterprise: { plan: 'enterprise', staffLimit: null, rfid: true,  fullReports: true,  pdfExport: true,  trends: true },
+  starter:    { plan: 'starter',    staffLimit: 3,    rfid: false, fullReports: false, pdfExport: false, trends: false, branding: false, discounts: false, voidSales: false },
+  business:   { plan: 'business',   staffLimit: 10,   rfid: true,  fullReports: true,  pdfExport: true,  trends: true,  branding: true,  discounts: true,  voidSales: true },
+  enterprise: { plan: 'enterprise', staffLimit: null, rfid: true,  fullReports: true,  pdfExport: true,  trends: true,  branding: true,  discounts: true,  voidSales: true },
 };
+
+/** Package features a shop may or may not have (the account limit is separate). */
+export type Feature = 'rfid' | 'fullReports' | 'pdfExport' | 'trends' | 'branding' | 'discounts' | 'voidSales';
+
+/**
+ * Does this shop's package include it? A shop saved before a feature existed
+ * has no flag for it: then its package decides (Starter no, Business and
+ * Enterprise yes), exactly like firestore.rules (`shopCan`).
+ */
+export function hasFeature(t: Pick<Tenant, 'plan' | 'entitlements'> | null | undefined, f: Feature): boolean {
+  if (!t) return false;
+  const v = t.entitlements?.[f];
+  return typeof v === 'boolean' ? v : t.plan !== 'starter';
+}
+
+/** The plain-words note for a locked feature. */
+export const BUSINESS_UP = 'Included in the Business and Enterprise packages.';

@@ -33,9 +33,9 @@ const db = getFirestore();
 const auth = getAuth();
 
 const ENT = {
-  starter: { plan: 'starter', staffLimit: 3, rfid: false, fullReports: false, pdfExport: false, trends: false },
-  business: { plan: 'business', staffLimit: 10, rfid: true, fullReports: true, pdfExport: true, trends: true },
-  enterprise: { plan: 'enterprise', staffLimit: null, rfid: true, fullReports: true, pdfExport: true, trends: true },
+  starter: { plan: 'starter', staffLimit: 3, rfid: false, fullReports: false, pdfExport: false, trends: false, branding: false, discounts: false, voidSales: false },
+  business: { plan: 'business', staffLimit: 10, rfid: true, fullReports: true, pdfExport: true, trends: true, branding: true, discounts: true, voidSales: true },
+  enterprise: { plan: 'enterprise', staffLimit: null, rfid: true, fullReports: true, pdfExport: true, trends: true, branding: true, discounts: true, voidSales: true },
 };
 const SETTINGS = {
   plans: {

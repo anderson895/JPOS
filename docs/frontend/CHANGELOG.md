@@ -702,6 +702,10 @@ The owner's list (note.txt): logos and colors per shop, the shop's name on its s
 - **Code boxes** fit any space (Account Settings on phones overflowed).
 - **Verified** on the local test app: forgot password 20/20 (owner, unknown email, cashier with an RFID card), JPOS home 7/7, code boxes at 320–1280 px.
 
-## 33. Pricing: what every package has (2026-10-23)
+## 33. Packages: basic, standard, advanced (2026-10-23)
 
-- Under the three package cards (landing and sign-up, `PlanCards`), an **Every package has** row: Your logo, colors and name · Barcode scan + product details · Discounts + Senior/PWD · VAT receipts · Void sales with a reason · Install on phone or computer. The cards keep their short lists, so they stay even.
+- **The owner split the features (choice A):** Starter = basic (Cash + GCash/Maya QR, VAT receipts, Senior/PWD, barcode + product details, today & weekly reports, install), Business = standard (+ own logo and colors, saved + per-item discounts, void, all reports + PDF, trends, RFID), Enterprise = advanced (+ unlimited accounts, priority support). Senior/PWD and VAT stay in every package because the law needs them; the shop name stays everywhere (it's on the receipt).
+- **Announced, not built yet** (a "Soon" tag on the cards): Business: inventory and low-stock alerts. Enterprise: AI assistant, many branches in one account, sales forecasts, customer rewards.
+- **Locked in the app with a note** ("included in the Business and Enterprise packages"): Store Settings logo and colors, Products → Discounts, the discount button on a cart line, Reports → Void. A whole-order discount and Senior/PWD stay in every package. A shop that moves down to Starter goes back to the JPOS look (its sign-in page too).
+- The Subscription page lists what Business adds.
+- **Verified** on the local test app: 12/12 (a new Starter shop vs the Enterprise test shop, landing cards).

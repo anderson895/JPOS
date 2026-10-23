@@ -6,6 +6,7 @@ import { tenantCol, tenantDoc } from '@/lib/tenant';
 import { uploadImage } from '@/lib/cloudinary';
 import { cn, formatCurrency } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
+import { BUSINESS_UP, hasFeature } from '@/lib/entitlements';
 import {
   DETAIL_FIELDS, DETAIL_LABEL, DETAIL_MAX, UNITS, UNIT_LABEL, mainDetailFields, matchesSearch, productDetails, sizeExample,
   type DetailField,
@@ -15,7 +16,7 @@ import PageHeader from '@/components/shared/PageHeader';
 import DiscountsModal from '@/components/admin/DiscountsModal';
 import type { Product, Category } from '@/types';
 import {
-  Plus, Search, Edit2, Trash2, X, Upload, ToggleLeft, ToggleRight, Loader2, Tag, Pencil, Package, ChevronDown, ScanBarcode, BadgePercent,
+  Plus, Search, Edit2, Trash2, X, Upload, ToggleLeft, ToggleRight, Loader2, Tag, Pencil, Package, ChevronDown, ScanBarcode, BadgePercent, Lock,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -27,6 +28,7 @@ const defaultProduct: Omit<Product, 'id' | 'createdAt' | 'updatedAt'> = {
 
 export default function AdminProducts() {
   const { tenant } = useAuth();
+  const canDiscounts = hasFeature(tenant, 'discounts');
   // The details this kind of store fills in first; the rest are under "More details"
   const mainFields = mainDetailFields(tenant?.businessType);
   const [moreDetails, setMoreDetails] = useState(false);
@@ -276,8 +278,14 @@ export default function AdminProducts() {
             <button onClick={() => setCatModalOpen(true)} className="btn-secondary flex-1 sm:flex-none">
               <Tag className="w-4 h-4" /> Categories
             </button>
-            <button onClick={() => setDiscountsOpen(true)} className="btn-secondary flex-1 sm:flex-none">
-              <BadgePercent className="w-4 h-4" /> Discounts
+            <button
+              onClick={() => canDiscounts
+                ? setDiscountsOpen(true)
+                : toast(`Saved discounts: ${BUSINESS_UP.charAt(0).toLowerCase()}${BUSINESS_UP.slice(1)}`, { icon: <Lock className="w-4 h-4 text-caramel-600" aria-hidden="true" /> })}
+              className={cn('btn-secondary flex-1 sm:flex-none', !canDiscounts && 'opacity-70')}
+              title={canDiscounts ? undefined : 'Business and Enterprise packages'}
+            >
+              {canDiscounts ? <BadgePercent className="w-4 h-4" /> : <Lock className="w-4 h-4" />} Discounts
             </button>
             <button onClick={openNew} className="btn-primary flex-1 sm:flex-none">
               <Plus className="w-4 h-4" /> Add Product

@@ -5,6 +5,7 @@ import { LayoutDashboard, BarChart3, ShoppingCart, Users, Wallet, CreditCard, Sh
 import { useEffect, useRef, useState } from 'react';
 import { watchPendingRequests } from '@/lib/platform';
 import { addMissingBranding } from '@/lib/storeProfile';
+import { hasFeature } from '@/lib/entitlements';
 import AppShell, { type ShellNavItem } from '@/components/shared/AppShell';
 import AccountSettingsModal from '@/components/admin/AccountSettingsModal';
 import toast from 'react-hot-toast';
@@ -46,11 +47,15 @@ export default function AdminLayout() {
 
   // A shop made before Store Settings has no public name yet: add it once, so its
   // sign-in page shows the shop's name instead of "JPOS"
+  // A shop whose package has no own logo and colors (it moved down to Starter)
+  // goes back to the JPOS look on its sign-in page too.
   const addedBranding = useRef(false);
   useEffect(() => {
-    if (!brandingReady || branding || !tenant || tenant.suspended || currentUser?.role !== 'admin' || addedBranding.current) return;
+    if (!brandingReady || !tenant || tenant.suspended || currentUser?.role !== 'admin' || addedBranding.current) return;
+    const ownLook = !!branding && (!!branding.logoUrl || branding.theme !== 'espresso');
+    if (branding && !(ownLook && !hasFeature(tenant, 'branding'))) return;
     addedBranding.current = true;
-    addMissingBranding(tenant).catch(err => console.warn('[AdminLayout] could not add the shop branding', err));
+    addMissingBranding(tenant).catch(err => console.warn('[AdminLayout] could not set the shop branding', err));
   }, [brandingReady, branding, tenant, currentUser?.role]);
 
   // The JPOS owner's own shop never pays, so Subscription gives way to Super Admin

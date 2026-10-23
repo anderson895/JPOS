@@ -23,6 +23,7 @@ import StatCard from '@/components/shared/StatCard';
 import { useChartTheme } from '@/components/shared/chartTheme';
 import { themeRgb } from '@/components/shared/theme';
 import { paymentBreakdown, paymentRefLabel } from '@/lib/reports';
+import { BUSINESS_UP, hasFeature } from '@/lib/entitlements';
 
 type Range = 'today' | 'week' | 'month' | 'custom';
 
@@ -51,6 +52,7 @@ export default function AdminReports() {
   const { tenant } = useAuth();
   const fullReports = !!tenant?.entitlements?.fullReports;
   const pdfExport = !!tenant?.entitlements?.pdfExport;
+  const canVoid = hasFeature(tenant, 'voidSales');
   const locked = (r: Range) => !fullReports && (r === 'month' || r === 'custom');
   const [orders, setOrders]         = useState<Order[]>([]);
   // The sale being voided, or whose receipt is open
@@ -601,8 +603,15 @@ export default function AdminReports() {
                         <ReceiptText className="w-4 h-4" />
                       </button>
                       {o.status === 'completed' && (
-                        <button onClick={() => setVoiding(o)} className="icon-btn w-8 h-8 hover:text-red-600" title="Void this sale" aria-label={`Void ${o.orderNumber}`}>
-                          <Ban className="w-4 h-4" />
+                        <button
+                          onClick={() => canVoid
+                            ? setVoiding(o)
+                            : toast(`Void: ${BUSINESS_UP.charAt(0).toLowerCase()}${BUSINESS_UP.slice(1)}`, { icon: <Lock className="w-4 h-4 text-caramel-600" aria-hidden="true" /> })}
+                          className={`icon-btn w-8 h-8 ${canVoid ? 'hover:text-red-600' : 'opacity-60'}`}
+                          title={canVoid ? 'Void this sale' : 'Void: Business and Enterprise packages'}
+                          aria-label={`Void ${o.orderNumber}`}
+                        >
+                          {canVoid ? <Ban className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
                         </button>
                       )}
                     </div>

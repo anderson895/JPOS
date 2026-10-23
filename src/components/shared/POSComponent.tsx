@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Lock } from 'lucide-react';
-import { hasAccess, shopState } from '@/lib/entitlements';
+import { hasAccess, hasFeature, shopState } from '@/lib/entitlements';
 
 const PAYMENT_METHODS: { value: PaymentMethod; label: string; icon: any }[] = [
   { value: 'cash', label: 'Cash', icon: Banknote },
@@ -34,6 +34,9 @@ const PAYMENT_METHODS: { value: PaymentMethod; label: string; icon: any }[] = [
 
 export default function POSComponent() {
   const { currentUser, tenant } = useAuth();
+  // Saved discounts and discounts on one item: Business and up. Every package
+  // has a discount on the whole order and Senior/PWD.
+  const canDiscounts = hasFeature(tenant, 'discounts');
   const brand = useStoreBrand();
   const shopInfo = receiptInfo(tenant);
   const {
@@ -413,14 +416,14 @@ export default function POSComponent() {
                     <Plus className="w-3 h-3 text-cream-50" />
                   </button>
                 </div>
-                <button
+                {(canDiscounts || item.discount) && <button
                   onClick={() => setDiscountFor({ productId: item.productId, variantId: item.variantId })}
                   className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${item.discount ? 'text-emerald-700 bg-emerald-50' : 'text-bark-300 hover:text-caramel-700 hover:bg-cream-200'}`}
                   aria-label={`Discount on ${item.productName}`}
                   title="Discount on this item"
                 >
                   <Tag className="w-3.5 h-3.5" />
-                </button>
+                </button>}
                 <button
                   onClick={() => removeItem(item.productId, item.variantId)}
                   className="w-7 h-7 rounded-full flex items-center justify-center text-bark-300 hover:text-red-500 hover:bg-red-50 transition-colors"
@@ -508,7 +511,7 @@ export default function POSComponent() {
       {discountFor && (discountFor === 'order' || discountLine) && (
         <DiscountSheet
           itemName={discountLine?.productName}
-          saved={savedDiscounts}
+          saved={canDiscounts ? savedDiscounts : []}
           current={discountFor === 'order' ? orderDiscount : discountLine?.discount ?? null}
           senior={discountFor === 'order' ? senior : undefined}
           vatRegistered={shopInfo.vatRegistered}

@@ -120,7 +120,8 @@ export async function saveStore(input: {
 
 /**
  * Shops made before Store Settings have no public name yet, so their sign-in
- * page showed "JPOS". The admin app adds it once, with the shop's name.
+ * page showed "JPOS". The admin app adds it once, with the shop's name. Also
+ * used to put back the JPOS look when the package no longer has its own.
  */
 export async function addMissingBranding(tenant: Pick<Tenant, 'id' | 'name'>): Promise<void> {
   const uid = auth.currentUser?.uid;

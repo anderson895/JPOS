@@ -29,6 +29,12 @@ service cloud.firestore {
         && ((s.status == 'trial' && request.time < trialEnd(s))
             || (s.status == 'active' && request.time < s.currentPeriodEnd));
     }
+    // A package feature (hasFeature in src/lib/entitlements.ts): the shop's own
+    // flag, or for shops saved before the feature existed, its package (Starter: no).
+    function shopCan(t, f) {
+      let s = shop(t);
+      return s.entitlements.get(f, s.plan != 'starter');
+    }
 
     function validSlug(slug) {
       return slug is string
@@ -327,7 +333,8 @@ service cloud.firestore {
       // The store's saved discounts ("Employee 10%", "Promo ₱50"), picked at the POS
       match /discounts/{id} {
         allow read: if memberOf(t);
-        allow create, update: if adminOf(t) && hasAccess(t)
+        // Business and up; deleting stays open, so a shop that moved down can clean up
+        allow create, update: if adminOf(t) && hasAccess(t) && shopCan(t, 'discounts')
           && d().keys().hasOnly(['name', 'kind', 'value', 'active', 'createdAt', 'updatedAt'])
           && d().name is string && d().name.size() >= 1 && d().name.size() <= 40
           && d().kind in ['percent', 'fixed']
@@ -364,7 +371,7 @@ service cloud.firestore {
         // Void: an admin marks a completed sale VOID with a reason. It stays for
         // the record (left out of every sales total); nothing else changes, and
         // sales are never deleted.
-        allow update: if adminOf(t) && hasAccess(t)
+        allow update: if adminOf(t) && hasAccess(t) && shopCan(t, 'voidSales')
           && resource.data.status == 'completed'
           && changed().hasOnly(['status', 'voidedBy', 'voidedByName', 'voidedAt', 'voidReason', 'updatedAt'])
           && d().status == 'voided'
@@ -433,13 +440,17 @@ service cloud.firestore {
           && d().updatedBy == request.auth.uid
           && d().updatedAt == request.time;
       }
+      function plainLook() { return d().logoUrl == '' && d().theme == 'espresso'; }
       match /settings/branding {
         allow get: if true;
         allow list: if false;
+        // Its own logo and colors are Business and up; any shop can keep the
+        // JPOS look (no logo, default colors) and change its name
         allow create, update: if signedIn() && brandingOk() && (
-            (adminOf(t) && shop(t).suspended == false)
+            (adminOf(t) && shop(t).suspended == false && (plainLook() || shopCan(t, 'branding')))
             // the new owner, in the batch that creates the shop
-            || (!exists(/databases/$(database)/documents/tenants/$(t))
+            || (plainLook()
+                && !exists(/databases/$(database)/documents/tenants/$(t))
                 && getAfter(/databases/$(database)/documents/tenants/$(t)).data.ownerUid == request.auth.uid));
         allow delete: if false;
       }

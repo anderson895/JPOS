@@ -1,6 +1,7 @@
 // Store Settings Firestore rules: what the shop sells (chosen at sign-up), its
 // name, logo and colors (public, for its sign-in page), and its receipt details.
-// Also the store's saved discounts and voiding a sale.
+// Also the store's saved discounts and voiding a sale, and which package has
+// them: own logo/colors, saved discounts and void are Business and up.
 // Run with the emulator (see package.json test:rules).
 import { readFileSync } from 'node:fs';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
@@ -39,7 +40,16 @@ async function seed() {
       plans: { starter: { name: 'Starter', price: 499, entitlements: STARTER } }, trialDays: 7,
       paymentChannels: {}, messengerUrl: 'https://m.me/x', contactPhone: '', lastAuditId: 'a0',
     });
-    await setDoc(doc(db, 'tenants/A'), shopDoc('adminA'));
+    // A: Business, saved before the new package features (no flags: the package decides)
+    await setDoc(doc(db, 'tenants/A'), shopDoc('adminA', { plan: 'business', entitlements: { ...STARTER, plan: 'business', staffLimit: 10 } }));
+    // B: Starter trial running; C: Business with those features turned off; G: Starter given its own look
+    await setDoc(doc(db, 'tenants/B'), shopDoc('adminB'));
+    await setDoc(doc(db, 'tenants/C'), shopDoc('adminC', { plan: 'business', entitlements: { ...STARTER, plan: 'business', branding: false, discounts: false, voidSales: false } }));
+    await setDoc(doc(db, 'tenants/G'), shopDoc('adminG', { entitlements: { ...STARTER, branding: true } }));
+    for (const id of ['B', 'C', 'G']) {
+      await setDoc(doc(db, `users/admin${id}`), user(id, 'admin'));
+      await setDoc(doc(db, `tenants/${id}/orders/o1`), { orderNumber: 'ORD-1', status: 'completed', total: 100, cashierId: `admin${id}`, createdAt: iso, updatedAt: iso });
+    }
     await setDoc(doc(db, 'tenants/S'), shopDoc('adminS', { status: 'setup', trialUsed: false, trialStartedAt: null }));
     await setDoc(doc(db, 'tenants/X'), shopDoc('adminX', { suspended: true }));
     for (const id of ['A', 'S', 'X']) await setDoc(doc(db, `users/admin${id}`), user(id, 'admin'));
@@ -118,7 +128,7 @@ const saveStore = (db, tenantId, { shop = {}, branding = {}, withShop = true, wi
 const save = (uid, tenantId, opts = {}) => saveStore(as(uid), tenantId, { ...opts, branding: { updatedBy: uid, ...(opts.branding ?? {}) } });
 
 await t('admin renames the store, picks a logo, colors and receipt', 'allow', () => save('adminA', 'A'));
-await t('admin of a shop that can\'t sell yet sets it up', 'allow', () => save('adminS', 'S'));
+await t('a shop that can\'t sell yet saves its name and receipt (JPOS look)', 'allow', () => save('adminS', 'S', { branding: { logoUrl: '', theme: 'espresso' } }));
 await t('admin changes only the logo and colors', 'allow', () => save('adminA', 'A', { withShop: false, branding: { name: 'Shop' } }));
 await t('admin keeps the name, changes the receipt only', 'allow', () => save('adminA', 'A', { withBranding: false, shop: { name: 'Shop' } }));
 await t('rename without the public name', 'deny', () => save('adminA', 'A', { withBranding: false }));
@@ -174,6 +184,22 @@ await t('un-void a sale', 'deny', () => updateDoc(doc(as('adminA'), 'tenants/A/o
 await t('admin edits a sale\'s total', 'deny', () => updateDoc(doc(as('adminA'), 'tenants/A/orders/o1'), { total: 1, updatedAt: iso }));
 await t('admin deletes a sale', 'deny', () => deleteDoc(doc(as('adminA'), 'tenants/A/orders/o1')));
 await t('void after the subscription ended', 'deny', () => voidIt('adminE', 'tenants/E/orders/o1'));
+
+// ── Which package has what ──────────────────────────────────────────────────
+await t('Starter: its own logo', 'deny', () => save('adminB', 'B'));
+await t('Starter: its own colors only', 'deny', () => save('adminB', 'B', { branding: { logoUrl: '' } }));
+await t('Starter: name and receipt with the JPOS look', 'allow', () => save('adminB', 'B', { branding: { logoUrl: '', theme: 'espresso' } }));
+await t('Starter given its own look by the Super Admin', 'allow', () => save('adminG', 'G'));
+await t('Starter: a saved discount', 'deny', () => setDoc(doc(as('adminB'), 'tenants/B/discounts/d2'), disc()));
+await t('Starter: void a sale', 'deny', () => voidIt('adminB', 'tenants/B/orders/o1'));
+await t('Business with those turned off: own logo', 'deny', () => save('adminC', 'C'));
+await t('Business with those turned off: a saved discount', 'deny', () => setDoc(doc(as('adminC'), 'tenants/C/discounts/d2'), disc()));
+await t('Business with those turned off: void', 'deny', () => voidIt('adminC', 'tenants/C/orders/o1'));
+await t('Business saved before the new features: all three work', 'allow', async () => {
+  await save('adminA', 'A');
+  await setDoc(doc(as('adminA'), 'tenants/A/discounts/d9'), disc());
+  await voidIt('adminA');
+});
 
 await env.cleanup();
 for (const [s, e, n] of results) console.log(`${s}  [${e.padEnd(5)}]  ${n}`);

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FirebaseError } from 'firebase/app';
-import { Check, CheckCircle, Copy, Image as ImageIcon, Link2, Loader2, Palette, Receipt, Store, Trash2, Undo2, Upload } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Check, CheckCircle, Copy, Image as ImageIcon, Link2, Loader2, Lock, Palette, Receipt, Store, Trash2, Undo2, Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth, useStoreBrand } from '@/contexts/AuthContext';
 import { uploadImage } from '@/lib/cloudinary';
@@ -12,6 +13,7 @@ import BusinessTypePicker from '@/components/shared/BusinessTypePicker';
 import PageHeader from '@/components/shared/PageHeader';
 import Switch from '@/components/shared/Switch';
 import { cn } from '@/lib/utils';
+import { BUSINESS_UP, hasFeature } from '@/lib/entitlements';
 import type { BusinessType, ReceiptInfo } from '@/types';
 
 interface Draft {
@@ -28,7 +30,9 @@ const same = (a: Draft, b: Draft) => JSON.stringify(a) === JSON.stringify(b);
  * (shown in the app and on its sign-in page), and what its receipts say.
  */
 export default function StoreSettings() {
-  const { tenant, brandingReady } = useAuth();
+  const { tenant, brandingReady, isSuperAdmin } = useAuth();
+  // Its own logo and colors: Business and up (the rules check it too)
+  const canBrand = hasFeature(tenant, 'branding');
   const brand = useStoreBrand();
 
   // What's saved now (live), in the form's shape
@@ -104,7 +108,7 @@ export default function StoreSettings() {
     try {
       await saveStore({
         tenantId: tenant.id, name: draft.name, businessType: draft.businessType,
-        receipt: draft.receipt, logoUrl: draft.logoUrl, theme: draft.theme,
+        receipt: draft.receipt, logoUrl: canBrand ? draft.logoUrl : '', theme: canBrand ? draft.theme : 'espresso',
       });
       // The saved values come back live; the form keeps what was typed (trimmed)
       setDraft(d => (d ? {
@@ -171,6 +175,14 @@ export default function StoreSettings() {
       {/* Logo and colors */}
       <section className="card p-5 sm:p-6 space-y-5">
         <SectionTitle icon={Palette} title="Logo and colors" />
+        {!canBrand && (
+          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-caramel-200 bg-caramel-50 px-4 py-3 text-sm text-espresso-800">
+            <Lock className="h-4 w-4 shrink-0 text-caramel-600" aria-hidden="true" />
+            <span className="flex-1 min-w-[12rem]">Your own logo and colors: {BUSINESS_UP.charAt(0).toLowerCase() + BUSINESS_UP.slice(1)}</span>
+            {!isSuperAdmin && <Link to="/admin/billing" className="btn-secondary px-4 py-1.5 text-xs">See packages</Link>}
+          </div>
+        )}
+        <fieldset disabled={!canBrand} className={cn('space-y-5', !canBrand && 'opacity-60')}>
         <div className="flex flex-wrap items-center gap-4">
           <button
             type="button"
@@ -233,6 +245,7 @@ export default function StoreSettings() {
           </div>
           <p className="mt-1.5 px-1 text-[11px] text-bark-400">Tap one to see it. It stays only when you save.</p>
         </div>
+        </fieldset>
       </section>
 
       {/* Receipt */}

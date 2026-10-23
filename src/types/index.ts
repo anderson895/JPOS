@@ -25,6 +25,17 @@ export interface Entitlements {
   fullReports: boolean;
   pdfExport: boolean;
   trends: boolean;
+  /**
+   * Business and up (2026-10-23). Missing on shops and packages saved before
+   * then: the package decides (Starter no, Business/Enterprise yes), the same
+   * way firestore.rules read them (hasFeature in src/lib/entitlements.ts).
+   */
+  /** The shop's own logo and colors. */
+  branding?: boolean;
+  /** Saved discounts and discounts on one item. */
+  discounts?: boolean;
+  /** Voiding a sale. */
+  voidSales?: boolean;
 }
 
 export type PlanId = 'starter' | 'business' | 'enterprise';
