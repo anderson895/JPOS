@@ -1,8 +1,7 @@
-import type { LucideIcon } from 'lucide-react';
 import {
-  BarChart3, Package, Coffee, FileText, ShieldCheck, CreditCard, ShoppingCart,
-  CupSoda, Croissant, UtensilsCrossed, Store, ShoppingBag, Scissors, Shirt, Car,
+  BarChart3, Package, FileText, ShieldCheck, CreditCard, ShoppingCart,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 /*
  * All landing-page copy in one place so marketing text can change without
@@ -22,17 +21,7 @@ export const NAV_LINKS = [
 ] as const;
 
 /** "Built for" chips in the hero: the kinds of small businesses JPOS serves. */
-export const BUILT_FOR: { icon: LucideIcon; label: string }[] = [
-  { icon: Coffee,          label: 'Café' },
-  { icon: CupSoda,         label: 'Milk tea' },
-  { icon: Croissant,       label: 'Bakery' },
-  { icon: UtensilsCrossed, label: 'Restaurant' },
-  { icon: Store,           label: 'Sari-sari' },
-  { icon: ShoppingBag,     label: 'Retail' },
-  { icon: Scissors,        label: 'Salon' },
-  { icon: Shirt,           label: 'Laundry' },
-  { icon: Car,             label: 'Car wash' },
-];
+export const BUILT_FOR: string[] = ['Café', 'Milk tea', 'Bakery', 'Restaurant', 'Sari-sari', 'Retail', 'Salon', 'Laundry', 'Car wash'];
 
 export const ABOUT_POINTS = [
   'Easy to Use Interface',
