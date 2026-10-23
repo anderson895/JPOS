@@ -88,7 +88,7 @@ export default function TerminalPage() {
         <>
           <p className="flex items-center gap-2 text-sm text-cream-200/80">
             <Store className="w-4 h-4" aria-hidden="true" />
-            Tap your card to start your shift
+            Sign in to start your shift
           </p>
           <LoginCard terminalSlug={slug.toLowerCase()} brand={brand ?? undefined} />
           {/* A counter device can open this page like an app */}

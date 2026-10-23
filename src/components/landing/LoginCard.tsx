@@ -29,8 +29,8 @@ export default function LoginCard({ terminalSlug, brand }: {
   const { login, loginWithRFID, loginWithGoogle } = useAuth();
   // Signing out returns here: this shop's sign-in page, or the landing page
   const signInPage = terminalSlug ? `/s/${terminalSlug}` : '/login';
-  // A terminal opens on RFID (cashiers tap their card); the public page is password/Google only
-  const [mode, setMode] = useState<'password' | 'rfid'>(terminalSlug ? 'rfid' : 'password');
+  // Every sign-in page opens on email and password (owner's choice); a shop's page also has an RFID tab
+  const [mode, setMode] = useState<'password' | 'rfid'>('password');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
