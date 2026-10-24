@@ -10,9 +10,9 @@ const row = 'flex justify-between gap-3';
 
 /**
  * The printed receipt: the shop's name and details (Store Settings), the items
- * with their discounts, the order discounts, Senior/PWD, the VAT breakdown
- * (VAT-registered stores) and the order QR. `id="receipt"` is what the
- * @media print rules print.
+ * with their discounts, the order discounts, Senior/PWD and the order QR.
+ * JPOS isn't BIR-registered, so every receipt says it is unofficial and shows
+ * no VAT. `id="receipt"` is what the @media print rules print.
  */
 const Receipt = forwardRef<HTMLDivElement, { order: Order; shopName: string; info: ReceiptInfo }>(
   function Receipt({ order, shopName, info }, ref) {
@@ -31,9 +31,8 @@ const Receipt = forwardRef<HTMLDivElement, { order: Order; shopName: string; inf
         <p className="text-center font-bold text-base font-body uppercase break-words">{shopName}</p>
         {info.address && <p className="text-center break-words">{info.address}</p>}
         {info.phone && <p className="text-center">{info.phone}</p>}
-        {(info.vatRegistered || info.tin) && (
-          <p className="text-center">{info.vatRegistered ? 'VAT REG TIN' : 'NON-VAT REG TIN'} {info.tin}</p>
-        )}
+        {info.tin && <p className="text-center">TIN {info.tin}</p>}
+        <p className="text-center font-bold pt-1">UNOFFICIAL RECEIPT</p>
         <p className="text-center text-bark-500 pt-1">{new Date(order.createdAt).toLocaleString()}</p>
         <p className="text-center text-bark-500 pb-2">{order.orderNumber}</p>
 
@@ -58,6 +57,7 @@ const Receipt = forwardRef<HTMLDivElement, { order: Order; shopName: string; inf
 
         <div className="border-t border-dashed border-bark-300 pt-2 space-y-1">
           <div className={row}><span>Subtotal</span><span>{formatCurrency(order.subtotal)}</span></div>
+          {/* Only sales from before VAT was taken out have this: kept so their totals add up */}
           {(order.lessVat ?? 0) > 0 && (
             <div className={row}><span>Less VAT {VAT_RATE * 100}%</span><span>-{formatCurrency(order.lessVat ?? 0)}</span></div>
           )}
@@ -70,15 +70,6 @@ const Receipt = forwardRef<HTMLDivElement, { order: Order; shopName: string; inf
           {order.paymentNote && <p className="flex items-start gap-1 text-amber-700"><AlertTriangle className="w-3.5 h-3.5 mt-px flex-shrink-0" aria-hidden="true" />{order.paymentNote}</p>}
           {(order.change || 0) > 0 && <div className={row}><span>Change</span><span>{formatCurrency(order.change || 0)}</span></div>}
         </div>
-
-        {/* VAT-registered stores: what part of the sale has VAT in it */}
-        {order.vat && (
-          <div className="border-t border-dashed border-bark-300 pt-2 space-y-1">
-            <div className={row}><span>VATable sales</span><span>{formatCurrency(order.vat.vatable)}</span></div>
-            <div className={row}><span>VAT {VAT_RATE * 100}%</span><span>{formatCurrency(order.vat.vat)}</span></div>
-            <div className={row}><span>VAT-exempt sales</span><span>{formatCurrency(order.vat.exempt)}</span></div>
-          </div>
-        )}
 
         {/* Senior citizen / PWD: the ID details and a line to sign */}
         {order.senior && (
@@ -95,6 +86,7 @@ const Receipt = forwardRef<HTMLDivElement, { order: Order; shopName: string; inf
         </div>
         <p className="text-center text-bark-500 mt-2 break-words">{info.footer || 'Thank you for your order!'}</p>
         <p className="text-center text-bark-400">Cashier: {order.cashierName}</p>
+        <p className="text-center font-semibold pt-1">This is not an official receipt.</p>
         {voided && (
           <p className="text-center font-bold text-red-700 pt-1 break-words">VOID{order.voidReason ? `: ${order.voidReason}` : ''}</p>
         )}

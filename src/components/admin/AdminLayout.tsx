@@ -1,9 +1,10 @@
 import { useNavigate } from 'react-router-dom';
 import { signedOutHome } from '@/lib/terminal';
 import { useAuth } from '@/contexts/AuthContext';
-import { LayoutDashboard, BarChart3, ShoppingCart, Users, Wallet, CreditCard, ShieldCheck, Package, Store, History } from 'lucide-react';
+import { LayoutDashboard, BarChart3, ShoppingCart, Users, Wallet, CreditCard, ShieldCheck, Package, Store, History, ScrollText } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { watchPendingRequests } from '@/lib/platform';
+import { watchNewFeedbackCount } from '@/lib/feedback';
 import { addMissingBranding } from '@/lib/storeProfile';
 import { hasFeature } from '@/lib/entitlements';
 import AppShell, { type ShellNavItem } from '@/components/shared/AppShell';
@@ -15,6 +16,7 @@ const navItems: ShellNavItem[] = [
   { to: '/admin/pos',      icon: ShoppingCart,    label: 'Point of Sale', short: 'POS' },
   { to: '/admin/products', icon: Package,          label: 'Products' },
   { to: '/admin/reports',  icon: BarChart3,       label: 'Reports' },
+  { to: '/admin/transactions', icon: ScrollText,  label: 'Transactions' },
   { to: '/admin/staff',    icon: Users,           label: 'Manage Staff' },
   { to: '/admin/activity', icon: History,         label: 'Activity' },
   { to: '/admin/store',    icon: Store,           label: 'Store Settings' },
@@ -27,6 +29,7 @@ export default function AdminLayout() {
   const navigate = useNavigate();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [feedbackCount, setFeedbackCount] = useState(0);
   const seen = useRef<Set<string> | null>(null);
 
   // Super Admin: count of payments waiting, plus a browser pop-up for each new one
@@ -46,6 +49,10 @@ export default function AdminLayout() {
     });
   }, [isSuperAdmin]);
 
+  // Super Admin: feedback from shops that isn't handled yet (counted beside payments)
+  useEffect(() => (isSuperAdmin ? watchNewFeedbackCount(setFeedbackCount) : undefined), [isSuperAdmin]);
+  const waiting = pendingCount + feedbackCount;
+
   // A shop made before Store Settings has no public name yet: add it once, so its
   // sign-in page shows the shop's name instead of "JPOS"
   // A shop whose package has no own logo and colors (it moved down to Starter)
@@ -61,7 +68,7 @@ export default function AdminLayout() {
 
   // The JPOS owner's own shop never pays, so Subscription gives way to Super Admin
   const items: ShellNavItem[] = isSuperAdmin
-    ? [...navItems.filter(i => i.to !== '/admin/billing'), { to: '/admin/platform', icon: ShieldCheck, label: pendingCount ? `Super Admin (${pendingCount})` : 'Super Admin' }]
+    ? [...navItems.filter(i => i.to !== '/admin/billing'), { to: '/admin/platform', icon: ShieldCheck, label: waiting ? `Super Admin (${waiting})` : 'Super Admin' }]
     : navItems;
 
   const handleLogout = async () => {

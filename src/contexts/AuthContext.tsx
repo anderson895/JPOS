@@ -3,8 +3,6 @@ import {
   signInWithEmailAndPassword,
   signInWithPopup,
   GoogleAuthProvider,
-  EmailAuthProvider,
-  linkWithCredential,
   signOut,
   onAuthStateChanged,
   type User as FirebaseUser,
@@ -14,10 +12,8 @@ import {
   getDoc,
   onSnapshot,
 } from 'firebase/firestore';
-import { FirebaseError } from 'firebase/app';
-import toast from 'react-hot-toast';
 import { auth, db } from '@/lib/firebase';
-import { setCurrentTenant, tenantDoc, tenantRef } from '@/lib/tenant';
+import { setCurrentTenant, tenantRef } from '@/lib/tenant';
 import { isSuperAdmin as checkSuperAdmin } from '@/lib/platform';
 import { callPublicApi } from '@/lib/api';
 import { brandingRef, storeBrand, type StoreBrand } from '@/lib/storeProfile';
@@ -42,8 +38,6 @@ interface AuthContextType {
   loading: boolean;
   /** On a shop's sign-in page (terminalSlug), only that shop's accounts get in. */
   login: (email: string, password: string, terminalSlug?: string) => Promise<void>;
-  /** RFID works only on a shop's own staff sign-in page (/s/:slug), so the card lookup knows the shop. */
-  loginWithRFID: (rfidTag: string, terminalSlug: string) => Promise<void>;
   /** isNew: a Google account with no shop yet (it continues at /subscribe). */
   loginWithGoogle: (terminalSlug?: string) => Promise<{ isNew: boolean }>;
   /** Sign-up step 1: emails a 6-digit code (from JPOS's Gmail). No account is made yet. */
@@ -102,30 +96,6 @@ async function resolveTerminalShop(slug: string): Promise<string> {
   return tenantId;
 }
 
-/**
- * The first Google sign-in to an account whose email was never verified makes
- * Firebase drop that account's password (it keeps the same uid). RFID login
- * signs in with the password saved on the card, so put that password back —
- * otherwise the card would stop working with no way to fix it from the app.
- * Admins never use RFID, so their (legacy) cards are ignored.
- */
-async function restoreRfidPassword(fbUser: FirebaseUser, profile: User) {
-  const tag = profile.rfidTag?.trim();
-  if (profile.role === 'admin' || !tag || !fbUser.email) return;
-  if (fbUser.providerData.some(p => p.providerId === 'password')) return;
-  try {
-    const card = await getDoc(tenantDoc('rfidCards', tag, profile.tenantId));
-    const { userId, password } = (card.data() ?? {}) as { userId?: string; password?: string };
-    if (userId === fbUser.uid && password) {
-      await linkWithCredential(fbUser, EmailAuthProvider.credential(fbUser.email, password));
-    }
-  } catch (err) {
-    console.warn('Could not restore the RFID password after Google sign-in:', err);
-    // Not fatal for this sign-in, but their card won't work until it's fixed
-    toast.error("Your RFID card couldn't be re-linked. Ask your admin to re-enter the card password in Manage Staff.", { duration: 8000 });
-  }
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [tenant, setTenant] = useState<Tenant | null>(null);
@@ -136,11 +106,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [superAdminChecked, setSuperAdminChecked] = useState(false);
   const [loading, setLoading] = useState(true);
-  // True while loginWithRFID is checking a card's account, so the auth listener
-  // refuses an admin session from a card instead of briefly opening it.
-  const rfidSignIn = useRef(false);
-  // The shop whose staff sign-in page the card was tapped at; the card's account must belong to it.
-  const rfidTenant = useRef<string | null>(null);
   // Set while a password or Google sign-in runs on a shop's sign-in page: the
   // account must belong to that shop, so the listener refuses any other one
   // instead of briefly opening another shop's dashboard.
@@ -206,8 +171,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // reading the shop now would be refused, so wait for the server to confirm it.
           if (snap.metadata.hasPendingWrites) return;
           if (!snap.exists()) {
-            // A card can't open an account that has no profile
-            if (rfidSignIn.current || terminalSignIn.current || shopId) { resetSession(); return; }
+            // A shop's sign-in page can't open an account that has no profile
+            if (terminalSignIn.current || shopId) { resetSession(); return; }
             // Left behind by the old sign-up (email never confirmed): it can't
             // create a shop. Signing up again with the same email replaces it.
             if (isUnconfirmedSignUp(fbUser)) { resetSession(); return; }
@@ -218,11 +183,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return;
           }
           const profile = { id: fbUser.uid, ...snap.data() } as User;
-          // Admins can't sign in with an RFID card, and a card only opens its own shop
-          if (rfidSignIn.current && (profile.role === 'admin' || profile.tenantId !== rfidTenant.current)) {
-            resetSession();
-            return;
-          }
           // A shop's sign-in page only lets in that shop's accounts
           if (terminalSignIn.current && profile.tenantId !== terminalSignIn.current) {
             resetSession();
@@ -309,82 +269,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const loginWithRFID = async (rfidTag: string, terminalSlug: string) => {
-    const trimmed = rfidTag.trim().replace(/[\r\n]/g, '');
-    if (!trimmed) throw new Error('No RFID tag detected. Please scan again.');
-    // A "/" would be read as a sub-path and make the lookup itself throw.
-    if (trimmed.includes('/')) throw new Error('RFID card not registered. Contact your administrator.');
-
-    // The page's shop: its cards live under tenants/{T}/rfidCards
-    const shopId = await resolveTerminalShop(terminalSlug);
-    let cardDoc;
-    try {
-      cardDoc = await getDoc(tenantDoc('rfidCards', trimmed, shopId));
-    } catch (err) {
-      // The rules hide cards when the shop's package doesn't include RFID
-      if (err instanceof FirebaseError && err.code === 'permission-denied') {
-        throw new Error("RFID login isn't included in this shop's package. Sign in with your email and password.");
-      }
-      throw err;
-    }
-    if (!cardDoc.exists()) throw new Error('RFID card not registered. Contact your administrator.');
-
-    const { email, password } = cardDoc.data() as { email?: string; password?: string };
-    if (!email || !password) throw new Error('RFID card is incomplete. Contact your administrator.');
-
-    rfidSignIn.current = true;
-    rfidTenant.current = shopId;
-    try {
-      let cred;
-      try {
-        cred = await signInWithEmailAndPassword(auth, email.trim(), password);
-      } catch (err) {
-        console.error('RFID sign-in failed for', email, err);
-        if (err instanceof FirebaseError) {
-          if (err.code === 'auth/too-many-requests') {
-            throw new Error('Too many login attempts. Please wait a few minutes, then try again.');
-          }
-          if (err.code === 'auth/user-not-found') {
-            throw new Error('This RFID card is linked to a deleted account. Contact your administrator.');
-          }
-          if (
-            err.code === 'auth/wrong-password' ||
-            err.code === 'auth/invalid-credential' ||
-            err.code === 'auth/invalid-login-credentials'
-          ) {
-            throw new Error(
-              "This RFID card's saved password is incorrect. Ask your administrator to re-enter the RFID password for this staff."
-            );
-          }
-        }
-        throw new Error('RFID login failed. Please try again or contact your administrator.');
-      }
-
-      const userData = await fetchUserProfile(cred.user);
-      if (!userData) {
-        await signOut(auth);
-        throw new Error('This account no longer has access. Contact your administrator.');
-      }
-      // A card holds its owner's password and anyone who knows the tag can read
-      // it, so admin accounts never sign in by RFID — old admin cards stop working.
-      if (userData.role === 'admin') {
-        await signOut(auth);
-        throw new Error('RFID login is not available for admin accounts. Use your email and password.');
-      }
-      if (userData.tenantId !== shopId) {
-        await signOut(auth);
-        throw new Error('This card belongs to a different shop.');
-      }
-      if (!userData.isActive) {
-        await signOut(auth);
-        throw new Error('This account has been deactivated. Contact your administrator.');
-      }
-    } finally {
-      rfidSignIn.current = false;
-      rfidTenant.current = null;
-    }
-  };
-
   /**
    * Google sign-in. A registered account opens its shop; a new Google account
    * has no shop yet and continues at /subscribe (Google already verified the email).
@@ -408,7 +292,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await signOut(auth);
         throw new Error('This account has been deactivated. Contact your administrator.');
       }
-      await restoreRfidPassword(cred.user, userData);
       return { isNew: false };
     } finally {
       terminalSignIn.current = null;
@@ -450,7 +333,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider value={{
       currentUser, tenant, branding, brandingReady, firebaseUser, noShop, isSuperAdmin, superAdminChecked, loading,
-      login, loginWithRFID, loginWithGoogle, sendSignUpCode, finishSignUp,
+      login, loginWithGoogle, sendSignUpCode, finishSignUp,
       logout, refreshUser,
     }}>
       {children}

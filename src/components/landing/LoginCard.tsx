@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { FirebaseError } from 'firebase/app';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthErrorMessage, CANCELLED_SIGN_IN_CODES } from '@/lib/authErrors';
-import { CreditCard, Eye, EyeOff, Loader2, Wifi } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import CreamCard from '@/components/shared/CreamCard';
 import GoogleIcon from '@/components/shared/GoogleIcon';
@@ -12,26 +12,21 @@ import type { StoreBrand } from '@/lib/storeProfile';
 import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
 
-// RFID readers "type" a tag at roughly 10–30 ms per character; people are far slower.
-const SCANNER_MS_PER_CHAR = 50;
-
 /**
- * Sign-in card shown in the landing-page hero (Password / RFID / Google).
+ * Sign-in card shown in the landing-page hero (email and password, or Google).
  * Auth logic is unchanged from the previous LoginPage — only the markup moved here.
  * `id="login"` and `id="login-email"` are scroll/focus targets for the landing CTAs.
  */
 export default function LoginCard({ terminalSlug, brand }: {
-  /** Set on a shop's terminal page (/s/:slug). RFID is offered only there: the card lookup needs the shop. */
+  /** Set on a shop's terminal page (/s/:slug). */
   terminalSlug?: string;
   /** The shop's own name and logo, on its sign-in page. */
   brand?: StoreBrand;
 } = {}) {
-  const { login, loginWithRFID, loginWithGoogle } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   // Signing out returns here: this shop's sign-in page, or the landing page
   const signInPage = terminalSlug ? `/s/${terminalSlug}` : '/login';
-  // Every sign-in page opens on email and password (owner's choice); a shop's page also has an RFID tab
-  const [mode, setMode] = useState<'password' | 'rfid'>('password');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
@@ -39,73 +34,6 @@ export default function LoginCard({ terminalSlug, brand }: {
   const [forgot, setForgot] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [rfidInput, setRfidInput] = useState('');
-  const rfidRef = useRef<HTMLInputElement>(null);
-  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const firstCharAt = useRef(0);
-  const loadingRef = useRef(false);
-
-  // Keep loadingRef in sync so the focus loop / handlers can read it without re-binding
-  useEffect(() => { loadingRef.current = loading; }, [loading]);
-
-  // Keep the RFID capture input focused the whole time we're in RFID mode.
-  // An RFID reader behaves like a keyboard: it types the tag into whatever is
-  // focused, then presses Enter. By owning focus we reliably capture the scan.
-  useEffect(() => {
-    if (mode !== 'rfid') return;
-    const focusInput = () => {
-      const el = rfidRef.current;
-      const active = document.activeElement as HTMLElement | null;
-      // Leave other text fields alone (e.g. the newsletter box)
-      const typingElsewhere = !!active && active !== el &&
-        (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT' || active.isContentEditable);
-      if (!loadingRef.current && el && active !== el && !typingElsewhere) {
-        el.focus({ preventScroll: true }); // never yank the page back to the card
-      }
-    };
-    focusInput();
-    const interval = setInterval(focusInput, 300);
-    return () => {
-      clearInterval(interval);
-      if (idleTimer.current) clearTimeout(idleTimer.current);
-    };
-  }, [mode]);
-
-  const handleRFIDScan = async (raw: string) => {
-    const tag = raw.trim();
-    if (!tag || loadingRef.current) return;
-    loadingRef.current = true; // block a second scan before the next render syncs it
-    if (idleTimer.current) { clearTimeout(idleTimer.current); idleTimer.current = null; }
-    setRfidInput(tag);
-    setLoading(true);
-    try {
-      await loginWithRFID(tag, terminalSlug ?? '');
-      rememberSignInPage(signInPage);
-      toast.success('Welcome back!');
-    } catch (err) {
-      toast.error(getAuthErrorMessage(err, 'RFID card not recognized'));
-      setRfidInput('');
-      if (rfidRef.current) rfidRef.current.value = '';
-      rfidRef.current?.focus();
-    } finally {
-      loadingRef.current = false;
-      setLoading(false);
-    }
-  };
-
-  // Fires while the reader is typing. Most readers append Enter (handled in
-  // onKeyDown); this idle-timer is a fallback for readers that don't.
-  // It only kicks in for scanner-speed input — otherwise a person typing a
-  // tag by hand would get submitted half-way through after a short pause.
-  const handleRFIDInput = (value: string) => {
-    if (idleTimer.current) clearTimeout(idleTimer.current);
-    const length = value.trim().length;
-    if (length <= 1) firstCharAt.current = Date.now();
-    const msPerChar = (Date.now() - firstCharAt.current) / Math.max(length - 1, 1);
-    if (length >= 4 && msPerChar < SCANNER_MS_PER_CHAR) {
-      idleTimer.current = setTimeout(() => handleRFIDScan(value), 350);
-    }
-  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -155,39 +83,15 @@ export default function LoginCard({ terminalSlug, brand }: {
           )}
         </div>
 
-        {/* Mode Toggle (terminal only) */}
-        {terminalSlug && (
-        <div className="segmented relative mt-6" role="tablist" aria-label="Sign-in method">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'password'}
-            onClick={() => setMode('password')}
-            className={`segmented-item ${mode === 'password' ? 'active' : ''}`}
-          >
-            Password
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'rfid'}
-            onClick={() => setMode('rfid')}
-            className={`segmented-item ${mode === 'rfid' ? 'active' : ''}`}
-          >
-            RFID Card
-          </button>
-        </div>
-        )}
-
         <div className="relative mt-6">
-          {mode === 'password' && forgot ? (
+          {forgot ? (
             <ForgotPassword
               initialEmail={email}
               terminalSlug={terminalSlug}
               signInPage={signInPage}
               onBack={address => { if (address) setEmail(address); setPassword(''); setForgot(false); }}
             />
-          ) : mode === 'password' ? (
+          ) : (
             <>
               <form onSubmit={handleLogin} className="space-y-4">
                 <div>
@@ -266,71 +170,6 @@ export default function LoginCard({ terminalSlug, brand }: {
                 </p>
               )}
             </>
-          ) : (
-            <div className="text-center py-2">
-              {/* Clicking the card area re-focuses the capture input */}
-              <button
-                type="button"
-                onClick={() => rfidRef.current?.focus()}
-                className={`w-32 h-32 mx-auto mb-5 rounded-4xl bg-cream-200/70 border-2 border-dashed flex flex-col items-center justify-center transition-all ${
-                  loading ? 'border-caramel-500 rfid-pulse' : 'border-caramel-400/70 hover:border-caramel-500 hover:bg-cream-200'
-                }`}
-              >
-                {loading ? (
-                  <Loader2 className="w-12 h-12 text-caramel-600 animate-spin" />
-                ) : (
-                  <>
-                    <CreditCard className="w-12 h-12 text-espresso-700 mb-2" />
-                    <Wifi className="w-5 h-5 text-caramel-600" />
-                  </>
-                )}
-              </button>
-              <h3 className="font-display text-xl text-espresso-900 mb-1">
-                {loading ? 'Authenticating...' : 'Tap Your RFID Card'}
-              </h3>
-              <p className="text-bark-500 text-sm">
-                {loading ? `Reading: ${rfidInput}` : 'Hold your card near the reader'}
-              </p>
-
-              {/* Capture input — always focused while in RFID mode so the reader
-                  types straight into it. Also usable for manual entry/testing. */}
-              <div className="mt-6 pt-5 border-t border-cream-400/70">
-                <p className="text-bark-500 text-xs mb-3">Tap a card, or type the tag and press Enter</p>
-                <div className="flex gap-2">
-                  <input
-                    ref={rfidRef}
-                    type="text"
-                    autoFocus
-                    disabled={loading}
-                    placeholder="Waiting for card..."
-                    onChange={e => handleRFIDInput(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && rfidRef.current?.value) {
-                        e.preventDefault();
-                        const val = rfidRef.current.value;
-                        rfidRef.current.value = '';
-                        handleRFIDScan(val);
-                      }
-                    }}
-                    className="input flex-1 font-mono"
-                  />
-                  <button
-                    type="button"
-                    disabled={loading}
-                    onClick={() => {
-                      if (rfidRef.current?.value) {
-                        const val = rfidRef.current.value;
-                        rfidRef.current.value = '';
-                        handleRFIDScan(val);
-                      }
-                    }}
-                    className="btn-primary px-5"
-                  >
-                    Scan
-                  </button>
-                </div>
-              </div>
-            </div>
           )}
         </div>
 

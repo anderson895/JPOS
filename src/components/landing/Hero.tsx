@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import LoginCard from './LoginCard';
 import { Swash, Wave } from '@/components/shared/Decor';
 import { scrollToSection } from './scroll';
-import { BUILT_FOR } from './content';
 
 const HIGHLIGHTS = [
   { icon: Zap, line1: 'Fast & Easy', line2: 'Transactions' },
@@ -14,7 +13,7 @@ const HIGHLIGHTS = [
 /**
  * Landing hero: a light retail-shop photo (reference_UI/Sage Green Retail
  * Login Background.png, mirrored so the shop sits on the right), headline,
- * highlights, CTAs, "Built for" chips and the sign-in card.
+ * highlights, CTAs and the sign-in card.
  */
 export default function Hero() {
   return (
@@ -27,8 +26,9 @@ export default function Hero() {
       <div className="absolute inset-0 -z-10 bg-cream-100/45 lg:bg-transparent lg:bg-gradient-to-r lg:from-cream-100/45 lg:via-cream-100/10 lg:to-transparent" />
 
       <div className="relative max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-10 pt-28 sm:pt-32 lg:pt-36 pb-14 lg:pb-24 grid gap-10 sm:gap-12 lg:gap-10 items-center lg:grid-cols-[1.15fr_minmax(0,420px)] xl:grid-cols-[1.3fr_minmax(0,420px)]">
-        {/* Copy: centered on phones and tablets, left-aligned next to the card on wide screens */}
-        <div className="animate-slide-up text-center lg:text-left">
+        {/* Copy: hidden on phones (the page opens on the sign-in card), centered on
+            tablets, left-aligned next to the card on wide screens */}
+        <div className="animate-slide-up hidden md:block text-center lg:text-left">
           <p className="relative inline-block whitespace-nowrap font-script text-[30px] min-[400px]:text-4xl sm:text-5xl text-caramel-600">
             Good Business <span className="mx-1 text-caramel-500">•</span> Better Days
             <Swash className="absolute left-6 -bottom-2 w-[85%] h-3 text-caramel-500/70" />
@@ -77,26 +77,6 @@ export default function Hero() {
                 <ArrowRight className="w-4 h-4" />
               </span>
             </button>
-          </div>
-
-          {/* "Built for" — the kinds of small businesses JPOS serves */}
-          <div className="mt-12 sm:mt-14">
-            <p className="flex items-center justify-center lg:justify-start gap-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-caramel-700/80">
-              <span className="h-px w-10 bg-gradient-to-r from-transparent to-caramel-500/60" />
-              Built for
-              <span className="h-px w-10 bg-gradient-to-l from-transparent to-caramel-500/60 lg:hidden" />
-            </p>
-            <ul className="mx-auto lg:mx-0 mt-4 flex max-w-xl flex-wrap justify-center lg:justify-start gap-2.5" aria-label="Built for">
-              {BUILT_FOR.map(({ icon: Icon, label }) => (
-                <li
-                  key={label}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-cream-400/70 bg-white/65 px-3.5 py-1.5 text-[13px] text-espresso-800 backdrop-blur-sm"
-                >
-                  <Icon className="w-3.5 h-3.5 text-caramel-600" aria-hidden="true" />
-                  {label}
-                </li>
-              ))}
-            </ul>
           </div>
         </div>
 

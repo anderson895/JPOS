@@ -9,7 +9,7 @@ import type { IncomingMessage } from 'http'
 // browser), so they're passed through here for the dev server.
 const SERVER_ENV = [
   'GMAIL_USER', 'GMAIL_APP_PASSWORD', 'MAIL_FROM_NAME', 'NOTIFY_EMAIL', 'APP_URL',
-  'FIREBASE_SERVICE_ACCOUNT', 'GOOGLE_APPLICATION_CREDENTIALS', 'FIREBASE_PROJECT_ID',
+  'FIREBASE_SERVICE_ACCOUNT', 'GOOGLE_APPLICATION_CREDENTIALS', 'FIREBASE_PROJECT_ID', 'REDIS_URL',
 ]
 // Local test mode (npm run dev): the emulators only. No Gmail, no keys.
 const LOCAL_TEST_ENV = ['NOTIFY_EMAIL', 'FIREBASE_PROJECT_ID', 'FIREBASE_AUTH_EMULATOR_HOST', 'FIRESTORE_EMULATOR_HOST', 'VITE_LOCAL_REAL_EMAIL']

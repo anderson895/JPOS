@@ -50,8 +50,8 @@ for (let d = 6; d >= 0; d--) {
 const users = [
   { id: 'u1', displayName: 'Alex Rivera', email: 'admin@jpos.demo', role: 'admin', isActive: true },
   { id: 'u2', displayName: 'Ana Cruz', email: 'ana@jpos.demo', role: 'admin', isActive: true },
-  { id: 'u3', displayName: 'Bea Garcia', email: 'bea@jpos.demo', role: 'staff', isActive: true, rfidTag: 'DEMO-0001' },
-  { id: 'u4', displayName: 'Carlo Mendoza', email: 'carlo@jpos.demo', role: 'staff', isActive: true, rfidTag: 'DEMO-0002' },
+  { id: 'u3', displayName: 'Bea Garcia', email: 'bea@jpos.demo', role: 'staff', isActive: true, rfidTag: '' },
+  { id: 'u4', displayName: 'Carlo Mendoza', email: 'carlo@jpos.demo', role: 'staff', isActive: true, rfidTag: '' },
   { id: 'u5', displayName: 'Dana Lim', email: 'dana@jpos.demo', role: 'staff', isActive: false },
 ];
 
@@ -65,7 +65,7 @@ const settings = [{
   updatedAt: new Date(now - 2 * DAY).toISOString(), updatedBy: 'u1',
 }];
 
-const data: Record<string, any[]> = { categories, products, orders, users, settings, rfidCards: [] };
+const data: Record<string, any[]> = { categories, products, orders, users, settings };
 const latency = () => new Promise(r => setTimeout(r, 120));
 const rid = () => Math.random().toString(36).slice(2, 10);
 

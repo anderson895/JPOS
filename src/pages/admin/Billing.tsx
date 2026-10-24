@@ -25,7 +25,7 @@ const STATE_TEXT = {
 /** The shop owner's subscription: status, free trial, pay by QR + receipt, history. */
 export default function Billing() {
   const { tenant, currentUser, isSuperAdmin } = useAuth();
-  const { settings, loaded } = usePlatformSettings();
+  const { settings, loaded } = usePlatformSettings({ live: true });
   const [params] = useSearchParams();
   const [plan, setPlan] = useState<PlanId>((PLAN_IDS.includes(params.get('plan') as PlanId) ? params.get('plan') : tenant?.desiredPlan ?? 'business') as PlanId);
   const channels = enabledChannels(settings);
@@ -173,9 +173,9 @@ export default function Billing() {
                       {e && hasFeature({ plan: id, entitlements: e }, 'auditTrail') && <li>Audit trail</li>}
                       {e && hasFeature({ plan: id, entitlements: e }, 'emailSummary') && <li>Daily sales email</li>}
                       {e && hasFeature({ plan: id, entitlements: e }, 'backup') && <li>Database backup</li>}
+                      {e && hasFeature({ plan: id, entitlements: e }, 'imports') && <li>Import records</li>}
                       {e?.fullReports && <li>Monthly reports + PDF</li>}
                       {e?.trends && <li>Sales trends</li>}
-                      {e?.rfid && <li>RFID card login</li>}
                     </ul>
                   </button>
                 );

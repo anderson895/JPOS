@@ -27,6 +27,13 @@ export interface PaymentRequestDoc {
 }
 
 /** What the API handlers read, count and keep in Firestore. */
+/** JPOS's public settings (prices, trial, payment QRs, contact) for the public pages. */
+export interface PublicSettings {
+  /** False when the Super Admin's setup was never run (the app then shows its defaults). */
+  saved: boolean;
+  settings: Record<string, unknown> | null;
+}
+
 export interface Store {
   /**
    * Counts one sign-up code email for this address (its emailId), this network
@@ -50,6 +57,8 @@ export interface Store {
   profile(uid: string): Promise<{ tenantId: string; role: string; isActive: boolean } | null>;
   /** What a shop stores, counted (null when there's no such shop). */
   shopUsage(tenantId: string): Promise<UsageCounts | null>;
+  /** platform/settings without who changed it and when (public pages don't need that). */
+  publicSettings(): Promise<PublicSettings>;
   /** Shops on a free trial or a paid package, with their owner's email (the daily sales email). */
   summaryShops(): Promise<SummaryShop[]>;
   /** A shop's orders made in [startIso, endIso). */
@@ -59,11 +68,6 @@ export interface Store {
   releaseSummary(tenantId: string, date: string, now: Date): Promise<void>;
   /** Writes the new email into users/{uid}, when that profile exists. */
   setProfileEmail(uid: string, email: string): Promise<void>;
-  /**
-   * After a new password: the person's RFID card keeps their password (it signs
-   * them in with it), so the card gets the new one too. Nothing when they have no card.
-   */
-  setCardPassword(uid: string, password: string): Promise<void>;
   getPaymentRequest(id: string): Promise<PaymentRequestDoc | null>;
   /** Marks this payment's Super Admin email as sent. Refused ('duplicate') if it already was. */
   reservePaymentNotice(requestId: string, uid: string, now: Date): Promise<Reserve>;
@@ -195,6 +199,15 @@ export function firestoreStore(db: Firestore): Store {
       reserve({ kind: 'summary', quotaId: `summary_${tenantId}`, limit: SUMMARY_LIMIT, onceId: `sum_${tenantId}_${date}`, now }),
     releaseSummary: (tenantId, date, now) =>
       release({ kind: 'summary', quotaId: `summary_${tenantId}`, onceId: `sum_${tenantId}_${date}`, now }),
+    async publicSettings() {
+      const snap = await db.collection('platform').doc('settings').get();
+      if (!snap.exists) return { saved: false, settings: null };
+      const settings = { ...(snap.data() as Record<string, unknown>) };
+      delete settings.updatedAt;
+      delete settings.updatedBy;
+      delete settings.lastAuditId;
+      return { saved: true, settings };
+    },
     async shopUsage(tenantId) {
       const shop = db.collection('tenants').doc(tenantId);
       const products = shop.collection('products');
@@ -206,13 +219,14 @@ export function firestoreStore(db: Firestore): Store {
         shop.collection('orders').count().get(),
         products.where('imageUrl', '>', '').count().get(),
         products.where('imageBytes', '>', 0).aggregate({ n: AggregateField.count(), bytes: AggregateField.sum('imageBytes') }).get(),
-        db.collection('users').where('tenantId', '==', tenantId).where('photoURL', '>', '').count().get(),
+        // A shop has few people: counted here, so the live database needs no composite index
+        db.collection('users').where('tenantId', '==', tenantId).select('photoURL').get(),
       ]);
       if (!shopSnap.exists) return null;
       const t = shopSnap.data() as { plan?: string; entitlements?: { storageMB?: number | null } };
       const pay = payments.data() as { gcash?: { qrImageUrl?: string }; maya?: { qrImageUrl?: string } } | undefined;
       const otherPictures = (branding.data()?.logoUrl ? 1 : 0) + (pay?.gcash?.qrImageUrl ? 1 : 0) + (pay?.maya?.qrImageUrl ? 1 : 0)
-        + staffPhotos.data().count;
+        + staffPhotos.docs.filter(d => { const p = d.get('photoURL'); return typeof p === 'string' && p !== ''; }).length;
       return {
         plan: t.plan ?? 'starter',
         storageMB: t.entitlements?.storageMB,
@@ -227,15 +241,6 @@ export function firestoreStore(db: Firestore): Store {
     async setProfileEmail(uid, email) {
       const ref = db.collection('users').doc(uid);
       if ((await ref.get()).exists) await ref.update({ email, updatedAt: new Date().toISOString() });
-    },
-    async setCardPassword(uid, password) {
-      const profile = (await db.collection('users').doc(uid).get()).data() as { tenantId?: string; rfidTag?: string } | undefined;
-      const tag = profile?.rfidTag?.trim();
-      if (!profile?.tenantId || !tag || tag.includes('/')) return;
-      const card = db.collection('tenants').doc(profile.tenantId).collection('rfidCards').doc(tag);
-      const snap = await card.get();
-      // Only the person's own card (a tag could have been given to someone else since)
-      if (snap.exists && snap.data()?.userId === uid) await card.update({ password, updatedAt: new Date().toISOString() });
     },
     reservePaymentNotice: (requestId, uid, now) =>
       reserve({ kind: 'payment', quotaId: `pay_${uid}`, limit: PAYMENT_LIMIT, onceId: `paid_${requestId}`, now }),

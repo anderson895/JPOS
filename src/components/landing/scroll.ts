@@ -12,7 +12,6 @@ export function scrollToSection(id: string) {
 
 /**
  * Bring the hero sign-in card into view and focus the email field.
- * In RFID mode there is no email field — the card's own focus loop takes over.
  */
 export function focusLogin() {
   document.getElementById('login')?.scrollIntoView({ behavior: 'smooth', block: 'center' });

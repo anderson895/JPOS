@@ -4,7 +4,6 @@ import {
   initializeAuth,
   inMemoryPersistence,
   createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
   signOut,
   deleteUser,
   connectAuthEmulator,
@@ -86,23 +85,6 @@ export async function createUserWithoutSignIn(
     }
     await signOut(secondaryAuth);
     return cred.user.uid;
-  } finally {
-    await deleteApp(secondaryApp);
-  }
-}
-
-/**
- * Verifies that an email/password pair matches a real Firebase account,
- * WITHOUT touching the current (admin) session. Used before saving an RFID
- * card so we never store a password that doesn't actually work for login.
- *
- * Throws a FirebaseError (e.g. auth/invalid-credential) if the password is wrong.
- */
-export async function verifyCredentials(email: string, password: string): Promise<void> {
-  const { secondaryApp, secondaryAuth } = createSecondaryAuth('verify');
-  try {
-    await signInWithEmailAndPassword(secondaryAuth, email, password);
-    await signOut(secondaryAuth);
   } finally {
     await deleteApp(secondaryApp);
   }

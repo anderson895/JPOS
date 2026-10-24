@@ -4,6 +4,9 @@ interface ImportMetaEnv {
   readonly VITE_CLOUDINARY_CLOUD_NAME: string;
   readonly VITE_CLOUDINARY_UPLOAD_PRESET: string;
   readonly VITE_CLOUDINARY_API_URL: string;
+  /** The separate Cloudinary account for feedback screenshots and files. */
+  readonly VITE_CLOUDINARY_ISSUES_CLOUD_NAME?: string;
+  readonly VITE_CLOUDINARY_ISSUES_UPLOAD_PRESET?: string;
 
   readonly VITE_FIREBASE_API_KEY: string;
   readonly VITE_FIREBASE_AUTH_DOMAIN: string;

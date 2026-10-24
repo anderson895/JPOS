@@ -147,7 +147,6 @@ export default function StoreSettings() {
         ['Kind', saved?.businessType, draft.businessType],
         ['Logo', saved?.logoUrl ? 'yes' : 'none', draft.logoUrl ? 'yes' : 'none'],
         ['Colors', saved?.theme, draft.theme],
-        ['VAT', saved?.receipt.vatRegistered ? 'yes' : 'no', draft.receipt.vatRegistered ? 'yes' : 'no'],
         ['TIN', saved?.receipt.tin, draft.receipt.tin.trim()],
       ]));
     } catch (err) {
@@ -297,16 +296,9 @@ export default function StoreSettings() {
                 <input id="store-phone" className="input" inputMode="tel" value={r.phone} maxLength={RECEIPT_MAX.phone} onChange={e => setReceipt({ phone: e.target.value })} disabled={busy} placeholder="e.g. 0917 123 4567" />
               </div>
               <div>
-                <label htmlFor="store-tin" className="label">TIN {!r.vatRegistered && <Optional />}</label>
+                <label htmlFor="store-tin" className="label">TIN <Optional /></label>
                 <input id="store-tin" className="input" inputMode="numeric" value={r.tin} maxLength={RECEIPT_MAX.tin} onChange={e => setReceipt({ tin: e.target.value })} disabled={busy} placeholder="e.g. 123-456-789-000" />
               </div>
-            </div>
-            <div className="flex items-center gap-4 rounded-2xl border border-cream-300 bg-cream-100/70 px-4 py-3">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-espresso-900">VAT registered</p>
-                <p className="text-xs text-bark-500">Receipts show the 12% VAT.</p>
-              </div>
-              <Switch checked={r.vatRegistered} onChange={vatRegistered => setReceipt({ vatRegistered })} label="VAT registered" disabled={busy} />
             </div>
             <div>
               <label htmlFor="store-footer" className="label">Thank-you line <Optional /></label>
@@ -319,18 +311,14 @@ export default function StoreSettings() {
             <p className="text-center text-sm font-bold uppercase break-words">{draft.name.trim() || 'Your store'}</p>
             {r.address.trim() && <p className="text-center break-words">{r.address.trim()}</p>}
             {r.phone.trim() && <p className="text-center">{r.phone.trim()}</p>}
-            <p className="text-center">{r.vatRegistered ? `VAT REG TIN ${r.tin.trim() || '—'}` : r.tin.trim() ? `NON-VAT REG TIN ${r.tin.trim()}` : ''}</p>
+            {r.tin.trim() && <p className="text-center">TIN {r.tin.trim()}</p>}
+            <p className="text-center font-bold">UNOFFICIAL RECEIPT</p>
             <p className="my-2 border-t border-dashed border-espresso-900/40" />
             <p className="flex justify-between"><span>2 × Item</span><span>₱100.00</span></p>
             <p className="my-2 border-t border-dashed border-espresso-900/40" />
-            {r.vatRegistered && (
-              <>
-                <p className="flex justify-between"><span>VATable sales</span><span>₱89.29</span></p>
-                <p className="flex justify-between"><span>VAT 12%</span><span>₱10.71</span></p>
-              </>
-            )}
             <p className="flex justify-between font-bold"><span>TOTAL</span><span>₱100.00</span></p>
             <p className="mt-2 text-center break-words">{r.footer.trim() || 'Thank you!'}</p>
+            <p className="text-center font-semibold">This is not an official receipt.</p>
           </div>
         </div>
       </section>

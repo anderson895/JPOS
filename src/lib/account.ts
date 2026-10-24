@@ -26,7 +26,7 @@ export async function sendPasswordResetCode(email: string) {
   await callPublicApi('password/code', { email: email.trim() });
 }
 
-/** Step 2: the code sets the new password (the person's RFID card gets it too). */
+/** Step 2: the code sets the new password. */
 export async function resetPassword(email: string, code: string, password: string) {
   await callPublicApi('password/reset', { email: email.trim(), code, password });
 }

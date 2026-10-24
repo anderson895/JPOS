@@ -16,7 +16,7 @@ import { subscribePaymentSettings } from '@/lib/storeSettings';
 import { DEFAULT_PAYMENT_SETTINGS, WALLET_LABEL, approvalCodeProblem, normalizeReference, referenceProblem, walletReady, type WalletMethod } from '@/lib/eWallet';
 import { saveOrderAtomically, ReferenceUsedError } from '@/lib/saveOrder';
 import { watchSavedDiscounts } from '@/lib/discounts';
-import { SENIOR_LABEL, SENIOR_RATE, VAT_RATE } from '@/lib/pricing';
+import { SENIOR_LABEL, SENIOR_RATE } from '@/lib/pricing';
 import DiscountSheet from '@/components/pos/DiscountSheet';
 import Receipt from '@/components/pos/Receipt';
 import {
@@ -187,7 +187,7 @@ export default function POSComponent() {
     }
   }
 
-  // Item discounts, the order discount, and Senior/PWD (VAT off, then 20%)
+  // Item discounts, the order discount, and Senior/PWD 20%
   const MoneyLines = () => (
     <>
       {pricing.itemDiscounts > 0 && (
@@ -195,9 +195,6 @@ export default function POSComponent() {
       )}
       {pricing.orderDiscount > 0 && orderDiscount && (
         <div className="flex justify-between gap-3 text-sm text-emerald-700"><span className="truncate">{orderDiscount.name}</span><span>-{formatCurrency(pricing.orderDiscount)}</span></div>
-      )}
-      {pricing.lessVat > 0 && (
-        <div className="flex justify-between text-sm text-emerald-700"><span>Less VAT {VAT_RATE * 100}%</span><span>-{formatCurrency(pricing.lessVat)}</span></div>
       )}
       {pricing.seniorDiscount > 0 && senior && (
         <div className="flex justify-between text-sm text-emerald-700"><span>{SENIOR_LABEL[senior.type]} {SENIOR_RATE * 100}%</span><span>-{formatCurrency(pricing.seniorDiscount)}</span></div>
@@ -549,7 +546,6 @@ export default function POSComponent() {
           saved={canDiscounts ? savedDiscounts : []}
           current={discountFor === 'order' ? orderDiscount : discountLine?.discount ?? null}
           senior={discountFor === 'order' ? senior : undefined}
-          vatRegistered={shopInfo.vatRegistered}
           onApply={d => (discountLine ? setItemDiscount(discountLine.productId, discountLine.variantId, d) : setOrderDiscount(d))}
           onRemove={() => (discountLine ? setItemDiscount(discountLine.productId, discountLine.variantId, null) : setOrderDiscount(null))}
           onSenior={discountFor === 'order' ? setSenior : undefined}
@@ -578,7 +574,7 @@ export default function POSComponent() {
                     <span className="text-espresso-800">{formatCurrency(pricing.lines[n]?.net ?? i.price * i.quantity)}</span>
                   </div>
                 ))}
-                {(pricing.discount > 0 || pricing.lessVat > 0) && (
+                {pricing.discount > 0 && (
                   <div className="pt-1 border-t border-cream-400/70"><MoneyLines /></div>
                 )}
                 <div className="flex justify-between items-baseline pt-2 border-t border-dashed border-cream-500">

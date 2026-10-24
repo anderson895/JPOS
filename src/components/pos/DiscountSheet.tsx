@@ -13,7 +13,7 @@ import type { SavedDiscount } from '@/types';
  * amount, or (whole order only) Senior citizen / PWD with the ID details.
  */
 export default function DiscountSheet({
-  itemName, saved, current, senior, vatRegistered, onApply, onRemove, onSenior, onClose,
+  itemName, saved, current, senior, onApply, onRemove, onSenior, onClose,
 }: {
   /** Set for a discount on one item; empty = the whole order. */
   itemName?: string;
@@ -21,7 +21,6 @@ export default function DiscountSheet({
   saved: SavedDiscount[];
   current: DiscountPick | null;
   senior?: SeniorInfo | null;
-  vatRegistered: boolean;
   onApply: (d: DiscountPick) => void;
   onRemove: () => void;
   /** Whole order only: Senior citizen / PWD (null removes it). */
@@ -151,7 +150,7 @@ export default function DiscountSheet({
                     onKeyDown={e => { if (e.key === 'Enter') applySenior(); }} />
                 </div>
                 <p className="rounded-2xl bg-cream-200/70 px-4 py-3 text-xs text-espresso-800">
-                  {vatRegistered ? '20% off the price without VAT.' : '20% off the price.'} It takes the place of other discounts.
+                  20% off the price. It takes the place of other discounts.
                 </p>
                 <button onClick={applySenior} disabled={!!sProblem} className="btn-primary w-full">
                   <Check className="w-4 h-4" aria-hidden="true" /> Apply {SENIOR_LABEL[sType]} discount

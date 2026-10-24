@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { collection, getDocs, getDoc, updateDoc, doc, writeBatch, query, where, increment, serverTimestamp } from 'firebase/firestore';
-import { FirebaseError } from 'firebase/app';
-import { db, createUserWithoutSignIn, verifyCredentials } from '@/lib/firebase';
+import { collection, getDocs, updateDoc, doc, writeBatch, query, where, increment, serverTimestamp } from 'firebase/firestore';
+import { db, createUserWithoutSignIn } from '@/lib/firebase';
 import { currentTenantId, tenantDoc, tenantRef } from '@/lib/tenant';
 import { hasAccess } from '@/lib/entitlements';
 import { getAuthErrorMessage } from '@/lib/authErrors';
@@ -14,7 +13,7 @@ import PageHeader from '@/components/shared/PageHeader';
 import type { Staff } from '@/types';
 import {
   Plus, Search, Edit2, Trash2, X, User, Shield,
-  ToggleLeft, ToggleRight, Loader2, CreditCard, Eye, EyeOff, Camera, Check
+  ToggleLeft, ToggleRight, Loader2, Eye, EyeOff, Camera
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -25,19 +24,17 @@ const defaultStaff = {
 
 export default function AdminStaff() {
   const { currentUser, tenant } = useAuth();
-  // The package decides the number of accounts and whether RFID login is included
-  const rfidAllowed = !!tenant?.entitlements?.rfid;
+  // The package decides the number of accounts
   const staffLimit = tenant?.entitlements?.staffLimit ?? null;
   const canEdit = hasAccess(tenant);
   const [staff, setStaff]       = useState<Staff[]>([]);
   const [search, setSearch]     = useState('');
   const [loading, setLoading]   = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [editStaff, setEditStaff] = useState<Partial<Staff> & { password?: string; rfidPassword?: string }>(defaultStaff);
+  const [editStaff, setEditStaff] = useState<Partial<Staff> & { password?: string }>(defaultStaff);
   const [editId, setEditId]     = useState<string | null>(null);
   const [saving, setSaving]     = useState(false);
   const [showPass, setShowPass] = useState(false);
-  const [showRfidPass, setShowRfidPass] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   // New photos wait when the shop's storage is full
   const storage = useStorage();
@@ -86,21 +83,9 @@ export default function AdminStaff() {
       toast.error("You can't remove your own admin access"); return;
     }
     const email  = editStaff.email.trim();
-    // Admins never get an RFID card: a card holds its owner's password and anyone
-    // who knows the tag can read it. Saving an admin also removes any card they had.
-    const isAdminRole = editStaff.role === 'admin';
-    const newTag = isAdminRole || !rfidAllowed ? '' : (editStaff.rfidTag || '').trim();
+    // RFID login was removed: saving someone clears their old card tag, and the
+    // card (it held their password) is deleted below
     const oldTag = (staff.find(s => s.id === editId)?.rfidTag || '').trim();
-    const tagChanged = newTag !== oldTag;
-    if (newTag.includes('/')) {
-      toast.error('RFID tag cannot contain "/"'); return;
-    }
-    // Saving a card overwrites rfidCards/{tag}, which would silently take the
-    // tag (and the login behind it) away from whoever already has it.
-    const tagOwner = newTag && tagChanged ? staff.find(s => s.id !== editId && s.rfidTag?.trim() === newTag) : undefined;
-    if (tagOwner) {
-      toast.error(`This RFID tag is already assigned to ${tagOwner.displayName}`); return;
-    }
     setSaving(true);
     try {
       const now = new Date().toISOString();
@@ -109,69 +94,23 @@ export default function AdminStaff() {
         email,
         role: editStaff.role,
         isActive: editStaff.isActive ?? true,
-        rfidTag: newTag,
+        rfidTag: '',
         photoURL: editStaff.photoURL || '',
         updatedAt: now,
       };
       if (editId) {
-        // The card stored under the old tag — only reuse/revoke it if it's really this staff's.
-        let oldCard: { password?: string } | null = null;
-        if (oldTag && tagChanged) {
-          const snap = await getDoc(tenantDoc('rfidCards', oldTag));
-          if (snap.exists() && snap.data().userId === editId) oldCard = snap.data();
-        }
-
-        let cardPassword = editStaff.rfidPassword || '';
-        if (newTag && cardPassword) {
-          // Confirm the password really matches this staff's login BEFORE
-          // saving the card, so the RFID card can never hold a wrong password.
-          try {
-            await verifyCredentials(email, cardPassword);
-          } catch (err) {
-            if (err instanceof FirebaseError && err.code === 'auth/too-many-requests') {
-              toast.error('Too many attempts. Please wait a few minutes, then try again.');
-            } else {
-              toast.error("That password doesn't match this staff's login. Enter their exact account password.");
-            }
-            setSaving(false);
-            return;
-          }
-        } else if (newTag && tagChanged) {
-          // New tag, password left blank: carry the saved credentials over to it.
-          cardPassword = oldCard?.password || '';
-          if (!cardPassword) {
-            toast.error("Enter the staff's login password to set up this RFID card");
-            return;
-          }
-        }
-
-        // One atomic write: the profile, the new card, and revoking the old card.
         const batch = writeBatch(db);
         batch.update(doc(db, 'users', editId), data);
-        if (newTag && cardPassword) {
-          batch.set(tenantDoc('rfidCards', newTag), {
-            email,
-            password: cardPassword,
-            userId: editId,
-            staffName: data.displayName,
-            updatedAt: now,
-          });
-        }
-        if (oldCard) batch.delete(tenantDoc('rfidCards', oldTag));
+        if (oldTag && !oldTag.includes('/')) batch.delete(tenantDoc('rfidCards', oldTag));
         await batch.commit();
         {
           const before = staff.find(s => s.id === editId);
           logActivity('staff.edit', data.displayName, changes([
             ['Name', before?.displayName, data.displayName],
             ['Role', before?.role, data.role],
-            ['RFID card', before?.rfidTag ? 'set' : 'none', newTag ? 'set' : 'none'],
           ]));
         }
-        toast.success(
-          newTag && cardPassword ? 'Staff updated & RFID credentials saved'
-          : isAdminRole && oldCard ? "Staff updated — RFID card removed (admins can't use RFID)"
-          : 'Staff updated'
-        );
+        toast.success('Staff updated');
       } else {
         // Create the account on a secondary app so the admin stays logged in.
         // If saving the profile fails, the new login is rolled back.
@@ -180,15 +119,6 @@ export default function AdminStaff() {
           batch.set(doc(db, 'users', newUid), { ...data, tenantId: currentTenantId(), createdAt: now });
           // Every account counts against the package (the rules check the pairing and the limit)
           batch.update(tenantRef(), { staffCount: increment(1), lastStaffChange: newUid, updatedAt: serverTimestamp() });
-          if (newTag) {
-            batch.set(tenantDoc('rfidCards', newTag), {
-              email,
-              password: editStaff.password,
-              userId: newUid,
-              staffName: data.displayName,
-              createdAt: now,
-            });
-          }
           await batch.commit();
         });
         toast.success('Staff account created');
@@ -208,19 +138,15 @@ export default function AdminStaff() {
   async function handleDelete(id: string) {
     if (id === currentUser?.id) { toast.error("You can't delete your own account"); return; }
     const member = staff.find(s => s.id === id);
-    if (!confirm('Delete this staff member? They will lose access immediately and their RFID card will stop working.')) return;
+    if (!confirm('Delete this staff member? They will lose access immediately.')) return;
     setBusyId(id);
     try {
       const batch = writeBatch(db);
       batch.delete(doc(db, 'users', id));
       batch.update(tenantRef(), { staffCount: increment(-1), lastStaffChange: id, updatedAt: serverTimestamp() });
-      // Also remove their RFID card so a deleted staff can't tap in — but only
-      // if the card is really theirs (an old duplicate tag may point elsewhere).
+      // Their old RFID card (it held their password), if they still have one
       const tag = member?.rfidTag?.trim();
-      if (tag) {
-        const card = await getDoc(tenantDoc('rfidCards', tag));
-        if (card.exists() && card.data().userId === id) batch.delete(card.ref);
-      }
+      if (tag && !tag.includes('/')) batch.delete(tenantDoc('rfidCards', tag));
       await batch.commit();
       logActivity('staff.delete', member?.displayName || member?.email || '');
       setStaff(prev => prev.filter(s => s.id !== id));
@@ -417,65 +343,6 @@ export default function AdminStaff() {
                 </div>
               </div>
 
-              {/* RFID Section */}
-              <div className="space-y-3 p-4 bg-cream-200/50 rounded-3xl border border-cream-300">
-                <p className="text-sm font-semibold text-espresso-800 flex items-center gap-2">
-                  <span className="w-7 h-7 rounded-full bg-espresso-800 text-caramel-200 flex items-center justify-center"><CreditCard className="w-3.5 h-3.5" /></span>
-                  RFID Login Setup
-                </p>
-                {!rfidAllowed ? (
-                  <div className="flex items-start gap-2.5 px-4 py-3 rounded-2xl bg-cream-50 border border-cream-300 text-xs text-bark-600 leading-relaxed">
-                    <Shield className="w-4 h-4 text-caramel-600 flex-shrink-0 mt-0.5" />
-                    <p>RFID card login is included in the Business and Enterprise packages.</p>
-                  </div>
-                ) : editStaff.role === 'admin' ? (
-                  /* Admins can't use RFID — fields hidden, typed tag kept in state for if the role flips back */
-                  <div className="flex items-start gap-2.5 px-4 py-3 rounded-2xl bg-cream-50 border border-cream-300 text-xs text-bark-600 leading-relaxed">
-                    <Shield className="w-4 h-4 text-caramel-600 flex-shrink-0 mt-0.5" />
-                    <p>
-                      Admin accounts can't use RFID — they sign in with email and password (or Google).
-                      {editId && staff.find(s => s.id === editId)?.rfidTag && (
-                        <span className="block mt-1 font-semibold text-amber-700">Saving will remove this account's RFID card.</span>
-                      )}
-                    </p>
-                  </div>
-                ) : (<>
-                <div>
-                  <label className="label">RFID Tag</label>
-                  <input className="input font-mono" placeholder="Scan or type RFID tag"
-                    value={editStaff.rfidTag || ''}
-                    onChange={e => setEditStaff(p => ({ ...p, rfidTag: e.target.value }))} />
-                </div>
-                {editId && editStaff.rfidTag && (
-                  <div>
-                    <label className="label">
-                      Staff Login Password
-                      <span className="text-bark-400 font-normal ml-1">(their exact account password)</span>
-                    </label>
-                    <div className="relative">
-                      <input className="input pr-11" type={showRfidPass ? 'text' : 'password'}
-                        placeholder="Enter staff's password"
-                        value={editStaff.rfidPassword || ''}
-                        onChange={e => setEditStaff(p => ({ ...p, rfidPassword: e.target.value }))} />
-                      <button type="button" onClick={() => setShowRfidPass(!showRfidPass)}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 text-bark-400 hover:text-espresso-800">
-                        {showRfidPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                    <p className="text-xs text-bark-400 mt-1.5 px-1">Must match the staff's login password. Leave blank to keep existing RFID credentials unchanged.</p>
-                  </div>
-                )}
-                {!editId && editStaff.rfidTag && editStaff.password && (
-                  <p className="text-xs text-emerald-600 flex items-center gap-1">
-                    <Check className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" /> RFID login will be automatically configured using the password above.
-                  </p>
-                )}
-                {!editId && editStaff.rfidTag && !editStaff.password && (
-                  <p className="text-xs text-amber-600">Set a password above to enable RFID login for this staff.</p>
-                )}
-                </>)}
-              </div>
-
               <label htmlFor="isActive" className="flex items-center gap-3 px-4 py-3 rounded-full bg-cream-200/60 border border-cream-300 cursor-pointer">
                 <input type="checkbox" id="isActive" checked={editStaff.isActive ?? true}
                   onChange={e => setEditStaff(p => ({ ...p, isActive: e.target.checked }))}
@@ -536,13 +403,6 @@ function StaffCard({ staff, isSelf, busy, onEdit, onDelete, onToggle }: {
           </div>
         </div>
       </div>
-
-      {staff.rfidTag && (
-        <div className="relative flex items-center gap-1.5 text-xs text-bark-500 mb-3 px-3 py-1.5 bg-cream-200/60 rounded-full w-fit max-w-full">
-          <CreditCard className="w-3 h-3 flex-shrink-0 text-caramel-600" />
-          <span className="font-mono truncate">{staff.rfidTag}</span>
-        </div>
-      )}
 
       <div className="relative flex items-center gap-2 pt-3 border-t border-cream-300/70">
         <button

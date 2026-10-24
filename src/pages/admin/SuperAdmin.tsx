@@ -2,43 +2,52 @@ import { useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import {
   Bell, BellRing, Check, X, Loader2, Store, Settings2, Receipt, ImagePlus, Ban, RotateCcw, ExternalLink,
+  MessageSquarePlus, Bug, Lightbulb, Trash2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/shared/PageHeader';
 import Portal from '@/components/shared/Portal';
 import Switch from '@/components/shared/Switch';
 import ChangeEmailCard from '@/components/admin/ChangeEmail';
+import FeedbackFiles from '@/components/shared/FeedbackFiles';
 import { usePlatformSettings, prettyPhone } from '@/components/shared/ContactOwner';
 import {
   approveRequest, rejectRequest, savePlatformSettings, setSuspended, watchPendingRequests, watchShops,
 } from '@/lib/platform';
 import { daysLeft, periodEnd, PLAN_IDS, PLAN_LABEL, shopState } from '@/lib/entitlements';
 import { uploadImage } from '@/lib/cloudinary';
+import { deleteFeedback, setFeedbackStatus, watchAllFeedback, watchNewFeedbackCount } from '@/lib/feedback';
 import { formatBytes, getStorageUsage, usedPercent, type StorageUsage } from '@/lib/usage';
 import { cn } from '@/lib/utils';
-import type { PaymentChannel, PlatformSettings, SubscriptionRequest, Tenant } from '@/types';
+import type { Feedback, PaymentChannel, PlatformSettings, SubscriptionRequest, Tenant } from '@/types';
 
-type Tab = 'payments' | 'shops' | 'settings';
+type Tab = 'payments' | 'shops' | 'feedback' | 'settings';
 
-/** The platform owner's console: review payments, see every shop, set prices and payment QRs. */
+/** The platform owner's console: review payments, see every shop, read feedback, set prices and payment QRs. */
 export default function SuperAdmin() {
   const [tab, setTab] = useState<Tab>('payments');
   const [pending, setPending] = useState<SubscriptionRequest[]>([]);
-  const { settings } = usePlatformSettings();
+  const { settings } = usePlatformSettings({ live: true });
   useEffect(() => watchPendingRequests(setPending, () => toast.error('Could not load payments.')), []);
+  const [newFeedback, setNewFeedback] = useState(0);
+  useEffect(() => watchNewFeedbackCount(setNewFeedback), []);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1400px] mx-auto animate-fade-in">
-      <PageHeader eyebrow="JPOS" title="Super Admin" subtitle="Payments from shops, every shop, and your prices and payment QR codes." actions={<NotifyToggle />} />
-      <div className="segmented max-w-md">
+      <PageHeader eyebrow="JPOS" title="Super Admin" subtitle="Payments from shops, every shop, their feedback, and your prices and payment QR codes." actions={<NotifyToggle />} />
+      <div className="segmented max-w-2xl overflow-x-auto scrollbar-none">
         <button className={cn('segmented-item', tab === 'payments' && 'active')} onClick={() => setTab('payments')}>
           <Receipt className="w-4 h-4" aria-hidden="true" /> Payments {pending.length > 0 && <span className="ml-1 rounded-full bg-red-600 px-2 text-xs text-white">{pending.length}</span>}
         </button>
         <button className={cn('segmented-item', tab === 'shops' && 'active')} onClick={() => setTab('shops')}><Store className="w-4 h-4" aria-hidden="true" /> Shops</button>
+        <button className={cn('segmented-item', tab === 'feedback' && 'active')} onClick={() => setTab('feedback')}>
+          <MessageSquarePlus className="w-4 h-4" aria-hidden="true" /> Feedback {newFeedback > 0 && <span className="ml-1 rounded-full bg-red-600 px-2 text-xs text-white">{newFeedback}</span>}
+        </button>
         <button className={cn('segmented-item', tab === 'settings' && 'active')} onClick={() => setTab('settings')}><Settings2 className="w-4 h-4" aria-hidden="true" /> Settings</button>
       </div>
       {tab === 'payments' && <Payments pending={pending} settings={settings} />}
       {tab === 'shops' && <Shops />}
+      {tab === 'feedback' && <FeedbackList />}
       {tab === 'settings' && <SettingsForm settings={settings} />}
     </div>
   );
@@ -54,6 +63,74 @@ function NotifyToggle() {
     <button className="btn-secondary" onClick={() => Notification.requestPermission().then(setPerm)}>
       <Bell className="w-4 h-4" aria-hidden="true" /> Turn on payment pop-ups
     </button>
+  );
+}
+
+// ── Feedback ──────────────────────────────────────────────────────────────
+/** Problems and ideas sent from shops (Feedback in each shop's menu), newest first. */
+function FeedbackList() {
+  const [rows, setRows] = useState<Feedback[] | null>(null);
+  const [show, setShow] = useState<'new' | 'all'>('new');
+  const [busy, setBusy] = useState<string | null>(null);
+  useEffect(() => watchAllFeedback(setRows, () => { setRows([]); toast.error('Could not load feedback.'); }), []);
+
+  const newCount = rows?.filter(f => f.status === 'new').length ?? 0;
+  const shown = (rows ?? []).filter(f => show === 'all' || f.status === 'new');
+
+  const mark = async (f: Feedback) => {
+    setBusy(f.id);
+    try { await setFeedbackStatus(f.id, f.status === 'new' ? 'done' : 'new'); }
+    catch { toast.error('Could not save. Please try again.'); }
+    finally { setBusy(null); }
+  };
+  const remove = async (f: Feedback) => {
+    if (!confirm('Delete this message?')) return;
+    setBusy(f.id);
+    try { await deleteFeedback(f.id); toast.success('Deleted.'); }
+    catch { toast.error('Could not delete. Please try again.'); }
+    finally { setBusy(null); }
+  };
+
+  return (
+    <section className="space-y-4">
+      <div className="segmented max-w-xs">
+        <button className={cn('segmented-item', show === 'new' && 'active')} onClick={() => setShow('new')}>New{newCount > 0 ? ` (${newCount})` : ''}</button>
+        <button className={cn('segmented-item', show === 'all' && 'active')} onClick={() => setShow('all')}>All</button>
+      </div>
+      {rows === null ? (
+        <div className="flex justify-center py-10" role="status" aria-label="Loading"><Loader2 className="w-6 h-6 animate-spin text-caramel-600" /></div>
+      ) : shown.length === 0 ? (
+        <div className="card p-8 text-center text-sm text-bark-500">{show === 'new' ? 'No new messages.' : 'No messages yet.'}</div>
+      ) : (
+        <ul className="grid gap-3 lg:grid-cols-2">
+          {shown.map(f => (
+            <li key={f.id} className="card p-4 sm:p-5 flex flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                {f.kind === 'bug'
+                  ? <span className="badge-warning"><Bug className="w-3.5 h-3.5" aria-hidden="true" /> Problem</span>
+                  : <span className="badge-info"><Lightbulb className="w-3.5 h-3.5" aria-hidden="true" /> Idea</span>}
+                {f.status === 'done' && <span className="badge-success">Done</span>}
+                {f.createdAt && <span className="ml-auto text-xs text-bark-500">{format(f.createdAt.toDate(), 'MMM d, yyyy h:mm a')}</span>}
+              </div>
+              <p className="text-sm text-espresso-900 whitespace-pre-wrap break-words">{f.message}</p>
+              {f.attachments?.length ? <FeedbackFiles files={f.attachments} /> : null}
+              <p className="text-xs text-bark-500 break-words">
+                <span className="font-semibold text-espresso-800">{f.shopName || 'A shop'}</span> · {f.name || 'No name'} ({f.role}) · {f.email}
+              </p>
+              <div className="flex flex-wrap gap-2 pt-3 border-t border-cream-300/70">
+                <button className="btn-secondary" onClick={() => mark(f)} disabled={busy === f.id}>
+                  {busy === f.id ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : f.status === 'new' ? <Check className="w-4 h-4" aria-hidden="true" /> : <RotateCcw className="w-4 h-4" aria-hidden="true" />}
+                  {f.status === 'new' ? 'Mark as done' : 'Mark as new'}
+                </button>
+                <button className="btn-ghost text-red-700" onClick={() => remove(f)} disabled={busy === f.id}>
+                  <Trash2 className="w-4 h-4" aria-hidden="true" /> Delete
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

@@ -15,7 +15,7 @@ import LandingFooter from '@/components/landing/LandingFooter';
 /**
  * Public landing page at /login (reference_UI/FullUI.png).
  * The sign-in form lives in the hero — see components/landing/LoginCard.tsx,
- * which holds all of the auth logic (password, RFID, Google).
+ * which holds all of the auth logic (password, Google).
  */
 export default function LoginPage() {
   // The public landing always uses the default JPOS colors, never a shop's theme

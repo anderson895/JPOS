@@ -18,8 +18,10 @@
     "react-hot-toast": "^2.4.1",
     "react-router-dom": "^6.20.0",
     "recharts": "^2.10.0",
+    "redis": "^4.7.1",
     "tailwind-merge": "^2.1.0",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^3.0.4",
@@ -41,7 +43,7 @@
     "build": "tsc && tsc -p api && vite build",
     "preview": "vite preview",
     "test:unit": "node scripts/test-unit.mjs",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-jpos \"node tests/rules/tenant.rules.test.mjs && node tests/rules/subscription.rules.test.mjs && node tests/rules/store.rules.test.mjs\"",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-jpos \"node tests/rules/tenant.rules.test.mjs && node tests/rules/subscription.rules.test.mjs && node tests/rules/store.rules.test.mjs && node tests/rules/feedback.rules.test.mjs\"",
     "test:rules:transition": "firebase emulators:exec --only firestore --project demo-jpos \"node tests/rules/legacy.rules.test.mjs\"",
     "migrate": "node scripts/migrate-to-tenant.mjs",
     "test:api": "node scripts/test-api.mjs",

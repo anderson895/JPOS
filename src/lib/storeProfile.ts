@@ -78,7 +78,6 @@ export function storeProblem(s: { name: string; receipt: ReceiptInfo }): string 
   if (name.length > NAME_MAX) return `Keep the store name to ${NAME_MAX} letters or fewer.`;
   const r = s.receipt;
   if (r.tin.trim() && !/^[0-9][0-9 -]*[0-9]$/.test(r.tin.trim())) return 'The TIN can only have numbers and dashes.';
-  if (r.vatRegistered && !r.tin.trim()) return 'A VAT-registered store needs its TIN on the receipt.';
   if (r.tin.trim().length > RECEIPT_MAX.tin) return 'The TIN is too long.';
   if (r.address.trim().length > RECEIPT_MAX.address) return 'The address is too long.';
   if (r.phone.trim().length > RECEIPT_MAX.phone) return 'The phone number is too long.';
@@ -106,7 +105,7 @@ export async function saveStore(input: {
     name,
     businessType: input.businessType,
     receipt: {
-      vatRegistered: r.vatRegistered,
+      vatRegistered: false, // receipts are unofficial: no VAT (the rules still expect the field)
       tin: r.tin.trim(),
       address: r.address.trim(),
       phone: r.phone.trim(),

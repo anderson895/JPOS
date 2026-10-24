@@ -15,6 +15,7 @@ const StaffLayout    = lazy(() => import('./components/staff/StaffLayout'));
 const AdminDashboard = lazy(() => import('./pages/admin/Dashboard'));
 const AdminProducts  = lazy(() => import('./pages/admin/Products'));
 const AdminReports   = lazy(() => import('./pages/admin/Reports'));
+const AdminTransactions = lazy(() => import('./pages/admin/Transactions'));
 const AdminPOS       = lazy(() => import('./pages/admin/POS'));
 const AdminStaff     = lazy(() => import('./pages/admin/Staff'));
 const AdminPayments  = lazy(() => import('./pages/admin/PaymentSettings'));
@@ -80,7 +81,7 @@ export default function App() {
         {/* New shops: confirm the email with a code, then the account and shop are made */}
         <Route path="/subscribe" element={<SubscribePage />} />
 
-        {/* A shop's counter terminal (RFID + password), bookmarked on the POS device */}
+        {/* A shop's counter terminal, bookmarked on the POS device */}
         <Route
           path="/s/:slug"
           element={
@@ -97,6 +98,7 @@ export default function App() {
           <Route index element={<Page><AdminDashboard /></Page>} />
           <Route path="products" element={<Page><AdminProducts /></Page>} />
           <Route path="reports" element={<Page><AdminReports /></Page>} />
+          <Route path="transactions" element={<Page><AdminTransactions /></Page>} />
           <Route path="pos" element={<Page><AdminPOS /></Page>} />
           <Route path="staff" element={<Page><AdminStaff /></Page>} />
           <Route path="store" element={<Page><AdminStore /></Page>} />

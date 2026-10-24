@@ -5,6 +5,7 @@
     "api/account/*.ts": { "maxDuration": 30 },
     "api/password/*.ts": { "maxDuration": 30 },
     "api/usage.ts": { "maxDuration": 30 },
+    "api/public/*.ts": { "maxDuration": 10 },
     "api/cron/*.ts": { "maxDuration": 60 }
   },
   "crons": [

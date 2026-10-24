@@ -127,7 +127,7 @@ await t('A admin deletes B card', 'deny', () => deleteDoc(doc(as('ownerA'), 'ten
 // ── Not signed in (terminal / landing) ──────────────────────────────────
 await t('anon: get a slug (terminal lookup)', 'allow', () => getDoc(doc(anon(), 'slugs/shop-a')));
 await t('anon: list slugs', 'deny', () => getDocs(collection(anon(), 'slugs')));
-await t('anon: get one RFID card (shop has RFID)', 'allow', () => getDoc(doc(anon(), 'tenants/A/rfidCards/TAGA')));
+await t('anon: get one RFID card (RFID removed)', 'deny', () => getDoc(doc(anon(), 'tenants/A/rfidCards/TAGA')));
 await t('anon: get a card in a shop WITHOUT RFID', 'deny', () => getDoc(doc(anon(), 'tenants/N/rfidCards/TAGN')));
 await t('anon: list RFID cards', 'deny', () => getDocs(collection(anon(), 'tenants/A/rfidCards')));
 await t('anon: read a shop', 'deny', () => getDoc(doc(anon(), 'tenants/A')));
@@ -192,8 +192,35 @@ await t('GCash order with a reference but no claim', 'deny', () => setDoc(doc(as
 await t('card order with an approval code', 'allow', () => addDoc(collection(as('staffA'), 'tenants/A/orders'), order('staffA', { paymentMethod: 'card', paymentReference: '123456' })));
 await t('edit a payment reference claim', 'deny', () => updateDoc(doc(as('ownerA'), 'tenants/A/paymentRefs/x'), { orderId: 'y' }));
 
-// ── RFID cards ──────────────────────────────────────────────────────────
-await t('admin makes a card for own staff', 'allow', () => setDoc(doc(as('ownerA'), 'tenants/A/rfidCards/T5'), { email: 'a@x.com', password: 'p', userId: 'staffA' }));
+// ── Imported past sales (Transaction History → Import) ─────────────────
+const imported = (extra = {}) => order('ownerA', { paymentMethod: 'gcash', imported: true, ...extra });
+await t('admin imports an old GCash sale (no reference to claim)', 'allow', () => setDoc(doc(as('ownerA'), 'tenants/A/orders/imp-1'), imported()));
+await t('admin imports 450 old sales in one batch', 'allow', () => {
+  const db = as('ownerA');
+  const b = writeBatch(db);
+  for (let i = 0; i < 450; i++) b.set(doc(db, `tenants/A/orders/imp-b${i}`), imported({ paymentMethod: ['cash', 'gcash', 'maya', 'card'][i % 4] }));
+  return b.commit();
+});
+await t('staff marks a GCash sale imported to skip the reference', 'deny', () => setDoc(doc(as('staffA'), 'tenants/A/orders/imp-2'), order('staffA', { paymentMethod: 'gcash', imported: true })));
+await t('admin imports a sale under someone else', 'deny', () => setDoc(doc(as('ownerA'), 'tenants/A/orders/imp-3'), imported({ cashierId: 'staffA' })));
+await t('admin imports a GCash sale as voided', 'deny', () => setDoc(doc(as('ownerA'), 'tenants/A/orders/imp-4'), imported({ status: 'voided' })));
+await t('admin imports into another shop', 'deny', () => setDoc(doc(as('ownerA'), 'tenants/B/orders/imp-5'), imported()));
+await t('an expired (view-only) shop imports', 'deny', () => setDoc(doc(as('adminE'), 'tenants/E/orders/imp-6'), order('adminE', { imported: true })));
+await t('an import writes over a sale already there', 'deny', () => setDoc(doc(as('ownerA'), 'tenants/A/orders/o1'), imported()));
+await t('admin imports 400 products and 3 categories in batches', 'allow', async () => {
+  const db = as('ownerA');
+  const cats = writeBatch(db);
+  for (let i = 0; i < 3; i++) cats.set(doc(db, `tenants/A/categories/c-imp${i}`), { name: `Cat ${i}`, color: '#c46820', icon: 'coffee', createdAt: iso });
+  await cats.commit();
+  const b = writeBatch(db);
+  for (let i = 0; i < 400; i++) b.set(doc(db, `tenants/A/products/p-imp${i}`), { name: `P${i}`, price: 10, cost: 5, categoryId: 'c-imp0', categoryName: 'Cat 0', isAvailable: true, createdAt: iso, updatedAt: iso });
+  return b.commit();
+});
+await t('staff imports products', 'deny', () => setDoc(doc(as('staffA'), 'tenants/A/products/p-x'), { name: 'X', price: 1 }));
+
+// ── RFID cards (removed: only deleting leftovers) ───────────────────────
+await t('admin reads own shop card', 'deny', () => getDoc(doc(as('ownerA'), 'tenants/A/rfidCards/TAGA')));
+await t('admin makes a card for own staff', 'deny', () => setDoc(doc(as('ownerA'), 'tenants/A/rfidCards/T5'), { email: 'a@x.com', password: 'p', userId: 'staffA' }));
 await t('admin makes a card for an ADMIN', 'deny', () => setDoc(doc(as('ownerA'), 'tenants/A/rfidCards/T5'), { email: 'a@x.com', password: 'p', userId: 'adminA2' }));
 await t('card in a shop WITHOUT RFID', 'deny', () => setDoc(doc(as('adminN'), 'tenants/N/rfidCards/T5'), { email: 'a@x.com', password: 'p', userId: 'staffN' }));
 await t('admin deletes own card (cleanup)', 'allow', () => deleteDoc(doc(as('ownerA'), 'tenants/A/rfidCards/TAGA')));

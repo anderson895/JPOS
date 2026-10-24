@@ -236,7 +236,7 @@
     @apply block text-sm font-semibold text-espresso-800 mb-1.5;
   }
 
-  /* Segmented control (Password | RFID, Profile | Password, date ranges) */
+  /* Segmented control (Profile | Password, date ranges) */
   .segmented {
     @apply flex gap-1 p-1 rounded-full bg-cream-200/80 border border-cream-400/60;
   }
@@ -371,18 +371,9 @@
 .scrollbar-none::-webkit-scrollbar { display: none; }
 .scrollbar-none { scrollbar-width: none; }
 
-/* RFID blink animation */
-@keyframes rfid-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgb(var(--caramel-500) / 0.45); }
-  50% { box-shadow: 0 0 0 14px rgb(var(--caramel-500) / 0); }
-}
-.rfid-pulse {
-  animation: rfid-pulse 1.5s ease-out infinite;
-}
-
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .animate-float, .animate-float-slow, .animate-steam, .rfid-pulse { animation: none !important; }
+  .animate-float, .animate-float-slow, .animate-steam { animation: none !important; }
 }
 
 /* POS receipt */

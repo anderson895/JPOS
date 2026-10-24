@@ -9,6 +9,7 @@ export interface User {
   email: string;
   displayName: string;
   role: UserRole;
+  /** Always '' (RFID login was removed); the rules still expect it on new profiles. */
   rfidTag?: string;
   photoURL?: string;
   isActive: boolean;
@@ -21,7 +22,6 @@ export interface Entitlements {
   plan: PlanId;
   /** Max user accounts (owner included); null = unlimited. */
   staffLimit: number | null;
-  rfid: boolean;
   fullReports: boolean;
   pdfExport: boolean;
   trends: boolean;
@@ -44,6 +44,8 @@ export interface Entitlements {
   emailSummary?: boolean;
   /** Download a backup of all the shop's data. */
   backup?: boolean;
+  /** Import products and past sales from Excel or CSV (Business and up, 2026-10-25). */
+  imports?: boolean;
   /** Storage for pictures and sales data, in MB; null = no limit. Missing: the package decides (500 / 2048 / 10240). */
   storageMB?: number | null;
 }
@@ -89,7 +91,10 @@ export type BusinessType = 'food' | 'grocery' | 'clothing' | 'hardware' | 'pharm
 
 /** The shop's details printed on every receipt. */
 export interface ReceiptInfo {
-  /** BIR VAT-registered: the receipt shows VATable sales and 12% VAT. */
+  /**
+   * Always saved as false: JPOS isn't BIR-registered, so its receipts are
+   * unofficial and show no VAT. Kept because firestore.rules expect the field.
+   */
   vatRegistered: boolean;
   tin: string;
   address: string;
@@ -167,6 +172,36 @@ export interface SubscriptionRequest {
 
 /** A Firestore Timestamp as the client SDK returns it. */
 export interface FirestoreTime { toDate(): Date; toMillis(): number }
+
+export type FeedbackKind = 'bug' | 'idea';
+
+/** A screenshot or file attached to feedback (uploaded to Cloudinary). */
+export interface FeedbackFile {
+  url: string;
+  /** The name it had on the sender's device. */
+  name: string;
+  /** e.g. image/png, video/mp4, application/pdf */
+  type: string;
+  bytes: number;
+}
+
+/** feedback/{id}: a problem report or an idea from someone in a shop, read by the Super Admin. */
+export interface Feedback {
+  id: string;
+  kind: FeedbackKind;
+  message: string;
+  tenantId: string;
+  shopName: string;
+  uid: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  /** Up to 3 screenshots or files. */
+  attachments?: FeedbackFile[];
+  /** new: not handled yet; done: the Super Admin marked it handled. */
+  status: 'new' | 'done';
+  createdAt: FirestoreTime | null;
+}
 
 export interface Category {
   id: string;
@@ -285,6 +320,8 @@ export interface Order {
   verifiedBy?: string;
   /** Something about the payment needs a human look. */
   paymentNote?: string;
+  /** A past sale brought in from a file (Transaction History → Import), not made in JPOS. */
+  imported?: boolean;
   createdAt: string;
   updatedAt: string;
 }

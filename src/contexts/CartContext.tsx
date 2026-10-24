@@ -19,7 +19,7 @@ interface CartContextType {
   senior: SeniorInfo | null;
   setSenior: (senior: SeniorInfo | null) => void;
   clearCart: () => void;
-  /** The money of the sale (src/lib/pricing.ts), with the store's VAT setting. */
+  /** The money of the sale (src/lib/pricing.ts). */
   pricing: PriceResult;
   total: number;
   subtotal: number;
@@ -37,7 +37,7 @@ export function useCart() {
 const lineKey = (productId: string, variantId?: string) => `${productId}-${variantId || 'default'}`;
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
-  const { currentUser, tenant } = useAuth();
+  const { currentUser } = useAuth();
   const [items, setItems] = useState<CartItem[]>([]);
   const [orderDiscount, setOrderDiscount] = useState<DiscountPick | null>(null);
   const [senior, setSeniorState] = useState<SeniorInfo | null>(null);
@@ -117,10 +117,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setSeniorState(null);
   }, []);
 
-  const vatRegistered = tenant?.receipt?.vatRegistered === true;
+  // JPOS receipts are unofficial (not BIR-registered), so no sale has VAT
   const pricing = useMemo(
-    () => price({ lines: items, orderDiscount, senior, vatRegistered }),
-    [items, orderDiscount, senior, vatRegistered],
+    () => price({ lines: items, orderDiscount, senior, vatRegistered: false }),
+    [items, orderDiscount, senior],
   );
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
 

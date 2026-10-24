@@ -9,6 +9,7 @@ import { hasFeature } from '@/lib/entitlements';
 import { logActivity, setActivityLogging } from '@/lib/activity';
 import InstallAppButton from '@/components/shared/InstallApp';
 import SubscriptionBanner from '@/components/shared/SubscriptionBanner';
+import FeedbackBubble from '@/components/shared/FeedbackBubble';
 import type { User } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -59,7 +60,7 @@ export default function AppShell({
   // (sign-out) puts the JPOS colors back for the public pages.
   const brand = useStoreBrand();
   // Audit trail (Business and up): actions are recorded with this person's name
-  const { tenant } = useAuth();
+  const { tenant, isSuperAdmin } = useAuth();
   const auditOn = hasFeature(tenant, 'auditTrail');
   useEffect(() => {
     setActivityLogging(auditOn, user?.displayName || user?.email || '');
@@ -228,7 +229,10 @@ export default function AppShell({
           />
         </header>
 
-        <main ref={mainRef} className="flex-1 overflow-y-auto">
+        {/* relative: hidden screen-reader labels (sr-only) far down a long page stay
+            inside this scroll area instead of stretching the whole window (an empty
+            strip under the sidebar) */}
+        <main ref={mainRef} className="relative flex-1 overflow-y-auto">
           <SubscriptionBanner />
           <Outlet />
         </main>
@@ -275,6 +279,10 @@ export default function AppShell({
           </button>
         </nav>
       </div>
+
+      {/* Feedback for the Super Admin. Not on the point of sale (it would cover the
+          order total and Checkout), and not for the Super Admin, who reads it */}
+      {!isSuperAdmin && !/\/pos$/.test(pathname) && <FeedbackBubble />}
 
       {children}
     </div>

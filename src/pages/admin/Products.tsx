@@ -7,7 +7,7 @@ import { uploadPicture } from '@/lib/cloudinary';
 import { STORAGE_FULL, useStorage } from '@/lib/usage';
 import { cn, formatCurrency } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
-import { BUSINESS_UP, hasFeature } from '@/lib/entitlements';
+import { BUSINESS_UP, hasAccess, hasFeature } from '@/lib/entitlements';
 import { changes, logActivity } from '@/lib/activity';
 import { DEFAULT_LOW_STOCK, isLow, isOut, stockLabel } from '@/lib/inventory';
 import Switch from '@/components/shared/Switch';
@@ -18,9 +18,13 @@ import {
 import Portal from '@/components/shared/Portal';
 import PageHeader from '@/components/shared/PageHeader';
 import DiscountsModal from '@/components/admin/DiscountsModal';
+import ImportModal, { type ImportSetup } from '@/components/admin/ImportModal';
+import { PRODUCT_FIELDS, PRODUCT_SAMPLE, planProducts, type ProductPlan } from '@/lib/importProducts';
+import { applyProducts } from '@/lib/importSave';
 import type { Product, Category } from '@/types';
 import {
   Plus, Search, Edit2, Trash2, X, Upload, ToggleLeft, ToggleRight, Loader2, Tag, Pencil, Package, ChevronDown, ScanBarcode, BadgePercent, Lock,
+  FileSpreadsheet,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -34,6 +38,7 @@ export default function AdminProducts() {
   const { tenant } = useAuth();
   const canDiscounts = hasFeature(tenant, 'discounts');
   const canInventory = hasFeature(tenant, 'inventory');
+  const canImport = hasFeature(tenant, 'imports');
   // New photos wait when the shop's storage is full (selling never stops)
   const storage = useStorage();
   // The details this kind of store fills in first; the rest are under "More details"
@@ -51,6 +56,7 @@ export default function AdminProducts() {
   const [imgUploading, setImgUploading] = useState(false);
   const [catModalOpen, setCatModalOpen] = useState(false);
   const [discountsOpen, setDiscountsOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [newCatName, setNewCatName]   = useState('');
   // Category edit/delete state
   const [editCatId, setEditCatId]     = useState<string | null>(null);
@@ -294,6 +300,45 @@ export default function AdminProducts() {
   );
   const otherFields = DETAIL_FIELDS.filter(f => !mainFields.includes(f));
 
+  // Products → Import: a price list from a CSV or Excel file
+  const productImport: ImportSetup<ProductPlan> = {
+    title: 'Import products',
+    what: 'products',
+    fields: PRODUCT_FIELDS,
+    sample: { file: 'jpos-products-sample.csv', rows: PRODUCT_SAMPLE },
+    plan: (table, cols) => planProducts(table, cols, products, categories),
+    summary: plan => {
+      const units = Object.entries(plan.otherUnits);
+      const rows = [...plan.add, ...plan.update.map(u => u.row)];
+      return {
+        ready: rows.length,
+        skipped: plan.skipped,
+        notes: [
+          plan.update.length ? `${plan.update.length.toLocaleString()} already in JPOS (same name or barcode): they get the file's details.` : '',
+          plan.newCategories.length ? `New categories: ${plan.newCategories.slice(0, 6).join(', ')}${plan.newCategories.length > 6 ? ` and ${plan.newCategories.length - 6} more` : ''}.` : '',
+          units.length ? `Sold by the piece (JPOS doesn't have these units): ${units.slice(0, 4).map(([u]) => u).join(', ')}.` : '',
+          plan.has.stock && !canInventory ? `Stock isn't kept: inventory is in the Business and Enterprise packages.` : '',
+        ].filter(Boolean),
+        preview: {
+          headers: ['Name', 'Price', 'Cost', 'Category', ...(canInventory && plan.has.stock ? ['Stock'] : [])],
+          rows: rows.slice(0, 5).map(r => [
+            r.name, formatCurrency(r.price), r.cost !== undefined ? formatCurrency(r.cost) : '', r.category ?? '',
+            ...(canInventory && plan.has.stock ? [r.stock !== undefined ? String(r.stock) : ''] : []),
+          ]),
+        },
+      };
+    },
+    save: async (plan, onProgress) => {
+      const r = await applyProducts(plan, categories, { canInventory, onProgress });
+      logActivity('product.import', '', `${r.added} added, ${r.updated} updated`);
+      return [
+        `${r.added.toLocaleString()} ${r.added === 1 ? 'product' : 'products'} added`,
+        r.updated ? `${r.updated.toLocaleString()} updated` : '',
+        r.newCategories ? `${r.newCategories} new ${r.newCategories === 1 ? 'category' : 'categories'}` : '',
+      ].filter(Boolean).join(', ') + '.';
+    },
+  };
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 animate-fade-in max-w-[1400px] mx-auto">
       <PageHeader
@@ -313,6 +358,15 @@ export default function AdminProducts() {
               title={canDiscounts ? undefined : 'Business and Enterprise packages'}
             >
               {canDiscounts ? <BadgePercent className="w-4 h-4" /> : <Lock className="w-4 h-4" />} Discounts
+            </button>
+            <button
+              onClick={() => !canImport
+                ? toast(`Import: ${BUSINESS_UP.charAt(0).toLowerCase()}${BUSINESS_UP.slice(1)}`, { icon: <Lock className="w-4 h-4 text-caramel-600" aria-hidden="true" /> })
+                : hasAccess(tenant) ? setImportOpen(true) : toast.error('Start your free trial or subscribe to import products.')}
+              className={cn('btn-secondary flex-1 sm:flex-none', !canImport && 'opacity-70')}
+              title={canImport ? undefined : 'Business and Enterprise packages'}
+            >
+              {canImport ? <FileSpreadsheet className="w-4 h-4" /> : <Lock className="w-4 h-4" />} Import
             </button>
             <button onClick={openNew} className="btn-primary flex-1 sm:flex-none">
               <Plus className="w-4 h-4" /> Add Product
@@ -541,6 +595,7 @@ export default function AdminProducts() {
         </Portal>
       )}
 
+      {importOpen && <ImportModal setup={productImport} onClose={() => setImportOpen(false)} onDone={fetchAll} />}
       {discountsOpen && <DiscountsModal onClose={() => setDiscountsOpen(false)} />}
 
       {/* Category Modal */}

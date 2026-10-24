@@ -1,19 +1,29 @@
 import { useEffect, useState } from 'react';
 import { MessageCircle, Phone } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { DEFAULT_PLATFORM_SETTINGS, subscribePlatformSettings } from '@/lib/platform';
+import { DEFAULT_PLATFORM_SETTINGS, loadPublicSettings, subscribePlatformSettings } from '@/lib/platform';
 import type { PlatformSettings } from '@/types';
 import { cn } from '@/lib/utils';
 
 /**
- * Live platform settings (prices, payment QRs, contact). Public, so it works signed out too.
+ * Platform settings (prices, payment QRs, contact). Public, so it works signed out too.
+ * Public pages get them through JPOS's server cache (Redis); `live` (Super Admin,
+ * Subscription) follows Firebase as they change.
  * `saved` is false while loading and when they were never set up (then `settings` holds the defaults).
  */
-export function usePlatformSettings() {
+export function usePlatformSettings({ live = false }: { live?: boolean } = {}) {
   const [settings, setSettings] = useState<PlatformSettings>(DEFAULT_PLATFORM_SETTINGS);
   const [loaded, setLoaded] = useState(false);
   const [saved, setSaved] = useState(false);
-  useEffect(() => subscribePlatformSettings((s, isSaved) => { setSettings(s); setSaved(isSaved); setLoaded(true); }, () => setLoaded(true)), []);
+  useEffect(() => {
+    const show = (s: PlatformSettings, isSaved: boolean) => { setSettings(s); setSaved(isSaved); setLoaded(true); };
+    if (live) return subscribePlatformSettings(show, () => setLoaded(true));
+    let on = true;
+    loadPublicSettings()
+      .then(r => { if (on) show(r.settings, r.saved); })
+      .catch(() => { if (on) setLoaded(true); });
+    return () => { on = false; };
+  }, [live]);
   return { settings, loaded, saved };
 }
 

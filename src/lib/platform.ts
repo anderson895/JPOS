@@ -38,6 +38,31 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
   return snap.exists() ? (snap.data() as PlatformSettings) : DEFAULT_PLATFORM_SETTINGS;
 }
 
+let publicSettings: Promise<{ settings: PlatformSettings; saved: boolean }> | null = null;
+
+/**
+ * The settings for public pages, once per visit: from JPOS's server, where
+ * they're cached (Redis), so visitors don't each read Firebase. If the server
+ * can't answer, Firebase is read directly. A minute or two behind at most;
+ * payments and new shops always read the settings fresh.
+ */
+export function loadPublicSettings(): Promise<{ settings: PlatformSettings; saved: boolean }> {
+  publicSettings ??= fetch('/api/public/settings')
+    .then(r => (r.ok ? r.json() : Promise.reject(new Error(`settings: ${r.status}`))))
+    .then((b: { saved?: boolean; settings?: Partial<PlatformSettings> | null }) => {
+      if (typeof b?.saved !== 'boolean') throw new Error('settings: unexpected answer');
+      return b.saved && b.settings
+        ? { settings: { ...DEFAULT_PLATFORM_SETTINGS, ...b.settings } as PlatformSettings, saved: true }
+        : { settings: DEFAULT_PLATFORM_SETTINGS, saved: false };
+    })
+    .catch(async () => {
+      const saved = await getSavedPlatformSettings();
+      return { settings: saved ?? DEFAULT_PLATFORM_SETTINGS, saved: !!saved };
+    })
+    .catch(err => { publicSettings = null; throw err; });
+  return publicSettings;
+}
+
 /** `saved` is false when the settings were never set up (the defaults are passed instead). */
 export function subscribePlatformSettings(cb: (s: PlatformSettings, saved: boolean) => void, onError?: (e: Error) => void): Unsubscribe {
   return onSnapshot(settingsRef(), snap => cb(snap.exists() ? (snap.data() as PlatformSettings) : DEFAULT_PLATFORM_SETTINGS, snap.exists()), e => onError?.(e));

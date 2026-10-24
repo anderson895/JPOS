@@ -17,8 +17,9 @@ export interface StorageUsage {
   orders: number;
 }
 
-export function getStorageUsage(tenantId?: string): Promise<StorageUsage> {
-  return callApi<StorageUsage>('usage', tenantId ? { tenantId } : {});
+/** The server keeps the numbers a few minutes; `fresh` counts again (right after an upload). */
+export function getStorageUsage(tenantId?: string, fresh = false): Promise<StorageUsage> {
+  return callApi<StorageUsage>('usage', { ...(tenantId ? { tenantId } : {}), ...(fresh ? { fresh: true } : {}) });
 }
 
 /** "512 KB", "12.4 MB", "2 GB" */
@@ -43,10 +44,12 @@ export const STORAGE_FULL = 'Your storage is full. Remove some photos, or move t
 export function useStorage(enabled = true) {
   const [usage, setUsage] = useState<StorageUsage | null>(null);
   const [failed, setFailed] = useState(false);
-  const refresh = useCallback(async () => {
-    try { setUsage(await getStorageUsage()); setFailed(false); } catch { setFailed(true); }
+  // refresh() is called after a change (an upload): it counts again
+  const load = useCallback(async (fresh: boolean) => {
+    try { setUsage(await getStorageUsage(undefined, fresh)); setFailed(false); } catch { setFailed(true); }
   }, []);
-  useEffect(() => { if (enabled) refresh(); }, [enabled, refresh]);
+  const refresh = useCallback(() => load(true), [load]);
+  useEffect(() => { if (enabled) load(false); }, [enabled, load]);
   const full = !!usage && usage.limitBytes != null && usage.usedBytes >= usage.limitBytes;
   return { usage, failed, full, refresh };
 }

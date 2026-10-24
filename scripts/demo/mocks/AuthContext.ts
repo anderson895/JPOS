@@ -6,7 +6,7 @@ const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 const DEMO_USERS = {
   admin: { id: 'u1', displayName: 'Alex Rivera', email: 'admin@jpos.demo', role: 'admin', isActive: true, photoURL: '', createdAt: '', updatedAt: '' },
-  staff: { id: 'u3', displayName: 'Bea Garcia', email: 'bea@jpos.demo', role: 'staff', isActive: true, rfidTag: 'DEMO-0001', photoURL: '', createdAt: '', updatedAt: '' },
+  staff: { id: 'u3', displayName: 'Bea Garcia', email: 'bea@jpos.demo', role: 'staff', isActive: true, photoURL: '', createdAt: '', updatedAt: '' },
 } as const;
 
 const AuthCtx = createContext<any>(null);
@@ -21,7 +21,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     currentUser,
     loading: false,
     login: async (email: string) => { await wait(700); setCurrentUser(email.startsWith('staff') ? DEMO_USERS.staff : DEMO_USERS.admin); },
-    loginWithRFID: async () => { await wait(700); setCurrentUser(DEMO_USERS.staff); },
     loginWithGoogle: async () => { await wait(700); setCurrentUser(DEMO_USERS.admin); },
     logout: async () => setCurrentUser(null),
     refreshUser: async () => {},

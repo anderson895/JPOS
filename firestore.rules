@@ -205,6 +205,43 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
     }
 
+    // ── Feedback: problems and ideas from shops, for the Super Admin ──────
+    // Anyone active in a shop sends one (even when the shop is view-only) and
+    // sees their own; the Super Admin reads all, marks them done, or deletes.
+    match /feedback/{id} {
+      // A screenshot or file: an upload to JPOS's feedback Cloudinary account (veduldxa),
+      // or the local test placeholder; up to 10 MB
+      function fileOk(f) {
+        return f is map
+          && f.keys().hasOnly(['url', 'name', 'type', 'bytes']) && f.keys().hasAll(['url', 'name', 'type', 'bytes'])
+          && f.url is string && f.url.size() <= 500 && f.url.matches('^https://(res[.]cloudinary[.]com/veduldxa|placehold[.]co)/.+')
+          && f.name is string && f.name.size() >= 1 && f.name.size() <= 120
+          && f.type is string && f.type.size() <= 100
+          && f.bytes is int && f.bytes >= 0 && f.bytes <= 10485760;
+      }
+      function filesOk(files) {
+        return files is list && files.size() >= 1 && files.size() <= 3
+          && fileOk(files[0])
+          && (files.size() < 2 || fileOk(files[1]))
+          && (files.size() < 3 || fileOk(files[2]));
+      }
+      allow get, list: if isSuperAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create: if memberOf(d().tenantId)
+        && d().keys().hasOnly(['kind', 'message', 'tenantId', 'shopName', 'uid', 'name', 'email', 'role', 'attachments', 'status', 'createdAt'])
+        && d().keys().hasAll(['kind', 'message', 'tenantId', 'shopName', 'uid', 'name', 'email', 'role', 'status', 'createdAt'])
+        && d().uid == request.auth.uid
+        && d().role == me().role
+        && d().kind in ['bug', 'idea']
+        && d().message is string && d().message.size() >= 1 && d().message.size() <= 2000
+        && d().shopName is string && d().shopName.size() <= 80
+        && d().name is string && d().name.size() <= 60
+        && d().email is string && d().email.size() <= 254
+        && (!('attachments' in d()) || filesOk(d().attachments))
+        && d().status == 'new' && d().createdAt == request.time;
+      allow update: if isSuperAdmin() && changed().hasOnly(['status']) && d().status in ['new', 'done'];
+      allow delete: if isSuperAdmin();
+    }
+
     // ── A shop and everything in it ───────────────────────────────────────
     match /tenants/{t} {
       allow get: if memberOf(t) || isSuperAdmin();
@@ -383,12 +420,21 @@ service cloud.firestore {
           || !('paymentReference' in o)
           || (o.paymentReference is string && o.paymentReference.size() <= 30);
       }
+      // A past sale brought in from a file (Transaction History → Import, Business and
+      // up): an admin only, marked imported and completed. Old GCash/Maya sales have no
+      // reference to claim.
+      function importedOk(o) {
+        return adminOf(t) && shopCan(t, 'imports') && o.get('imported', false) == true && o.status == 'completed';
+      }
       match /orders/{id} {
         allow read: if memberOf(t);
         // Cashiers record sales under their own account, only while the shop may sell
         allow create: if memberOf(t) && hasAccess(t)
           && request.resource.data.cashierId == request.auth.uid
-          && eWalletOk(id, request.resource.data) && cardOk(request.resource.data);
+          && cardOk(request.resource.data)
+          // A sale marked imported is only ever an import (Business and up); every other sale as usual
+          && ((request.resource.data.get('imported', false) == true && importedOk(request.resource.data))
+              || (request.resource.data.get('imported', false) != true && eWalletOk(id, request.resource.data)));
         // Void (every package): an admin marks a completed sale VOID with a reason. It stays for
         // the record (left out of every sales total); nothing else changes, and
         // sales are never deleted.
@@ -476,16 +522,10 @@ service cloud.firestore {
         allow delete: if false;
       }
 
-      // RFID: the staff sign-in page looks up ONE card before sign-in (public get,
-      // only when the shop's package includes RFID); listing cards is never allowed.
-      // Cards are never for admin accounts, and the card's owner must be in this shop.
+      // RFID login was removed (2026-10-25). The old cards held their owner's
+      // password: nobody may read or add one, and the shop's admins may delete leftovers.
       match /rfidCards/{tag} {
-        allow get: if shop(t).entitlements.rfid == true;
-        allow list: if false;
-        allow create, update: if adminOf(t) && hasAccess(t)
-          && shop(t).entitlements.rfid == true
-          && getAfter(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.tenantId == t
-          && getAfter(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.role != 'admin';
+        allow read, create, update: if false;
         allow delete: if adminOf(t);
       }
     }

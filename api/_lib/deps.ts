@@ -4,6 +4,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import nodemailer, { type Transporter } from 'nodemailer';
 import { ApiError } from './http.js';
 import { firestoreStore, type Store } from './store.js';
+import { connectRedis, memoryCache, noCache, redisCache, redisUrlFrom, type Cache } from './cache.js';
 import { newCode } from './signupCode.js';
 import type { Message } from './mail.js';
 import { LOGO_CID, LOGO_PNG_BASE64 } from './emailLogo.js';
@@ -44,6 +45,8 @@ export interface Deps {
   env: Env;
   auth: AuthLike;
   store: Store;
+  /** Redis (REDIS_URL) in front of busy Firestore reads. Never required: no Redis = no cache. */
+  cache: Cache;
   /** Built on first use, so a missing Gmail setting only fails the calls that send email. */
   mailer: () => Mailer;
   now: () => Date;
@@ -174,6 +177,25 @@ function localTestMailer(env: Env): Mailer {
   };
 }
 
+// Local test mode: one memory cache for the dev server's whole life
+let localCache: Cache | undefined;
+
+/**
+ * Local test mode: a memory cache (never the real Redis, so fake data can't
+ * reach it). Otherwise Redis when REDIS_URL is set, its keys starting with the
+ * Firebase project; without REDIS_URL nothing is cached.
+ */
+function makeCache(env: Env, projectId: string): Cache {
+  if (isLocalTest(env)) return (localCache ??= memoryCache());
+  if (!env.REDIS_URL?.trim()) return noCache;
+  const url = redisUrlFrom(env.REDIS_URL);
+  if (!url) {
+    console.error('[cache] REDIS_URL should look like redis://default:<password>@<host:port>; no cache until it does');
+    return noCache;
+  }
+  return redisCache(() => connectRedis(url), `jpos:${projectId}`);
+}
+
 const toAuthUser = (u: { uid: string; email?: string; emailVerified: boolean; disabled: boolean; providerData: { providerId: string }[] }): AuthUser =>
   ({ uid: u.uid, email: u.email, emailVerified: u.emailVerified, disabled: u.disabled, providers: u.providerData.map(p => p.providerId) });
 
@@ -219,6 +241,7 @@ export function defaultDeps(env: Env = process.env): Deps {
       },
     },
     store: firestoreStore(getFirestore(app)),
+    cache: makeCache(env, app.options.projectId ?? env.FIREBASE_PROJECT_ID ?? 'jpos'),
     mailer: () => (isLocalTest(env) ? localTestMailer(env) : gmailMailer(env)),
     now: () => new Date(),
     newCode,

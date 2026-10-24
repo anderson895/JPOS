@@ -239,7 +239,7 @@ try {
   mark('staff', 'Staff & roles');
   await click(navLink('Manage Staff'), { after: 1000 });
   await click(`[...document.querySelectorAll('main button')].filter(b => b.textContent.trim() === 'Edit')[1]`, { after: 2000 });
-  await click(byText('button', 'staff', modal), { after: 1400 }); // Role → Staff: RFID fields appear
+  await click(byText('button', 'staff', modal), { after: 1400 }); // Role → Staff
   await click(byText('button', 'Cancel'), { after: 600 });
 
   mark('end', 'End');

@@ -4,8 +4,8 @@ import { defaultDeps, isLocalTest, notSetUp, type Deps, type Mailer } from './de
 import { dailySummaryMessage, emailChangeCodeMessage, passwordResetCodeMessage, paymentNoticeMessage, signupCodeMessage, type Message } from './mail.js';
 import { phYesterday, summarize, wantsSummary } from './summary.js';
 import { CODE_TTL_MS, codeHash, emailId, type CodeCheck } from './signupCode.js';
-import type { Reserve } from './store.js';
-import { computeUsage } from './usage.js';
+import type { PublicSettings, Reserve } from './store.js';
+import { computeUsage, type UsageCounts } from './usage.js';
 
 type GetDeps = () => Deps;
 
@@ -182,10 +182,15 @@ export function signupFinishHandler(getDeps: GetDeps = defaultDeps) {
   });
 }
 
+/** How long a shop's storage numbers are kept in the cache (Redis). */
+export const USAGE_CACHE_SEC = 5 * 60;
+
 /**
- * POST /api/usage { tenantId? }: how much storage a shop uses, and its limit.
- * A shop's admins see their own shop; the Super Admin sees any shop.
- * Only numbers come back, never the shop's data.
+ * POST /api/usage { tenantId?, fresh? }: how much storage a shop uses, and its
+ * limit. A shop's admins see their own shop; the Super Admin sees any shop.
+ * Only numbers come back, never the shop's data. The numbers are cached for a
+ * few minutes (checked AFTER who's asking); `fresh: true` (right after an
+ * upload) counts again.
  */
 export function usageHandler(getDeps: GetDeps = defaultDeps) {
   return handle(async (request) => {
@@ -199,9 +204,42 @@ export function usageHandler(getDeps: GetDeps = defaultDeps) {
     const tenantId = asked || me?.tenantId || '';
     const ownAdmin = !!me && me.isActive && me.role === 'admin' && me.tenantId === tenantId;
     if (!tenantId || !(ownAdmin || superAdmin)) throw new ApiError(403, 'forbidden', "Only the shop's admins can see its storage.");
-    const counts = await deps.store.shopUsage(tenantId);
-    if (!counts) throw new ApiError(404, 'no_shop', 'This shop was not found.');
+    const key = `usage:${tenantId}`;
+    let counts = body.fresh === true ? null : await deps.cache.get<UsageCounts>(key);
+    if (!counts) {
+      counts = await deps.store.shopUsage(tenantId);
+      if (!counts) throw new ApiError(404, 'no_shop', 'This shop was not found.');
+      await deps.cache.set(key, counts, USAGE_CACHE_SEC);
+    }
     return json(computeUsage(counts));
+  });
+}
+
+/** How long the public settings are kept (Redis, and Vercel's web cache). */
+export const SETTINGS_CACHE_SEC = 60;
+
+/**
+ * GET /api/public/settings: JPOS's prices, trial, payment QRs and contact for
+ * the public pages (landing, sign-up). Everyone gets the same answer, so it is
+ * cached (Redis, then Vercel's web cache) and visitors don't each read
+ * Firebase. Payments and new shops still read the settings fresh.
+ */
+export function publicSettingsHandler(getDeps: GetDeps = defaultDeps) {
+  return handle(async (request) => {
+    requireMethod(request, 'GET');
+    const deps = getDeps();
+    let body = await deps.cache.get<PublicSettings>('settings:public');
+    if (!body) {
+      body = await deps.store.publicSettings();
+      await deps.cache.set('settings:public', body, SETTINGS_CACHE_SEC);
+    }
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': `public, max-age=0, s-maxage=${SETTINGS_CACHE_SEC}, stale-while-revalidate=${SETTINGS_CACHE_SEC}`,
+      },
+    });
   });
 }
 
@@ -292,8 +330,7 @@ export function passwordCodeHandler(getDeps: GetDeps = defaultDeps) {
 
 /**
  * POST /api/password/reset { email, code, password }: a right code sets the new
- * password (and the person's RFID card, which keeps it). The app then signs in
- * with it.
+ * password. The app then signs in with it.
  */
 export function passwordResetHandler(getDeps: GetDeps = defaultDeps) {
   return handle(async (request) => {
@@ -313,7 +350,6 @@ export function passwordResetHandler(getDeps: GetDeps = defaultDeps) {
 
     try {
       await deps.auth.updatePassword(user.uid, password);
-      await deps.store.setCardPassword(user.uid, password);
     } catch (err) {
       console.error('[api] password not changed:', err instanceof Error ? err.message : err);
       throw new ApiError(503, 'reset_failed', "We couldn't change your password right now. Send a new code and try again.");

@@ -44,7 +44,7 @@ async function seed() {
     await setDoc(doc(db, 'tenants/A'), shopDoc('adminA', { plan: 'business', entitlements: { ...STARTER, plan: 'business', staffLimit: 10 } }));
     // B: Starter trial running; C: Business with those features turned off; G: Starter given its own look
     await setDoc(doc(db, 'tenants/B'), shopDoc('adminB'));
-    await setDoc(doc(db, 'tenants/C'), shopDoc('adminC', { plan: 'business', entitlements: { ...STARTER, plan: 'business', branding: false, discounts: false, voidSales: false } }));
+    await setDoc(doc(db, 'tenants/C'), shopDoc('adminC', { plan: 'business', entitlements: { ...STARTER, plan: 'business', branding: false, discounts: false, voidSales: false, imports: false } }));
     await setDoc(doc(db, 'tenants/G'), shopDoc('adminG', { entitlements: { ...STARTER, branding: true } }));
     // Inventory: a counted and an uncounted product in A (Business) and B (Starter)
     for (const id of ['A', 'B']) {
@@ -251,6 +251,19 @@ await t('delete an entry', 'deny', async () => {
   await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'tenants/A/activity/old'), { action: 'sale.void', by: 'adminA', byName: 'x', at: Timestamp.fromMillis(now), target: '', note: '' }));
   return deleteDoc(doc(as('adminA'), 'tenants/A/activity/old'));
 });
+
+// ── Import records (Business and up): past sales from a file ───────────────
+const pastSale = (uid, extra = {}) => ({
+  orderNumber: 'OR-1', items: [], subtotal: 100, discount: 0, tax: 0, total: 100, paymentMethod: 'gcash',
+  status: 'completed', cashierId: uid, cashierName: 'x', imported: true, createdAt: iso, updatedAt: iso, ...extra,
+});
+await t('Business (saved before imports existed) imports a past GCash sale', 'allow', () => setDoc(doc(as('adminA'), 'tenants/A/orders/imp-1'), pastSale('adminA')));
+await t('Starter imports a past sale', 'deny', () => setDoc(doc(as('adminB'), 'tenants/B/orders/imp-1'), pastSale('adminB')));
+await t('Starter marks a cash sale imported', 'deny', () => setDoc(doc(as('adminB'), 'tenants/B/orders/imp-2'), pastSale('adminB', { paymentMethod: 'cash' })));
+await t('Business with Import records turned off', 'deny', () => setDoc(doc(as('adminC'), 'tenants/C/orders/imp-1'), pastSale('adminC')));
+await t("Starter with its own look still can't import", 'deny', () => setDoc(doc(as('adminG'), 'tenants/G/orders/imp-1'), pastSale('adminG')));
+await t('Starter sells by cash as usual', 'allow', () => setDoc(doc(as('adminB'), 'tenants/B/orders/s-1'), { ...pastSale('adminB', { paymentMethod: 'cash' }), imported: false }));
+await t('a staff member marks a cash sale imported', 'deny', () => setDoc(doc(as('staffB'), 'tenants/B/orders/imp-3'), pastSale('staffB', { paymentMethod: 'cash' })));
 
 await env.cleanup();
 for (const [s, e, n] of results) console.log(`${s}  [${e.padEnd(5)}]  ${n}`);

@@ -12,7 +12,7 @@ import InstallAppButton from '@/components/shared/InstallApp';
 
 /**
  * A shop's counter terminal: /s/:slug, bookmarked on the POS device.
- * Staff sign in here with their RFID card (or password). The device remembers
+ * Staff sign in here with their email and password. The device remembers
  * the terminal, so signing out comes back here instead of the public page.
  * It wears the shop's own name, logo and colors (Store Settings).
  * "Powered by JPOS" (on the card) leaves it for good: the device stops coming back here.

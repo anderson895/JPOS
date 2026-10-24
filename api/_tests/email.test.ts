@@ -5,8 +5,10 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   emailChangeCodeHandler, emailChangeFinishHandler, passwordCodeHandler, passwordResetHandler, paymentNoticeHandler,
-  signupCodeHandler, signupFinishHandler, usageHandler, dailySummaryHandler,
+  signupCodeHandler, signupFinishHandler, usageHandler, dailySummaryHandler, publicSettingsHandler,
+  SETTINGS_CACHE_SEC, USAGE_CACHE_SEC,
 } from '../_lib/handlers.js';
+import { memoryCache, redisCache, redisUrlFrom, type Cache, type RedisLike } from '../_lib/cache.js';
 import { phYesterday, summarize, wantsSummary, type OrderLite, type SummaryShop } from '../_lib/summary.js';
 import { computeUsage, storageLimitBytes, BASE_DATA_BYTES, EST_ORDER_BYTES, EST_PICTURE_BYTES, EST_PRODUCT_BYTES, MB, type UsageCounts } from '../_lib/usage.js';
 import { ApiError } from '../_lib/http.js';
@@ -43,12 +45,16 @@ interface World {
   admins: Set<string>;
   /** users/{uid}.email */
   profileEmail: Map<string, string>;
-  /** The password kept on a person's RFID card, by uid */
-  cards: Map<string, string>;
   /** users/{uid}: shop and role */
   profiles: Map<string, { tenantId: string; role: string; isActive: boolean }>;
   /** What each shop stores */
   shops: Map<string, UsageCounts>;
+  /** platform/settings as the public pages get it (null: never set up) */
+  settings: Record<string, unknown> | null;
+  /** How often Firestore was read for these (to see the cache work) */
+  reads: { usage: number; settings: number };
+  /** The cache (Redis in production), made on first use */
+  cache?: Cache;
   /** Shops for the daily email, and their orders */
   summaryShops: SummaryShop[];
   orders: Map<string, (OrderLite & { createdAt: string })[]>;
@@ -92,13 +98,13 @@ function memoryStore(w: World): Store {
     accountInUse: async (uid) => w.inUse.has(uid) || w.admins.has(uid),
     isPlatformAdmin: async (uid) => w.admins.has(uid),
     setProfileEmail: async (uid, email) => { if (w.profileEmail.has(uid)) w.profileEmail.set(uid, email); },
-    setCardPassword: async (uid, password) => { if (w.cards.has(uid)) w.cards.set(uid, password); },
     profile: async (uid) => w.profiles.get(uid) ?? null,
     summaryShops: async () => w.summaryShops,
     ordersBetween: async (tenantId, startIso, endIso) => (w.orders.get(tenantId) ?? []).filter(o => o.createdAt >= startIso && o.createdAt < endIso),
     reserveSummary: async (tenantId, date, now) => reserve('summary', `summary_${tenantId}`, { cooldownMs: 0, max: 1, windowMs: 20 * 3600_000 }, now, null, `sum_${tenantId}_${date}`),
     releaseSummary: async (tenantId, date, now) => release('summary', `summary_${tenantId}`, now, null, `sum_${tenantId}_${date}`),
-    shopUsage: async (tenantId) => w.shops.get(tenantId) ?? null,
+    shopUsage: async (tenantId) => { w.reads.usage++; return w.shops.get(tenantId) ?? null; },
+    publicSettings: async () => { w.reads.settings++; return { saved: !!w.settings, settings: w.settings }; },
     reservePaymentNotice: async (id, uid, now) => reserve('payment', `pay_${uid}`, PAYMENT_LIMIT, now, null, `paid_${id}`),
     releasePaymentNotice: async (id, uid, now) => release('payment', `pay_${uid}`, now, null, `paid_${id}`),
     getPaymentRequest: async (id) => w.requests[id] ?? null,
@@ -145,7 +151,6 @@ function newWorld(): World {
     createFails: false,
     admins: new Set(['boss', 'gboss']),
     profileEmail: new Map([['boss', 'admin@shop.test'], ['juan', 'juan@shop.test']]),
-    cards: new Map([['cashier', 'cashier-password']]),
     profiles: new Map([
       ['juan', { tenantId: 't1', role: 'admin', isActive: true }],
       ['cashier', { tenantId: 't1', role: 'staff', isActive: true }],
@@ -157,6 +162,8 @@ function newWorld(): World {
       ['t1', { plan: 'starter', products: 40, orders: 1000, productPictures: 30, measuredPictures: 20, measuredBytes: 4 * MB, otherPictures: 2 }],
       ['t2', { plan: 'business', storageMB: null, products: 0, orders: 0, productPictures: 0, measuredPictures: 0, measuredBytes: 0, otherPictures: 0 }],
     ]),
+    settings: { trialDays: 7, messengerUrl: 'https://m.me/jpos', contactPhone: '09454454744', plans: { starter: { name: 'Starter', price: 499 } }, paymentChannels: {} },
+    reads: { usage: 0, settings: 0 },
   };
 }
 
@@ -168,6 +175,7 @@ function depsFor(w: World): () => Deps {
     env: w.env,
     now: () => w.now,
     store: memoryStore(w),
+    cache: (w.cache ??= memoryCache(() => w.now.getTime())),
     newCode: () => nth(++w.codesMade),
     auth: {
       // A "token" is "ok:<uid>" (password typed just now) or "old:<uid>" (an hour ago);
@@ -688,14 +696,6 @@ describe('Forgot password', () => {
     assert.equal((await reset(w, 'juan@shop.test', '000001', 'again-123')).status, 400);
   });
 
-  test("a staff member's RFID card gets the new password too", async () => {
-    const w = newWorld();
-    await askCode(w, 'cashier@shop.test');
-    await reset(w, 'cashier@shop.test', '000001', 'cashier-new');
-    assert.equal(w.accounts.cashier.password, 'cashier-new');
-    assert.equal(w.cards.get('cashier'), 'cashier-new');
-  });
-
   test('a wrong code counts down, and a code for another email never works', async () => {
     const w = newWorld();
     await askCode(w, 'juan@shop.test');
@@ -782,6 +782,104 @@ describe('Storage (POST /api/usage)', () => {
   test('more measured pictures than pictures (old data): never negative', () => {
     const u = computeUsage({ plan: 'starter', products: 1, orders: 0, productPictures: 1, measuredPictures: 3, measuredBytes: 900, otherPictures: 0 });
     assert.equal(u.photosBytes, 900);
+  });
+});
+
+describe('Cache (Redis): fewer Firestore reads, same answers', () => {
+  const usage = (w: World, token: string | undefined, body: unknown = {}) => call(usageHandler(depsFor(w)), post('usage', token, body));
+  const settings = (w: World, method = 'GET') => publicSettingsHandler(depsFor(w))(new Request(`${APP}/api/public/settings`, { method }));
+
+  test('storage: asked again within 5 minutes, the cache answers', async () => {
+    const w = newWorld();
+    const first = await usage(w, 'ok:juan');
+    const again = await usage(w, 'ok:juan');
+    assert.deepEqual(again.body, first.body);
+    assert.equal(w.reads.usage, 1);
+    w.now = new Date(START.getTime() + USAGE_CACHE_SEC * 1000 + 1000);
+    await usage(w, 'ok:juan');
+    assert.equal(w.reads.usage, 2);
+  });
+
+  test('storage: fresh (right after an upload) counts again and refreshes the cache', async () => {
+    const w = newWorld();
+    await usage(w, 'ok:juan');
+    w.shops.set('t1', { ...w.shops.get('t1')!, orders: 2000 });
+    const fresh = await usage(w, 'ok:juan', { fresh: true });
+    assert.equal(w.reads.usage, 2);
+    const cached = await usage(w, 'ok:juan');
+    assert.equal(w.reads.usage, 2);
+    assert.deepEqual(cached.body, fresh.body);
+  });
+
+  test('storage: the cache never skips the check of who is asking', async () => {
+    const w = newWorld();
+    await usage(w, 'ok:juan');   // t1 is now cached
+    assert.equal((await usage(w, 'ok:maria', { tenantId: 't1' })).status, 403);
+    assert.equal((await usage(w, 'ok:cashier')).status, 403);
+    assert.equal((await usage(w, undefined)).status, 401);
+  });
+
+  test('public settings: everyone gets them, read from Firestore once a minute at most', async () => {
+    const w = newWorld();
+    const r = await settings(w);
+    assert.equal(r.status, 200);
+    assert.match(r.headers.get('cache-control') ?? '', new RegExp(`s-maxage=${SETTINGS_CACHE_SEC}`));
+    assert.deepEqual(await r.json(), { saved: true, settings: w.settings });
+    await settings(w);
+    await settings(w);
+    assert.equal(w.reads.settings, 1);
+    w.now = new Date(START.getTime() + SETTINGS_CACHE_SEC * 1000 + 1000);
+    await settings(w);
+    assert.equal(w.reads.settings, 2);
+  });
+
+  test('public settings: never set up, and only GET', async () => {
+    const w = newWorld();
+    w.settings = null;
+    assert.deepEqual(await (await settings(w)).json(), { saved: false, settings: null });
+    assert.equal((await settings(w, 'POST')).status, 405);
+  });
+
+  test('Redis: values keep their shape, keys get the project prefix, and always expire', async () => {
+    const kept = new Map<string, { value: string; ex: number }>();
+    const client: RedisLike = {
+      get: async k => kept.get(k)?.value ?? null,
+      set: async (k, value, { EX }) => { kept.set(k, { value, ex: EX }); return 'OK'; },
+      del: async k => { kept.delete(k); return 1; },
+    };
+    const cache = redisCache(async () => client, 'jpos:test-project');
+    await cache.set('usage:t1', { orders: 3, plan: 'starter' }, 300);
+    assert.deepEqual([...kept.keys()], ['jpos:test-project:usage:t1']);
+    assert.equal(kept.get('jpos:test-project:usage:t1')!.ex, 300);
+    assert.deepEqual(await cache.get('usage:t1'), { orders: 3, plan: 'starter' });
+    await cache.del('usage:t1');
+    assert.equal(await cache.get('usage:t1'), null);
+  });
+
+  test('REDIS_URL: the address alone, or the whole command copied from Redis Cloud', () => {
+    const address = 'redis://default:pw@redis-1.example.com:15864';
+    assert.equal(redisUrlFrom(address), address);
+    assert.equal(redisUrlFrom(`redis-cli -u ${address}`), address);
+    assert.equal(redisUrlFrom(`  ${address}
+`), address);
+    assert.equal(redisUrlFrom('rediss://default:pw@x:1'), 'rediss://default:pw@x:1');
+    assert.equal(redisUrlFrom('default:pw@x:1'), null);
+    assert.equal(redisUrlFrom(''), null);
+    assert.equal(redisUrlFrom(undefined), null);
+  });
+
+  test('Redis down, slow or holding a broken value: no error, just no cache', async () => {
+    const down = redisCache(async () => { throw new Error('ECONNREFUSED'); }, 'p');
+    assert.equal(await down.get('k'), null);
+    await down.set('k', 1, 60);
+    await down.del('k');
+    const slow = redisCache(async () => ({ get: () => new Promise<string | null>(() => {}), set: () => new Promise(() => {}), del: () => new Promise(() => {}) }), 'p', 20);
+    const started = Date.now();
+    assert.equal(await slow.get('k'), null);
+    await slow.set('k', 1, 60);
+    assert.ok(Date.now() - started < 1000);
+    const broken = redisCache(async () => ({ get: async () => '{not json', set: async () => 'OK', del: async () => 1 }), 'p');
+    assert.equal(await broken.get('k'), null);
   });
 });
 

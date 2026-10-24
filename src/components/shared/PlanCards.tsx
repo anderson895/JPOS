@@ -25,8 +25,8 @@ const FEATURES: Record<PlanId, Feature[]> = {
   ],
   business: [
     { label: 'Everything in Starter' }, { label: 'Custom branding (logo and colors)' },
-    { label: 'Inventory and low-stock alerts' }, { label: 'Audit trail' }, { label: 'Daily sales summary by email' }, { label: 'Database backup' },
-    { label: 'All reports + PDF' }, { label: 'Sales trends' }, { label: 'RFID card login' },
+    { label: 'Inventory and low-stock alerts' }, { label: 'Audit trail' }, { label: 'Daily sales summary by email' }, { label: 'Database backup' }, { label: 'Import records' },
+    { label: 'All reports + PDF' }, { label: 'Sales trends' },
   ],
   enterprise: [
     { label: 'Everything in Business' }, { label: 'Priority support' }, { label: 'Advanced point of sale', soon: true },

@@ -20,9 +20,9 @@ const auth = getAuth();
 const db = getFirestore();
 const iso = new Date().toISOString();
 const ENT = {
-  starter: { plan: 'starter', staffLimit: 3, rfid: false, fullReports: false, pdfExport: false, trends: false, branding: false, discounts: false, voidSales: true, inventory: false, auditTrail: false, emailSummary: false, backup: false, storageMB: 500 },
-  business: { plan: 'business', staffLimit: 10, rfid: true, fullReports: true, pdfExport: true, trends: true, branding: true, discounts: true, voidSales: true, inventory: true, auditTrail: true, emailSummary: true, backup: true, storageMB: 2048 },
-  enterprise: { plan: 'enterprise', staffLimit: 100, rfid: true, fullReports: true, pdfExport: true, trends: true, branding: true, discounts: true, voidSales: true, inventory: true, auditTrail: true, emailSummary: true, backup: true, storageMB: 10240 },
+  starter: { plan: 'starter', staffLimit: 3, fullReports: false, pdfExport: false, trends: false, branding: false, discounts: false, voidSales: true, inventory: false, auditTrail: false, emailSummary: false, backup: false, imports: false, storageMB: 500 },
+  business: { plan: 'business', staffLimit: 10, fullReports: true, pdfExport: true, trends: true, branding: true, discounts: true, voidSales: true, inventory: true, auditTrail: true, emailSummary: true, backup: true, imports: true, storageMB: 2048 },
+  enterprise: { plan: 'enterprise', staffLimit: 100, fullReports: true, pdfExport: true, trends: true, branding: true, discounts: true, voidSales: true, inventory: true, auditTrail: true, emailSummary: true, backup: true, imports: true, storageMB: 10240 },
 };
 const qr = (text) => `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(text)}`;
 
@@ -51,10 +51,9 @@ await db.doc('tenants/demo').set({
   staffCount: 2, lastStaffChange: staff.uid, pendingRequestId: null,
 });
 await db.doc('slugs/jpos-coffee').set({ tenantId: 'demo' });
-const person = (name, role, email, rfidTag = '') => ({ tenantId: 'demo', email, displayName: name, role, isActive: true, rfidTag, photoURL: '', createdAt: iso, updatedAt: iso });
+const person = (name, role, email) => ({ tenantId: 'demo', email, displayName: name, role, isActive: true, rfidTag: '', photoURL: '', createdAt: iso, updatedAt: iso });
 await db.doc(`users/${owner.uid}`).set(person('Shop Owner', 'admin', 'owner@jpos.test'));
-await db.doc(`users/${staff.uid}`).set(person('Maria Cashier', 'staff', 'staff@jpos.test', '1111'));
-await db.doc('tenants/demo/rfidCards/1111').set({ email: 'staff@jpos.test', password: 'staff123', userId: staff.uid, staffName: 'Maria Cashier', createdAt: iso });
+await db.doc(`users/${staff.uid}`).set(person('Maria Cashier', 'staff', 'staff@jpos.test'));
 await db.doc('tenants/demo/categories/c1').set({ name: 'Coffee', color: '#6b3e1f', icon: 'coffee', createdAt: iso });
 for (const [id, name, price] of [['p1', 'Americano', 100], ['p2', 'Latte', 120], ['p3', 'Spanish Latte', 140]]) {
   await db.doc(`tenants/demo/products/${id}`).set({ name, price, cost: 40, categoryId: 'c1', categoryName: 'Coffee', isAvailable: true, description: '', imageUrl: '', createdAt: iso, updatedAt: iso });
@@ -64,7 +63,7 @@ console.log(`
   LOCAL TEST DATA READY (fake, on this computer only)
   ----------------------------------------------------
   Super Admin + demo shop owner : owner@jpos.test / owner123
-  Demo shop cashier             : staff@jpos.test / staff123  (RFID card: 1111)
+  Demo shop cashier             : staff@jpos.test / staff123
   Demo shop staff sign-in page  : /s/jpos-coffee
   New shop sign-up              : /subscribe
                                   Real addresses get a real email (if

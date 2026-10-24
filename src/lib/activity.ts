@@ -10,8 +10,8 @@ import type { FirestoreTime } from '@/types';
  */
 export type ActivityAction =
   | 'signin'
-  | 'product.add' | 'product.edit' | 'product.delete' | 'product.show' | 'product.hide'
-  | 'sale.void'
+  | 'product.add' | 'product.edit' | 'product.delete' | 'product.show' | 'product.hide' | 'product.import'
+  | 'sale.void' | 'sale.import'
   | 'discount.add' | 'discount.edit' | 'discount.delete'
   | 'staff.add' | 'staff.edit' | 'staff.delete' | 'staff.on' | 'staff.off'
   | 'store.settings' | 'payment.settings';
@@ -86,7 +86,9 @@ export function describe(e: Pick<ActivityEntry, 'action' | 'target'>): string {
     case 'product.delete': return `Deleted a product:${t}`;
     case 'product.show': return `Put back on sale:${t}`;
     case 'product.hide': return `Took off sale:${t}`;
+    case 'product.import': return `Imported products from a file:${t}`;
     case 'sale.void': return `Voided a sale:${t}`;
+    case 'sale.import': return `Imported past sales from a file:${t}`;
     case 'discount.add': return `Added a discount:${t}`;
     case 'discount.edit': return `Changed a discount:${t}`;
     case 'discount.delete': return `Deleted a discount:${t}`;
