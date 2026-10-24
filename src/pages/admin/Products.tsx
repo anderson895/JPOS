@@ -318,6 +318,7 @@ export default function AdminProducts() {
           plan.newCategories.length ? `New categories: ${plan.newCategories.slice(0, 6).join(', ')}${plan.newCategories.length > 6 ? ` and ${plan.newCategories.length - 6} more` : ''}.` : '',
           units.length ? `Sold by the piece (JPOS doesn't have these units): ${units.slice(0, 4).map(([u]) => u).join(', ')}.` : '',
           plan.has.stock && !canInventory ? `Stock isn't kept: inventory is in the Business and Enterprise packages.` : '',
+          rows.some(r => r.available === false) ? `${rows.filter(r => r.available === false).length.toLocaleString()} marked inactive: saved, but not shown in the POS.` : '',
         ].filter(Boolean),
         preview: {
           headers: ['Name', 'Price', 'Cost', 'Category', ...(canInventory && plan.has.stock ? ['Stock'] : [])],

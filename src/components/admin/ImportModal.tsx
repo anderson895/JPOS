@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, Loader2, Upload, X } from 'lucide-react';
 import Portal from '@/components/shared/Portal';
 import {
-  DELIMITERS, DELIMITER_LABEL, IMPORT_ACCEPT, IMPORT_MAX_MB, csvFile, guessColumns, readTable,
+  DELIMITERS, DELIMITER_LABEL, IMPORT_ACCEPT, IMPORT_MAX_MB, bestSheet, csvFile, guessColumns, readBook,
   type Columns, type Delimiter, type FieldDef, type Table,
 } from '@/lib/importTable';
 import { cn } from '@/lib/utils';
@@ -13,7 +13,8 @@ export interface ImportChoice { key: string; label: string; options: { value: st
 /** What the person sees before saving. */
 export interface ImportSummary {
   ready: number;
-  skipped: { line: number; reason: string }[];
+  /** `sheet`: the row's sheet, when the file has more than one. */
+  skipped: { line: number; reason: string; sheet?: string }[];
   notes: string[];
   preview: { headers: string[]; rows: string[][] };
 }
@@ -25,7 +26,14 @@ export interface ImportSetup<P> {
   what: string;
   fields: FieldDef[];
   sample: { file: string; rows: (string | number)[][] };
-  plan: (table: Table, cols: Columns, choices: Record<string, string>) => P;
+  /**
+   * A second sheet with each record's lines (each sale's items), joined by a
+   * column. `mainFields`: the first sheet's fields when the second one is used.
+   */
+  items?: { label: string; mainFields: FieldDef[]; fields: FieldDef[] };
+  /** Excel files with several sheets: which to read. Default: the sheet that fits `fields` best, no items sheet. */
+  pickSheets?: (tables: Table[]) => { main: number; items: number };
+  plan: (table: Table, cols: Columns, choices: Record<string, string>, items: { table: Table; cols: Columns } | null) => P;
   summary: (plan: P) => ImportSummary;
   choices?: (plan: P) => ImportChoice[];
   /** Saves the plan; returns the message shown when it's done. */
@@ -42,8 +50,12 @@ const SKIPPED_SHOWN = 30;
 export default function ImportModal<P>({ setup, onClose, onDone }: { setup: ImportSetup<P>; onClose: () => void; onDone: () => void }) {
   const [step, setStep] = useState<Step>('pick');
   const [file, setFile] = useState<File | null>(null);
-  const [table, setTable] = useState<Table | null>(null);
+  // Every sheet with rows; the one read, and the one with each record's lines (-1: none)
+  const [tables, setTables] = useState<Table[]>([]);
+  const [main, setMain] = useState(0);
+  const [itemsAt, setItemsAt] = useState(-1);
   const [cols, setCols] = useState<Columns>({});
+  const [itemCols, setItemCols] = useState<Columns>({});
   const [choices, setChoices] = useState<Record<string, string>>({});
   const [readError, setReadError] = useState('');
   const [progress, setProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
@@ -67,9 +79,10 @@ export default function ImportModal<P>({ setup, onClose, onDone }: { setup: Impo
     setReadError('');
     setFile(picked);
     try {
-      const t = await readTable(picked, { delimiter });
-      setTable(t);
-      setCols(guessColumns(t.headers, setup.fields));
+      const book = await readBook(picked, { delimiter });
+      const pick = setup.pickSheets?.(book) ?? { main: bestSheet(book, setup.fields), items: -1 };
+      setTables(book);
+      chooseSheets(book, pick.main, setup.items ? pick.items : -1);
       setChoices({});
       setShowSkipped(false);
       setStep('review');
@@ -79,17 +92,32 @@ export default function ImportModal<P>({ setup, onClose, onDone }: { setup: Impo
     }
   }
 
-  const missing = setup.fields.filter(f => f.required && !(cols[f.key] >= 0));
+  // Which sheets are read, and their columns matched again
+  function chooseSheets(book: Table[], m: number, it: number) {
+    const items = it === m ? -1 : it;
+    setMain(m);
+    setItemsAt(items);
+    setCols(guessColumns(book[m].headers, items >= 0 && setup.items ? setup.items.mainFields : setup.fields));
+    setItemCols(items >= 0 && setup.items ? guessColumns(book[items].headers, setup.items.fields) : {});
+  }
+
+  const table = tables[main] ?? null;
+  const itemsTable = itemsAt >= 0 ? tables[itemsAt] ?? null : null;
+  const mainFields = itemsTable && setup.items ? setup.items.mainFields : setup.fields;
+  const missing = [
+    ...mainFields.filter(f => f.required && !(cols[f.key] >= 0)),
+    ...(itemsTable && setup.items ? setup.items.fields.filter(f => f.required && !(itemCols[f.key] >= 0)) : []),
+  ];
   const planned = useMemo((): { plan: P; summary: ImportSummary; choices: ImportChoice[] } | { error: string } | null => {
     if (!table || missing.length) return null;
     try {
-      const plan = setup.plan(table, cols, choices);
+      const plan = setup.plan(table, cols, choices, itemsTable ? { table: itemsTable, cols: itemCols } : null);
       return { plan, summary: setup.summary(plan), choices: setup.choices?.(plan) ?? [] };
     } catch (err) {
       return { error: err instanceof Error ? err.message : "This file couldn't be read." };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [table, cols, choices, missing.length]);
+  }, [table, itemsTable, cols, itemCols, choices, missing.length]);
   const ok = planned && 'plan' in planned ? planned : null;
 
   async function save() {
@@ -166,7 +194,9 @@ export default function ImportModal<P>({ setup, onClose, onDone }: { setup: Impo
                 <FileSpreadsheet className="h-5 w-5 shrink-0 text-caramel-600" aria-hidden="true" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-espresso-900">{file?.name}</p>
-                  <p className="text-xs text-bark-500">{table.rows.length.toLocaleString()} {table.rows.length === 1 ? 'row' : 'rows'}</p>
+                  <p className="text-xs text-bark-500">
+                    {tables.length > 1 ? `${tables.length} sheets` : `${table.rows.length.toLocaleString()} ${table.rows.length === 1 ? 'row' : 'rows'}`}
+                  </p>
                 </div>
                 {table.delimiter && (
                   <label className="flex items-center gap-2 text-xs text-bark-600">
@@ -181,29 +211,37 @@ export default function ImportModal<P>({ setup, onClose, onDone }: { setup: Impo
               </div>
               {readError && <p className="flex items-start gap-2 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />{readError}</p>}
 
-              <section className="space-y-3">
-                <h3 className="text-sm font-semibold text-espresso-800">Which column is which?</h3>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {setup.fields.map(f => (
-                    <label key={f.key} className="flex items-center gap-3">
-                      <span className="w-32 shrink-0 text-sm text-espresso-800">{f.label}{f.required && <span className="text-red-600"> *</span>}</span>
-                      <select className="input min-w-0 flex-1 py-2 text-sm" value={cols[f.key] ?? -1}
-                        onChange={e => setCols(c => {
-                          const n = Number(e.target.value);
-                          // One column per field: picking a column here frees it elsewhere
-                          const next = Object.fromEntries(Object.entries(c).map(([k, v]) => [k, v === n && n >= 0 ? -1 : v]));
-                          return { ...next, [f.key]: n };
-                        })}>
-                        <option value={-1}>Not in my file</option>
-                        {table.headers.map((h, i) => <option key={i} value={i}>{h}</option>)}
+              {/* Excel with several sheets: which one (and, for sales, the sheet with each sale's items) */}
+              {tables.length > 1 && (
+                <section className="grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-1">
+                    <span className="text-sm font-semibold text-espresso-800">Sheet</span>
+                    <select className="input py-2 text-sm" value={main} onChange={e => chooseSheets(tables, Number(e.target.value), itemsAt)}>
+                      {tables.map((t, i) => <option key={i} value={i}>{t.name} ({t.rows.length.toLocaleString()} rows)</option>)}
+                    </select>
+                  </label>
+                  {setup.items && (
+                    <label className="space-y-1">
+                      <span className="text-sm font-semibold text-espresso-800">{setup.items.label}</span>
+                      <select className="input py-2 text-sm" value={itemsAt} onChange={e => chooseSheets(tables, main, Number(e.target.value))}>
+                        <option value={-1}>None (each row is a sale)</option>
+                        {tables.map((t, i) => i !== main && <option key={i} value={i}>{t.name} ({t.rows.length.toLocaleString()} rows)</option>)}
                       </select>
                     </label>
-                  ))}
-                </div>
-                {missing.length > 0 && (
-                  <p className="text-sm text-red-700">Pick the column for {missing.map(f => f.label).join(' and ')}.</p>
-                )}
-              </section>
+                  )}
+                </section>
+              )}
+
+              <ColumnPicker
+                title={tables.length > 1 ? `Which column is which? (${table.name})` : 'Which column is which?'}
+                fields={mainFields} headers={table.headers} cols={cols} onChange={setCols}
+              />
+              {itemsTable && setup.items && (
+                <ColumnPicker title={`And in ${itemsTable.name}`} fields={setup.items.fields} headers={itemsTable.headers} cols={itemCols} onChange={setItemCols} />
+              )}
+              {missing.length > 0 && (
+                <p className="text-sm text-red-700">Pick the column for {missing.map(f => f.label).join(' and ')}.</p>
+              )}
 
               {planned && 'error' in planned && (
                 <p className="flex items-start gap-2 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />{planned.error}</p>
@@ -234,7 +272,7 @@ export default function ImportModal<P>({ setup, onClose, onDone }: { setup: Impo
                     </div>
                     {showSkipped && (
                       <ul className="max-h-40 overflow-y-auto rounded-2xl border border-cream-300 bg-white/70 px-4 py-2 text-xs text-espresso-800">
-                        {ok.summary.skipped.slice(0, SKIPPED_SHOWN).map((s, i) => <li key={i} className="py-0.5">Row {s.line}: {s.reason}</li>)}
+                        {ok.summary.skipped.slice(0, SKIPPED_SHOWN).map((s, i) => <li key={i} className="py-0.5">{s.sheet ? `${s.sheet}, row` : 'Row'} {s.line}: {s.reason}</li>)}
                         {ok.summary.skipped.length > SKIPPED_SHOWN && <li className="py-0.5 text-bark-500">and {(ok.summary.skipped.length - SKIPPED_SHOWN).toLocaleString()} more</li>}
                       </ul>
                     )}
@@ -304,5 +342,33 @@ export default function ImportModal<P>({ setup, onClose, onDone }: { setup: Impo
         </div>
       </div>
     </Portal>
+  );
+}
+
+/** For each field, the column that holds it ("Not in my file" when it's missing). One column per field. */
+function ColumnPicker({ title, fields, headers, cols, onChange }: {
+  title: string; fields: FieldDef[]; headers: string[]; cols: Columns; onChange: (c: Columns) => void;
+}) {
+  return (
+    <section className="space-y-3">
+      <h3 className="text-sm font-semibold text-espresso-800">{title}</h3>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {fields.map(f => (
+          <label key={f.key} className="flex items-center gap-3">
+            <span className="w-32 shrink-0 text-sm text-espresso-800">{f.label}{f.required && <span className="text-red-600"> *</span>}</span>
+            <select className="input min-w-0 flex-1 py-2 text-sm" value={cols[f.key] ?? -1}
+              onChange={e => {
+                const n = Number(e.target.value);
+                // Picking a column here frees it elsewhere
+                const next = Object.fromEntries(Object.entries(cols).map(([k, v]) => [k, v === n && n >= 0 ? -1 : v]));
+                onChange({ ...next, [f.key]: n });
+              }}>
+              <option value={-1}>Not in my file</option>
+              {headers.map((h, i) => <option key={i} value={i}>{h}</option>)}
+            </select>
+          </label>
+        ))}
+      </div>
+    </section>
   );
 }

@@ -1,7 +1,7 @@
 import { format } from 'date-fns';
 import {
-  cellOf, fingerprint, guessDayOrder, hasAmbiguousDates, normalizeName, parseDate, parseNumber, parseTime,
-  roundMoney2, textOf, withTime, type Columns, type DayOrder, type FieldDef, type Table,
+  bestSheet, cellOf, fingerprint, guessColumns, guessDayOrder, hasAmbiguousDates, normalizeName, parseDate, parseNumber,
+  parseTime, roundMoney2, textOf, withTime, type Cell, type Columns, type DayOrder, type FieldDef, type Table,
 } from '@/lib/importTable';
 import type { OrderItem, PaymentMethod, Product } from '@/types';
 
@@ -25,6 +25,94 @@ export const SALE_FIELDS: FieldDef[] = [
   { key: 'cashier', label: 'Cashier', names: ['cashier', 'cashier name', 'staff', 'employee', 'served by', 'salesperson', 'sales person', 'crew', 'user'] },
   { key: 'status', label: 'Status', names: ['status', 'order status', 'transaction status', 'state'] },
 ];
+
+const RECEIPT = SALE_FIELDS.find(f => f.key === 'orderId')!;
+
+/**
+ * Two sheets, one sale per row on the first and its items on the second
+ * (joined by the receipt number), as many POS exports do. The sales sheet:
+ */
+export const SALE_MAIN_FIELDS: FieldDef[] = [
+  SALE_FIELDS.find(f => f.key === 'date')!,
+  SALE_FIELDS.find(f => f.key === 'time')!,
+  { ...RECEIPT, required: true },
+  { key: 'total', label: 'Sale total', names: ['total amount', 'total', 'amount', 'grand total', 'net total', 'net amount', 'amount due', 'total sales', 'amount paid'] },
+  SALE_FIELDS.find(f => f.key === 'payment')!,
+  SALE_FIELDS.find(f => f.key === 'cashier')!,
+  SALE_FIELDS.find(f => f.key === 'status')!,
+];
+
+/** ...and the items sheet. */
+export const SALE_ITEM_FIELDS: FieldDef[] = [
+  { ...RECEIPT, required: true },
+  { ...SALE_FIELDS.find(f => f.key === 'product')!, required: true },
+  SALE_FIELDS.find(f => f.key === 'quantity')!,
+  SALE_FIELDS.find(f => f.key === 'price')!,
+  { key: 'total', label: 'Line amount', names: ['line total', 'total', 'amount', 'line amount', 'total price', 'subtotal', 'net amount'] },
+  // Only for items whose sale isn't on the sales sheet
+  { ...SALE_FIELDS.find(f => f.key === 'date')!, required: false },
+];
+
+/**
+ * Which sheets to read: a sales sheet (receipt and date, no products) plus an
+ * items sheet (receipt and product) when the file has both; otherwise the
+ * sheet that fits sales best.
+ */
+export function pickSalesSheets(tables: Table[]): { main: number; items: number } {
+  const cols = tables.map(t => guessColumns(t.headers, SALE_FIELDS));
+  const items = cols.findIndex(c => c.orderId >= 0 && c.product >= 0);
+  const main = cols.findIndex((c, i) => i !== items && c.orderId >= 0 && c.date >= 0 && c.product < 0);
+  if (items >= 0 && main >= 0) return { main, items };
+  return { main: bestSheet(tables, SALE_FIELDS), items: -1 };
+}
+
+const JOINED: Columns = { date: 0, time: 1, orderId: 2, product: 3, quantity: 4, price: 5, total: 6, payment: 7, cashier: 8, status: 9 };
+
+/**
+ * The two sheets as one list of item rows: each item gets its sale's date,
+ * payment, cashier and status; a sale with no items becomes one row of its
+ * total. `saleTotals`: what each receipt really came to (after its discount).
+ */
+export function joinSales(main: Table, mainCols: Columns, items: Table, itemCols: Columns):
+  { table: Table; sheets: (string | undefined)[]; saleTotals: Map<string, number> } {
+  const receiptOf = (r: Cell[], c: Columns) => textOf(cellOf(r, c, 'orderId')).slice(0, 64);
+  const sale = new Map<string, Cell[]>();
+  const saleTotals = new Map<string, number>();
+  main.rows.forEach(r => {
+    const receipt = receiptOf(r, mainCols);
+    if (!receipt || sale.has(receipt)) return;
+    sale.set(receipt, r);
+    const total = parseNumber(cellOf(r, mainCols, 'total'));
+    if (total != null) saleTotals.set(receipt, total);
+  });
+  const rows: Cell[][] = [];
+  const lines: number[] = [];
+  const sheets: (string | undefined)[] = [];
+  const withItems = new Set<string>();
+  items.rows.forEach((r, i) => {
+    const receipt = receiptOf(r, itemCols);
+    const m = sale.get(receipt);
+    if (m) withItems.add(receipt);
+    rows.push([
+      m ? cellOf(m, mainCols, 'date') : cellOf(r, itemCols, 'date'), m ? cellOf(m, mainCols, 'time') : null, receipt,
+      cellOf(r, itemCols, 'product'), cellOf(r, itemCols, 'quantity'), cellOf(r, itemCols, 'price'), cellOf(r, itemCols, 'total'),
+      m ? cellOf(m, mainCols, 'payment') : null, m ? cellOf(m, mainCols, 'cashier') : null, m ? cellOf(m, mainCols, 'status') : null,
+    ]);
+    lines.push(items.lines[i]);
+    sheets.push(items.name);
+  });
+  main.rows.forEach((r, i) => {
+    const receipt = receiptOf(r, mainCols);
+    if (receipt && withItems.has(receipt)) return;
+    rows.push([
+      cellOf(r, mainCols, 'date'), cellOf(r, mainCols, 'time'), receipt, null, null, null, cellOf(r, mainCols, 'total'),
+      cellOf(r, mainCols, 'payment'), cellOf(r, mainCols, 'cashier'), cellOf(r, mainCols, 'status'),
+    ]);
+    lines.push(main.lines[i]);
+    sheets.push(main.name);
+  });
+  return { table: { headers: Object.keys(JOINED), rows, lines }, sheets, saleTotals };
+}
 
 export const SALE_SAMPLE: (string | number)[][] = [
   ['Date', 'Time', 'Receipt No', 'Product', 'Qty', 'Price', 'Total', 'Payment', 'Cashier'],
@@ -52,7 +140,8 @@ export interface SaleDraft {
 
 export interface SalesPlan {
   sales: SaleDraft[];
-  skipped: { line: number; reason: string }[];
+  /** `sheet`: which sheet the row is on, when the file has more than one. */
+  skipped: { line: number; reason: string; sheet?: string }[];
   /** Payment types JPOS doesn't have (saved as cash), and how many rows had each. */
   otherPayments: Record<string, number>;
   dayOrder: DayOrder;
@@ -76,12 +165,23 @@ export function paymentFrom(text: string): PaymentMethod | null {
 const VOIDED = /void|cancel|refund|return|deleted/i;
 const MAX_FUTURE_MS = 24 * 60 * 60 * 1000;
 
-interface Line { line: number; date: Date; item: OrderItem; amount: number; gross: number; discount: number; payment: string; cashier: string }
+interface Line { line: number; sheet?: string; date: Date; item: OrderItem; amount: number; gross: number; discount: number; payment: string; cashier: string }
 
+/**
+ * `items`: a second sheet with each sale's items (see joinSales); then `table`
+ * is the sales sheet, one sale per row.
+ */
 export function planSales(
-  table: Table, cols: Columns,
-  opts: { products: Pick<Product, 'id' | 'name'>[]; cashierName: string; dayOrder?: DayOrder; now?: Date },
+  sheet: Table, sheetCols: Columns,
+  opts: {
+    products: Pick<Product, 'id' | 'name'>[]; cashierName: string; dayOrder?: DayOrder; now?: Date;
+    items?: { table: Table; cols: Columns } | null;
+  },
 ): SalesPlan {
+  const joined = opts.items ? joinSales(sheet, sheetCols, opts.items.table, opts.items.cols) : null;
+  const table = joined?.table ?? sheet;
+  const cols = joined ? JOINED : sheetCols;
+  const sheetOf = (i: number) => (joined ? joined.sheets[i] : sheet.name);
   const dateCells = table.rows.map(r => cellOf(r, cols, 'date'));
   const dayOrder = opts.dayOrder ?? guessDayOrder(dateCells);
   const plan: SalesPlan = { sales: [], skipped: [], otherPayments: {}, dayOrder, ambiguousDates: hasAmbiguousDates(dateCells) };
@@ -91,20 +191,21 @@ export function planSales(
 
   table.rows.forEach((r, i) => {
     const line = table.lines[i];
-    if (VOIDED.test(textOf(cellOf(r, cols, 'status')))) return plan.skipped.push({ line, reason: 'voided or refunded' });
+    const skip = (reason: string) => plan.skipped.push({ line, reason, ...(sheetOf(i) ? { sheet: sheetOf(i) } : {}) });
+    if (VOIDED.test(textOf(cellOf(r, cols, 'status')))) return skip('voided or refunded');
     const day = parseDate(cellOf(r, cols, 'date'), dayOrder);
-    if (!day) return plan.skipped.push({ line, reason: 'date not readable' });
+    if (!day) return skip('date not readable');
     const date = cols.time >= 0 ? withTime(day, parseTime(cellOf(r, cols, 'time'))) : day;
-    if (date.getTime() > now + MAX_FUTURE_MS) return plan.skipped.push({ line, reason: 'date is in the future' });
+    if (date.getTime() > now + MAX_FUTURE_MS) return skip('date is in the future');
 
     const qtyCell = cellOf(r, cols, 'quantity');
     const quantity = textOf(qtyCell) ? parseNumber(qtyCell) : 1;
-    if (quantity == null || !(quantity > 0)) return plan.skipped.push({ line, reason: 'quantity must be above 0' });
+    if (quantity == null || !(quantity > 0)) return skip('quantity must be above 0');
     const price = parseNumber(cellOf(r, cols, 'price'));
     const total = parseNumber(cellOf(r, cols, 'total'));
     const amount = total ?? (price != null ? price * quantity : null);
-    if (amount == null) return plan.skipped.push({ line, reason: 'no amount' });
-    if (amount < 0 || (price != null && price < 0)) return plan.skipped.push({ line, reason: 'amount below ₱0 (a refund)' });
+    if (amount == null) return skip('no amount');
+    if (amount < 0 || (price != null && price < 0)) return skip('amount below ₱0 (a refund)');
 
     // The price × quantity before any discount; a lower amount means the line had a discount
     const listed = price != null ? roundMoney2(price * quantity) : roundMoney2(amount);
@@ -124,7 +225,7 @@ export function planSales(
     const key = receipt ? `receipt:${receipt}` : `row:${i}`;
     const list = groups.get(key) ?? [];
     list.push({
-      line, date, item, amount: roundMoney2(amount), gross, discount,
+      line, sheet: sheetOf(i), date, item, amount: roundMoney2(amount), gross, discount,
       payment: textOf(cellOf(r, cols, 'payment')), cashier: textOf(cellOf(r, cols, 'cashier')).slice(0, 60),
     });
     groups.set(key, list);
@@ -134,12 +235,16 @@ export function planSales(
   const repeats = new Map<string, number>();
   for (const [key, lines] of groups) {
     const date = new Date(Math.min(...lines.map(l => l.date.getTime())));
-    const total = roundMoney2(lines.reduce((s, l) => s + l.amount, 0));
+    const receipt = key.startsWith('receipt:') ? key.slice(8) : '';
+    const itemsTotal = roundMoney2(lines.reduce((s, l) => s + l.amount, 0));
+    // The sales sheet's total wins when it's lower: the difference is the sale's own discount
+    const saleTotal = receipt ? joined?.saleTotals.get(receipt) : undefined;
+    const saleDiscount = saleTotal != null && saleTotal >= 0 && saleTotal < itemsTotal ? roundMoney2(itemsTotal - saleTotal) : 0;
+    const total = roundMoney2(itemsTotal - saleDiscount);
     if (!(total > 0)) {
-      lines.forEach(l => plan.skipped.push({ line: l.line, reason: 'the sale adds up to ₱0' }));
+      lines.forEach(l => plan.skipped.push({ line: l.line, reason: 'the sale adds up to ₱0', ...(l.sheet ? { sheet: l.sheet } : {}) }));
       continue;
     }
-    const receipt = key.startsWith('receipt:') ? key.slice(8) : '';
     let signature = receipt ? `receipt|${receipt}` : `row|${date.toISOString()}|${lines.map(l => `${l.item.productName}|${l.item.quantity}|${l.amount}`).join(';')}`;
     if (!receipt) {
       const n = (repeats.get(signature) ?? 0) + 1;
@@ -156,7 +261,7 @@ export function planSales(
       createdAt: date.toISOString(),
       items: lines.map(l => l.item),
       subtotal: roundMoney2(lines.reduce((s, l) => s + l.gross, 0)),
-      discount: roundMoney2(lines.reduce((s, l) => s + l.discount, 0)),
+      discount: roundMoney2(lines.reduce((s, l) => s + l.discount, 0) + saleDiscount),
       total,
       paymentMethod: method ?? 'cash',
       cashierName: lines.find(l => l.cashier)?.cashier || opts.cashierName,

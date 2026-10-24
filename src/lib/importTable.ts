@@ -12,6 +12,8 @@ export interface Table {
   lines: number[];
   /** CSV and text files: the character that splits the columns. */
   delimiter?: Delimiter;
+  /** Excel: the sheet's name ("Products", "Transactions"). */
+  name?: string;
 }
 
 /** What splits the columns of a CSV or text file. */
@@ -34,16 +36,17 @@ export const IMPORT_ACCEPT = '.csv,.tsv,.txt,.xlsx,.xls';
 export const IMPORT_MAX_MB = 10;
 
 /**
- * Reads the first sheet with data. CSV and text files: JPOS finds what splits
- * the columns (or uses `delimiter`), and their text stays text (JPOS reads
- * numbers and dates itself). Excel dates come back in this device's time zone.
+ * Reads every sheet that has rows (a CSV is one sheet). CSV and text files:
+ * JPOS finds what splits the columns (or uses `delimiter`), and their text
+ * stays text (JPOS reads numbers and dates itself). Excel dates come back in
+ * this device's time zone.
  */
-export async function readTable(file: File, opts: { delimiter?: Delimiter } = {}): Promise<Table> {
+export async function readBook(file: File, opts: { delimiter?: Delimiter } = {}): Promise<Table[]> {
   const name = file.name.toLowerCase();
   if (!/\.(csv|tsv|txt|xlsx|xls)$/.test(name)) throw new Error('Use a CSV or Excel file (.csv, .xlsx or .xls).');
   if (file.size > IMPORT_MAX_MB * 1024 * 1024) throw new Error(`This file is too big. Use one of ${IMPORT_MAX_MB} MB or less.`);
   const XLSX = await import('xlsx');
-  const sheets: Cell[][][] = [];
+  const sheets: { name?: string; rows: Cell[][] }[] = [];
   let delimiter: Delimiter | undefined;
   try {
     if (/\.(csv|tsv|txt)$/.test(name)) {
@@ -56,21 +59,39 @@ export async function readTable(file: File, opts: { delimiter?: Delimiter } = {}
       const book = XLSX.read(text.replace(SEP_LINE, ''), { type: 'string', raw: true, FS: delimiter });
       const rows = XLSX.utils.sheet_to_json<Cell[]>(book.Sheets[book.SheetNames[0]], { header: 1, raw: true, defval: null, blankrows: true });
       // Files split by semicolons or tabs usually write money as 85,50
-      sheets.push(delimiter === ',' ? rows : rows.map(r => (r ?? []).map(fixDecimalComma)));
+      sheets.push({ rows: delimiter === ',' ? rows : rows.map(r => (r ?? []).map(fixDecimalComma)) });
     } else {
       const book = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
       for (const sheet of book.SheetNames) {
-        sheets.push(XLSX.utils.sheet_to_json<Cell[]>(book.Sheets[sheet], { header: 1, raw: true, defval: null, blankrows: true }));
+        sheets.push({ name: sheet, rows: XLSX.utils.sheet_to_json<Cell[]>(book.Sheets[sheet], { header: 1, raw: true, defval: null, blankrows: true }) });
       }
     }
   } catch {
     throw new Error("This file couldn't be read. Save it again as CSV or Excel (.xlsx), then try once more.");
   }
-  for (const rows of sheets) {
-    const table = tableFrom(rows);
-    if (table.rows.length) return delimiter ? { ...table, delimiter } : table;
-  }
-  throw new Error('This file has no rows to import.');
+  const tables = sheets
+    .map(s => ({ ...tableFrom(s.rows), ...(s.name ? { name: s.name } : {}), ...(delimiter ? { delimiter } : {}) }))
+    .filter(t => t.rows.length);
+  if (!tables.length) throw new Error('This file has no rows to import.');
+  return tables;
+}
+
+/** The first sheet with rows. */
+export async function readTable(file: File, opts: { delimiter?: Delimiter } = {}): Promise<Table> {
+  return (await readBook(file, opts))[0];
+}
+
+/** How well a sheet fits an import: needed fields found count 3, others 1. */
+export function sheetScore(table: Table, fields: FieldDef[]): number {
+  const cols = guessColumns(table.headers, fields);
+  return fields.reduce((s, f) => s + (cols[f.key] >= 0 ? (f.required ? 3 : 1) : 0), 0);
+}
+
+/** The sheet that fits these fields best (the first one on a tie). */
+export function bestSheet(tables: Table[], fields: FieldDef[]): number {
+  let best = 0;
+  tables.forEach((t, i) => { if (sheetScore(t, fields) > sheetScore(tables[best], fields)) best = i; });
+  return best;
 }
 
 /** Excel sometimes writes "sep=;" on the first line to say what splits the columns. */
@@ -152,21 +173,31 @@ export const normalizeName = (s: string) =>
 
 /**
  * Which column holds which field: exact names first (for every field), then
- * names inside a longer column name ("Selling Price (PHP)"). One column per field.
+ * names inside a longer column name ("Selling Price (PHP)"). A field's names
+ * are tried in order, so "Total Amount" wins over "Subtotal". One column per field.
  */
 export function guessColumns(headers: string[], fields: FieldDef[]): Columns {
   const heads = headers.map(normalizeName);
   const used = new Set<number>();
   const out: Columns = {};
-  for (const exact of [true, false]) {
-    for (const f of fields) {
-      if (out[f.key] !== undefined) continue;
-      const names = f.names.map(normalizeName);
-      const i = heads.findIndex((h, n) => !used.has(n) && h !== '' && (exact
-        ? names.includes(h)
-        : names.some(x => x.length >= 3 && ` ${h} `.includes(` ${x} `))));
-      if (i >= 0) { out[f.key] = i; used.add(i); }
+  for (const f of fields) {
+    for (const x of f.names.map(normalizeName)) {
+      const i = heads.findIndex((h, n) => !used.has(n) && h !== '' && h === x);
+      if (i >= 0) { out[f.key] = i; used.add(i); break; }
     }
+  }
+  // Names inside longer column names: the longest name found wins first ("minimum stock" before "stock")
+  const found: { key: string; col: number; len: number; rank: number }[] = [];
+  for (const f of fields) {
+    if (out[f.key] !== undefined) continue;
+    f.names.map(normalizeName).forEach((x, rank) => {
+      if (x.length < 3) return;
+      heads.forEach((h, col) => { if (h && ` ${h} `.includes(` ${x} `)) found.push({ key: f.key, col, len: x.length, rank }); });
+    });
+  }
+  found.sort((a, b) => b.len - a.len || a.rank - b.rank || a.col - b.col);
+  for (const c of found) {
+    if (out[c.key] === undefined && !used.has(c.col)) { out[c.key] = c.col; used.add(c.col); }
   }
   for (const f of fields) out[f.key] ??= -1;
   return out;
@@ -193,6 +224,9 @@ export function parseNumber(c: Cell): number | null {
   const n = Number(s);
   return negative ? -n : n;
 }
+
+/** Excel keeps times as fractions of a day: 5:33 PM can come back as 5:32:59.999. */
+const toSecond = (d: Date) => new Date(Math.round(d.getTime() / 1000) * 1000);
 
 export type DayOrder = 'mdy' | 'dmy';
 
@@ -221,7 +255,11 @@ export interface TimeOfDay { h: number; m: number; s: number }
 
 /** "14:30", "2:30 PM", "2:30pm", "14:30:15", an Excel time, or a fraction of a day → the time; else null. */
 export function parseTime(c: Cell): TimeOfDay | null {
-  if (c instanceof Date) return isNaN(+c) ? null : { h: c.getHours(), m: c.getMinutes(), s: c.getSeconds() };
+  if (c instanceof Date) {
+    if (isNaN(+c)) return null;
+    const d = toSecond(c);
+    return { h: d.getHours(), m: d.getMinutes(), s: d.getSeconds() };
+  }
   if (typeof c === 'number') {
     if (!(c >= 0) || c >= 1) return null;
     const secs = Math.round(c * 86400) % 86400;
@@ -265,7 +303,7 @@ function dateFromNumber(n: number): Date | null {
  * "Oct 20, 2026", an ISO time with a zone. Anything else → null.
  */
 export function parseDate(c: Cell, order: DayOrder = 'mdy'): Date | null {
-  if (c instanceof Date) return isNaN(+c) ? null : c;
+  if (c instanceof Date) return isNaN(+c) ? null : toSecond(c);
   if (typeof c === 'number') return dateFromNumber(c);
   if (typeof c !== 'string' || !c.trim()) return null;
   const s = c.trim();

@@ -13,14 +13,23 @@ export const PRODUCT_FIELDS: FieldDef[] = [
   { key: 'price', label: 'Price', required: true, names: ['price', 'selling price', 'unit price', 'srp', 'retail price', 'sale price', 'sell price', 'presyo'] },
   { key: 'cost', label: 'Cost', names: ['cost', 'cost price', 'unit cost', 'capital', 'puhunan', 'purchase price', 'buying price', 'supplier price'] },
   { key: 'category', label: 'Category', names: ['category', 'categories', 'type', 'group', 'department', 'kategorya', 'class'] },
-  { key: 'stock', label: 'Stock', names: ['stock', 'stocks', 'qty', 'quantity', 'on hand', 'stock on hand', 'inventory', 'soh', 'dami'] },
+  { key: 'stock', label: 'Stock', names: ['stock', 'stocks', 'qty', 'quantity', 'on hand', 'stock on hand', 'opening stock', 'beginning stock', 'inventory', 'soh', 'dami'] },
+  { key: 'lowStock', label: 'Low-stock alert at', names: ['reorder level', 'reorder point', 'low stock', 'low stock alert', 'low stock level', 'minimum stock', 'min stock', 'alert level', 'safety stock', 'critical level'] },
   { key: 'sku', label: 'Barcode or code', names: ['barcode', 'bar code', 'sku', 'code', 'item code', 'product code', 'upc', 'ean'] },
   { key: 'unit', label: 'Unit', names: ['unit', 'uom', 'unit of measure', 'sold by'] },
   { key: 'brand', label: 'Brand', names: ['brand', 'make', 'manufacturer'] },
   { key: 'size', label: 'Size', names: ['size', 'variant', 'weight', 'volume', 'net weight'] },
   { key: 'color', label: 'Color', names: ['color', 'colour', 'kulay'] },
   { key: 'description', label: 'Description', names: ['description', 'details', 'notes', 'note'] },
+  { key: 'status', label: 'On sale (status)', names: ['status', 'active', 'available', 'is active', 'on sale', 'enabled'] },
 ];
+
+/** "Inactive", "Discontinued", "No"… → not on sale; empty → not given; anything else → on sale. */
+export function availableFrom(text: string): boolean | undefined {
+  const t = text.trim().toLowerCase();
+  if (!t) return undefined;
+  return !/^(inactive|not active|discontinued|disabled|hidden|unavailable|not available|no|false|0|off|archived|deleted|out of stock)$/.test(t);
+}
 
 export const PRODUCT_SAMPLE: (string | number)[][] = [
   ['Name', 'Price', 'Cost', 'Category', 'Stock', 'Barcode', 'Unit'],
@@ -54,6 +63,10 @@ export interface ProductRow {
   cost?: number;
   category?: string;
   stock?: number;
+  /** Alert when the stock is at or under this (inventory). */
+  lowStockAt?: number;
+  /** false: kept, but not shown in the POS. */
+  available?: boolean;
   sku?: string;
   unit?: Unit | '';
   brand?: string;
@@ -103,6 +116,8 @@ export function planProducts(
     const stock = textOf(stockCell) ? parseNumber(stockCell) : undefined;
     if (stock === null) return plan.skipped.push({ line, reason: 'stock is not a number' });
 
+    const lowStock = parseNumber(cellOf(r, cols, 'lowStock'));
+    const available = availableFrom(textOf(cellOf(r, cols, 'status')));
     const sku = clip(textOf(cellOf(r, cols, 'sku')), DETAIL_MAX.sku);
     const key = sku ? `sku:${sku.toLowerCase()}` : `name:${normalizeName(name)}`;
     if (seen.has(key)) return plan.skipped.push({ line, reason: 'listed twice in the file' });
@@ -122,6 +137,8 @@ export function planProducts(
       ...(cost !== undefined ? { cost: roundMoney2(cost) } : {}),
       ...(category ? { category } : {}),
       ...(stock !== undefined ? { stock: Math.max(0, Math.floor(stock)) } : {}),
+      ...(lowStock != null && lowStock >= 0 ? { lowStockAt: Math.floor(lowStock) } : {}),
+      ...(available !== undefined ? { available } : {}),
       ...(sku ? { sku } : {}),
       ...(unit !== undefined ? { unit } : {}),
       ...optional('brand', clip(textOf(cellOf(r, cols, 'brand')), DETAIL_MAX.brand)),

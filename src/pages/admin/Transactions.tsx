@@ -15,7 +15,7 @@ import ImportModal, { type ImportSetup } from '@/components/admin/ImportModal';
 import { tenantCol } from '@/lib/tenant';
 import { BUSINESS_UP, hasAccess, hasFeature } from '@/lib/entitlements';
 import { logActivity } from '@/lib/activity';
-import { SALE_FIELDS, SALE_SAMPLE, planSales, type SalesPlan } from '@/lib/importSales';
+import { SALE_FIELDS, SALE_ITEM_FIELDS, SALE_MAIN_FIELDS, SALE_SAMPLE, pickSalesSheets, planSales, type SalesPlan } from '@/lib/importSales';
 import { applySales } from '@/lib/importSave';
 import type { DayOrder } from '@/lib/importTable';
 import { cn, formatCurrency, formatDateTime } from '@/lib/utils';
@@ -202,10 +202,14 @@ export default function Transactions() {
     what: 'sales',
     fields: SALE_FIELDS,
     sample: { file: 'jpos-sales-sample.csv', rows: SALE_SAMPLE },
-    plan: (table, cols, choices) => planSales(table, cols, {
+    // Many POS exports: one sheet of sales, another of each sale's items
+    items: { label: 'Items of each sale', mainFields: SALE_MAIN_FIELDS, fields: SALE_ITEM_FIELDS },
+    pickSheets: pickSalesSheets,
+    plan: (table, cols, choices, items) => planSales(table, cols, {
       products: importProducts ?? [],
       cashierName: currentUser?.displayName || 'Imported',
       dayOrder: choices.dayOrder as DayOrder | undefined,
+      items,
     }),
     choices: plan => (plan.ambiguousDates ? [{
       key: 'dayOrder', label: 'How are the dates written in the file?', value: plan.dayOrder,
@@ -217,7 +221,7 @@ export default function Transactions() {
         ready: plan.sales.length,
         skipped: plan.skipped,
         notes: [
-          plan.first && plan.last ? `From ${format(plan.first, 'MMM d, yyyy')} to ${format(plan.last, 'MMM d, yyyy')}.` : '',
+          plan.first && plan.last ? `From ${format(plan.first, 'MMM d, yyyy')} to ${format(plan.last, 'MMM d, yyyy')}, ${plan.sales.reduce((s, x) => s + x.items.length, 0).toLocaleString()} items, ${formatCurrency(plan.sales.reduce((s, x) => s + x.total, 0))} in all.` : '',
           others.length ? `Saved as Cash (JPOS doesn't have these payment types): ${others.slice(0, 4).map(([p]) => p).join(', ')}.` : '',
           'Past sales count in reports and the dashboard. They don\'t change your stock.',
           'Sales already brought in from this file before are skipped.',

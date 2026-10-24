@@ -31,8 +31,11 @@ export async function applyProducts(
     await batch.commit();
   }
   const category = (name?: string) => (name ? catId.get(normalizeName(name)) : undefined);
-  const stockFields = (row: ProductRow, isNew: boolean) => (opts.canInventory && row.stock !== undefined
-    ? { trackStock: true, stock: row.stock, ...(isNew ? { lowStockAt: DEFAULT_LOW_STOCK } : {}) }
+  const stockFields = (row: ProductRow, isNew: boolean) => (opts.canInventory
+    ? {
+      ...(row.stock !== undefined ? { trackStock: true, stock: row.stock } : {}),
+      ...(row.lowStockAt !== undefined ? { lowStockAt: row.lowStockAt } : isNew && row.stock !== undefined ? { lowStockAt: DEFAULT_LOW_STOCK } : {}),
+    }
     : {});
 
   const writes: ((b: ReturnType<typeof writeBatch>) => void)[] = [
@@ -41,7 +44,7 @@ export async function applyProducts(
       b.set(doc(tenantCol('products')), {
         name: row.name, description: row.description ?? '', price: row.price, cost: row.cost ?? 0,
         categoryId: cat?.id ?? '', categoryName: cat?.name ?? '',
-        imageUrl: '', imageBytes: 0, isAvailable: true, variants: [],
+        imageUrl: '', imageBytes: 0, isAvailable: row.available ?? true, variants: [],
         brand: row.brand ?? '', size: row.size ?? '', color: row.color ?? '', unit: row.unit ?? '', sku: row.sku ?? '',
         ...stockFields(row, true),
         createdAt: now, updatedAt: now,
@@ -59,6 +62,7 @@ export async function applyProducts(
         ...(row.size ? { size: row.size } : {}),
         ...(row.color ? { color: row.color } : {}),
         ...(row.description ? { description: row.description } : {}),
+        ...(row.available !== undefined ? { isAvailable: row.available } : {}),
         ...stockFields(row, false),
         updatedAt: now,
       });
